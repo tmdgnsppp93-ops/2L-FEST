@@ -1013,11 +1013,19 @@ class CellGeometry:
 class DiodeParams:
     """Jeon et al., Solar Energy 292 (2025), Table 1.
        n1 is now a free parameter (important for perovskite)."""
-    # --- Top cell (Perovskite) ---
+    # --- Top cell (Perovskite, ~1.68 eV) ---
     Jph_top = 19.65e-3        # A/cm2
-    J01_top_pass = 8.8e-26
+    # TANDEM-3 fix: the previously shipped J01_top_pass=8.8e-26 gave Voc_top=
+    # 1.38 V → tandem Voc=2.28 V / Eff~39.7 %, which EXCEEDS the certified
+    # ~34 % 2T record and sits below even the 1.68 eV radiative limit (~1e-23),
+    # i.e. physically non-credible defaults. Replaced with a typical good-device
+    # value: J01_top_pass=5e-22 → Voc_top~1.16 V (record-class is ~1.20-1.25 V).
+    # The under-metal value keeps the original ~83x enhancement ratio. Original
+    # (suspected mis-transcribed) values preserved here for reference:
+    #   J01_top_pass = 8.8e-26 ; J01_top_metal = 7.3e-24
+    J01_top_pass = 5.0e-22
     J02_top_pass = 2.62e-16
-    J01_top_metal = 7.3e-24   # ~83x higher under metal
+    J01_top_metal = 4.2e-20   # ~83x higher under metal
     J02_top_metal = 2.62e-15  # ~10x higher under metal
     n1_top = 1.0              # Free parameter (1.0 ~ 2.0 for perovskite)
     n2_top = 2.0              # Free parameter
@@ -1044,8 +1052,12 @@ class DiodeParams:
     # 솔버에서 노드별 weighting을 쓰려면 _bot_pass / _bot_metal을 직접 참조 (Phase 1).
     # 기본값: pass = metal = 기존 단일값 → Phase 0 적용 시 결과 비트 단위 동일.
     Jph_bot = 19.65e-3
-    J01_bot_pass  = 1.3339e-17   # passivated rear (typical c-Si SHJ-like)
-    J01_bot_metal = 1.3339e-17   # under rear metal contact (default same as pass)
+    # TANDEM-3 fix: previous J01_bot=1.3339e-17 gave Voc_bot=0.898 V, too high
+    # for a real c-Si bottom cell (SHJ records ~0.75 V). Set to 9e-15 →
+    # Voc_bot~0.73 V, consistent with the single-cell default J01_single=5.36e-15
+    # (Voc~0.748 V). Original value preserved: J01_bot = 1.3339e-17.
+    J01_bot_pass  = 9.0e-15      # passivated rear (typical c-Si SHJ, Voc~0.73 V)
+    J01_bot_metal = 9.0e-15      # under rear metal contact (default same as pass)
     J02_bot_pass  = 6.5674e-22
     J02_bot_metal = 6.5674e-22
     n1_bot = 1.0              # Typically fixed for c-Si
@@ -1991,8 +2003,17 @@ def assemble_K_met(points, simplices, ism, rm, hf, wf, cf,
     return K_lil.tocsr()
 
 
-def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0.0):
-    """1D conductor model for the front metal grid (v28.14).
+def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0.0,
+                      fg_y=None, bb_x=None, band_w_f=None, band_w_b=None):
+    """1D conductor model for a metal grid (v28.14; rear-capable since ASM-1 fix).
+
+    ASM-1: the line centers (fg_y / bb_x) and the node-selection band widths
+    (band_w_f / band_w_b) default to the FRONT grid (geo.fg_y, geo.bb_x,
+    geo.w_f, geo.w_b) but can be overridden so the SAME mesh-convergent 1D model
+    can assemble the REAR metal grid. Previously the rear used the 2D Galerkin
+    sheet model (assemble_K_met) that the front abandoned because it is
+    mesh-dependent for thin lines (sliver triangles), making bifacial/patterned-
+    rear FF/efficiency non-convergent under refinement.
 
     WHY: the 2D Galerkin sheet model (assemble_K_met) creates sliver
     triangles wherever the metal line width (e.g. 50 um finger) is much
@@ -2094,18 +2115,25 @@ def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0
     #   비트 단위 동일).
     w_f_eff = geo.w_f if w_f is None else float(w_f)
     w_b_eff = geo.w_b if w_b is None else float(w_b)
+    # ASM-1: line centers + node-selection band widths default to the FRONT grid
+    # but can be overridden for the REAR grid (geo.rear_fg_y / geo.rear_bb_x,
+    # geo.rear.w_f / geo.rear.w_b).
+    _fg_y = geo.fg_y if fg_y is None else fg_y
+    _bb_x = geo.bb_x if bb_x is None else bb_x
+    _band_f = geo.w_f if band_w_f is None else float(band_w_f)
+    _band_b = geo.w_b if band_w_b is None else float(band_w_b)
 
     # Fingers: along x, cross-section A_f = w_f_eff * h_f, with cf
     A_f = w_f_eff * hf
     if A_f > 0:
         Rpl_f = rm / (cf * A_f)
-        _chain_along(0, geo.fg_y, geo.w_f / 2.0, Rpl_f)
+        _chain_along(0, _fg_y, _band_f / 2.0, Rpl_f)
 
     # Busbars: along y, cross-section A_b = w_b_eff * h_f, no cf
     A_b = w_b_eff * hf
     if A_b > 0:
         Rpl_b = rm / A_b
-        _chain_along(1, geo.bb_x, geo.w_b / 2.0, Rpl_b)
+        _chain_along(1, _bb_x, _band_b / 2.0, Rpl_b)
 
     return K.tocsr()
 
@@ -3187,22 +3215,38 @@ class FESTSolver:
             self._Kr, _ = assemble_K(
                 self.pts, self.simp, Rs_rear_tco, self.areas, self.b, self.c)
 
-            # Rear metal grid stiffness (only rear metal elements contribute)
-            # Use assemble_K_met but treat all rear metal as "busbar" (no CF)
-            # since we don't distinguish rear finger vs busbar geometrically
-            self._Krm = assemble_K_met(
-                self.pts, self.simp, self.isrm,
-                rm, hf, self.geo.rear.w_f if self.geo.rear else wf, cf,
-                np.zeros(self.N, dtype=bool),  # isf=all False
-                self.isrm,                      # isb=isrm (all treated as BB, no CF)
-                self.areas, self.b, self.c,
-                self.geo.rear.w_b if self.geo.rear else 0.05)
+            # Rear metal grid stiffness. ASM-1 fix: use the mesh-convergent 1D
+            # conductor model (assemble_K_met_1d, same as the front at L3246)
+            # over the REAR grid geometry, instead of the 2D Galerkin sheet model
+            # (assemble_K_met) the front abandoned — that 2D model gives
+            # mesh-dependent thin-line conductance (sliver triangles), so
+            # bifacial/patterned-rear FF/efficiency did not converge under
+            # refinement. cf=1.0 preserves the previous "no finger CF" intent for
+            # the rear; rear finger/busbar lines come from the rear grid.
+            rw_f = self.geo.rear.w_f if self.geo.rear else wf
+            rw_b = self.geo.rear.w_b if self.geo.rear else 0.05
+            if np.any(self.isrm):
+                _gc_peak_rear = float(np.max(
+                    self._na[self.isrm] * self.rear_metal_frac[self.isrm])) / rc
+            else:
+                _gc_peak_rear = 0.0
+            self._Krm = assemble_K_met_1d(
+                self.pts, self.isrm, self.geo, rm, hf, 1.0,
+                w_f=rw_f, w_b=rw_b, gc_max=_gc_peak_rear,
+                fg_y=self.geo.rear_fg_y, bb_x=self.geo.rear_bb_x,
+                band_w_f=rw_f, band_w_b=rw_b)
 
             # Rear contact conductance: rear metal -> rear emitter
-            # Same rc as front (same process). Weight by metal_frac at rear nodes.
-            # Approximation: use binary isrm (rear metal is well-defined)
+            # Same rc as front (same process). ASM-2 fix: weight by the
+            # continuous rear_metal_frac exactly as the front path weights by
+            # metal_frac (L3252). Previously this used binary isrm (=1.0), which
+            # at partial-coverage edge nodes overstates Gc_rear → understates
+            # rear contact resistance and overstiffens the rear coupling in
+            # bifacial/patterned mode. rear_metal_frac is the area-weighted
+            # mirror of the front metal_frac (computed at L2985).
             self._Gc_rear = np.zeros(self.N)
-            self._Gc_rear[self.isrm] = self._na[self.isrm] / rc
+            self._Gc_rear[self.isrm] = (
+                self._na[self.isrm] * self.rear_metal_frac[self.isrm] / rc)
 
             # Cache rear metal row data
             self._Krm_rows = []
@@ -3956,8 +4000,18 @@ class FESTSolver:
             F[oVr:oVr + N] = self._Kr @ Vr + Ib
             for gi in rear_probe_idx:
                 F[oVr + gi] = Vr[gi]
-            # F_Vint: K_int @ V_int - (Jt - Jb)*na = K_int @ V_int - It + Ib
-            F[oVint:oVint + N] = self._K_junc @ V_int - It + Ib
+            # F_Vint: interlayer node KCL. V_int is the top cell's REAR
+            # (contributes +It, like F_Vr=Kr@Vr+Ib) and simultaneously the bottom
+            # cell's EMITTER (contributes -Ib, like F_Ve=Ke@Ve-It, since
+            # Vbot=V_int-Vr). So lateral-out = +It - Ib:
+            #     K_int @ V_int + It - Ib = 0
+            # TANDEM-1 fix: this previously read "- It + Ib", the opposite sign,
+            # which deviated from the file's universal 2-plane KCL convention
+            # (upper plane K@V-I, lower plane K@V+I) used by every other emitter/
+            # rear/interlayer residual (e.g. the bifacial junction solver L4322).
+            # Only affects Phase-B full_area runs (Rs_junction>0); default
+            # Rs_junction=0 uses solve_tandem (no interlayer plane).
+            F[oVint:oVint + N] = self._K_junc @ V_int + It - Ib
 
             # ====== Jacobian (assembled from COO blocks) ======
             rows = []; cols = []; vals = []
@@ -4024,21 +4078,24 @@ class FESTSolver:
                 cols.append(idx_N + oVt)
                 vals.append(dILC)
 
-            # --- F_Vint / dVint: K_int + dJb*na diag (from +Jb term) ---
+            # TANDEM-1 fix: Jacobian of F_Vint = K_int@V_int + It - Ib (diode
+            # source signs flipped to match the corrected residual; K_int term
+            # unchanged).
+            # --- F_Vint / dVint: K_int - dIb diag (from -Ib, dVbot/dVint=+1) ---
             rows.append(Kint_c.row + oVint)
             cols.append(Kint_c.col + oVint)
             vals.append(Kint_c.data.copy())
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVint)
-            vals.append(dIb)  # dF_Vint/dVint from +Jb term: dJb/dVint*na = +dIb
-            # --- F_Vint / dVr: dJb/dVr * na = -dIb (from +Jb term) ---
+            vals.append(-dIb)
+            # --- F_Vint / dVr: d(-Ib)/dVr = -dJb*na*(dVbot/dVr=-1) = +dIb ---
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVr)
-            vals.append(-dIb)
-            # --- F_Vint / dVt: -dJt*na + dJLC*na diag ---
+            vals.append(dIb)
+            # --- F_Vint / dVt: d(+It)/dVt = +dIt; LC via -Ib → -dILC ---
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVt)
-            vals.append(-dIt + dILC)
+            vals.append(dIt - dILC)
 
             # Build sparse matrix
             J_rows = np.concatenate(rows)
@@ -5367,6 +5424,15 @@ class FESTSolver:
             # If the cell is under-matched (Jph_top < Jph_bot), adding rear
             # light to bot further widens the mismatch.
             Jt = _gen * dp.Jph_top - J01_arr * (e1t - 1) - J02_arr * (e2t - 1) - Vtop / dp.Rsh_top
+            # UNITS-1 note: current density is normalized by self.geo.area = the
+            # bounding-rectangle W*H. For the default SQUARE wafer this equals
+            # wafer_area(), so Jsc/Eff are correct. For pseudo_square/circular
+            # wafers the mesh still tessellates the full rectangle (corners
+            # generate current) while shading_fraction divides by the true
+            # wafer_area(), so the two area conventions disagree (circular bias
+            # ~21%). Square-wafer runs are unaffected; if non-square wafers are
+            # used, mask generation to wafer_outline_xy_mm and normalize both
+            # current and shading by wafer_area() consistently.
             return np.sum(Jt * self._na) / self.geo.area * 1000
         else:
             Vd = Ve - Vr
@@ -5640,10 +5706,21 @@ class FESTSolver:
 
         if mode == 'tandem':
             _, _, Voc_est = dp.expected_voc()
-            Rs_lumped_total = dp.Rs_lumped_top + dp.Rs_lumped_bot
+            # TANDEM-2 fix: wire in the documented per-subcell internal series R
+            # (Jeon 2025 Rs_top/Rs_bot — vertical transport inside each diode
+            # unit). Applied as a terminal IR drop V_term = V_solver - J·Rs.
+            # In a 2T series stack the same J flows through both subcells, so the
+            # two internal resistances add. Previously these params were declared
+            # but never read, so FF was overstated when vertical R was non-zero.
+            # The legacy Rs_lumped_* aliases (deprecated, default 0) are kept for
+            # backward compatibility.
+            Rs_lumped_total = (dp.Rs_internal_top + dp.Rs_internal_bot
+                               + dp.Rs_lumped_top + dp.Rs_lumped_bot)
         else:
             Voc_est = dp.expected_voc(mode='single')
-            Rs_lumped_total = dp.Rs_lumped_top
+            # Single-cell defaults are Si/bottom-like (LONGi), so the relevant
+            # internal R is the bottom (Si) value.
+            Rs_lumped_total = dp.Rs_internal_bot + dp.Rs_lumped_top
 
         Rs_lumped_total = max(float(Rs_lumped_total), 0.0)
 
@@ -6293,10 +6370,26 @@ print(f"  Metal: {np.sum(ism)} nodes ({np.sum(ism)/len(pts)*100:.1f}%)")
 # ANALYTICAL LOSS (for report verification)
 # =============================================================
 def _analytical_loss(rm, hf, wf, rc, Rs, cf):
-    Jm = DP.Jph_top * 1000 * 0.93; _, _, Vs = DP.expected_voc(); Vm = Vs * 0.88
+    """Closed-form distributed series-resistance losses as power density [mW/cm²].
+
+    ASM-3 fix: the Mette/Green expressions below are DIMENSIONLESS fractional
+    losses (of Pmpp) only when Jmp is in A/cm². Previously the function used Jmp
+    in mA/cm² and returned the bare fractions, i.e. ~1000× the true fraction,
+    while the report labeled the column "mW/cm²" and placed the values next to the
+    genuine FEM losses() buckets (true mW/cm²). That apples-to-oranges comparison
+    could mask or falsely flag a real FEM discrepancy. We now compute each
+    fraction with Jmp in A/cm² and multiply by Pmpp = Jmp·Vmp to return an
+    absolute power density directly comparable to the FEM column.
+    """
+    Jm = DP.Jph_top * 0.93                 # A/cm²  (Jph_top stored in A/cm²)
+    _, _, Vs = DP.expected_voc(); Vm = Vs * 0.88
     df = GEO.H / (GEO.n_f + 1); dBB = GEO.W / (GEO.n_b + 1) if GEO.n_b > 0 else GEO.W
     rf = rm / (cf * wf * hf)
-    return ((1/12)*Rs*(Jm/Vm)*df**2, (1/12)*rf*(Jm/Vm)*dBB**2*df, 0.5*rc*(Jm/Vm)*dBB*df/wf)
+    Pmpp = Jm * 1000.0 * Vm                # mW/cm²  (Jm·1000 → mA/cm²)
+    frac_e = (1/12) * Rs * (Jm / Vm) * df**2
+    frac_f = (1/12) * rf * (Jm / Vm) * dBB**2 * df
+    frac_c = 0.5 * rc * (Jm / Vm) * dBB * df / wf
+    return (frac_e * Pmpp, frac_f * Pmpp, frac_c * Pmpp)
 
 
 # =============================================================
@@ -6692,44 +6785,44 @@ def _rpt_p7(f, d):
     Pj_b=d.get('Pj_b',0.0); Pj_a=d.get('Pj_a',0.0)
     Pt_b=Pe_b+Pf_b+Pc_b; Pt_a=Pe_a+Pf_a+Pc_a
 
-    # === Tier 1: Energy balance ===
-    Jph_top_mA = DP.Jph_top * 1000  # mA/cm²
-    P_input_b = Jph_top_mA * iv_b['Voc']  # crude upper bound
-    # Better: P_in = AM1.5G = 100 mW/cm²
-    P_AM15 = 100.0  # mW/cm²
+    # === Tier 1: Electrical power balance (loss reconstruction) ===
+    # IVL-1 fix: this is an ELECTRICAL budget. Jph enters the model as an INPUT
+    # (there is no optical/spectral front-end), so the budget CANNOT be closed
+    # against the 100 mW/cm² AM1.5G optical irradiance — roughly 60 mW/cm² of
+    # thermalization + sub-bandgap photon loss is structurally outside any
+    # electrical FEM model. The previous "Residual vs 100 mW/cm²" was a category
+    # error: it compared an electrical generation budget to an optical input, so
+    # the residual was structurally ~55-66% and "PASS (<5%)" was unachievable
+    # for any real cell. We instead reconstruct the loss-free electrical power
+    # ceiling, consistent with the PCE waterfall (PCE_ref):
+    #     P_lossfree = P_out(MPP) + Σ(electrical loss buckets)
     P_out_b = iv_b['Pmpp']
     P_loss_total_b = Pt_b + Ps_b + Psh_b + Prec_b + Pj_b
-    # Closure: P_in = P_out + P_loss (where P_in = AM1.5G × A)
-    closure_b = P_out_b + P_loss_total_b
-    residual_b = abs(closure_b - P_AM15) / P_AM15 * 100
-
+    P_lossfree_b = P_out_b + P_loss_total_b
     P_out_a = iv_a['Pmpp']
     P_loss_total_a = Pt_a + Ps_a + Psh_a + Prec_a + Pj_a
-    closure_a = P_out_a + P_loss_total_a
-    residual_a = abs(closure_a - P_AM15) / P_AM15 * 100
+    P_lossfree_a = P_out_a + P_loss_total_a
+    # Fraction of the reconstructed loss-free ceiling actually delivered to the
+    # terminal — an electrical-completeness indicator, NOT an optical balance.
+    deliver_b = (P_out_b / P_lossfree_b * 100.0) if P_lossfree_b > 1e-9 else 0.0
+    deliver_a = (P_out_a / P_lossfree_a * 100.0) if P_lossfree_a > 1e-9 else 0.0
 
     ax1 = f.add_axes([0.03, 0.55, 0.45, 0.38])
-    pass_color_b = '#059669' if residual_b < 5.0 else '#DC2626'
-    pass_color_a = '#059669' if residual_a < 5.0 else '#DC2626'
-    _txt_tbl(ax1, 'Tier 1 — Energy Balance Check [mW/cm²]',
+    _txt_tbl(ax1, 'Tier 1 — Electrical Loss Reconstruction [mW/cm²]',
              ['Term', 'Before', 'After'],
-             [['P_in (AM1.5G)', f'{P_AM15:.2f}', f'{P_AM15:.2f}'],
-              ['P_out (MPP)',   f'{P_out_b:.3f}', f'{P_out_a:.3f}'],
-              ['P_resistive',   f'{Pt_b:.4f}', f'{Pt_a:.4f}'],
-              ['P_shading',     f'{Ps_b:.4f}', f'{Ps_a:.4f}'],
-              ['P_shunt',       f'{Psh_b:.4f}', f'{Psh_a:.4f}'],
-              ['P_recomb',      f'{Prec_b:.4f}', f'{Prec_a:.4f}'],
-              ['P_junction',    f'{Pj_b:.4f}', f'{Pj_a:.4f}'],
-              ['Σ closure',     f'{closure_b:.3f}', f'{closure_a:.3f}'],
-              ['Residual %',    f'{residual_b:.2f}%', f'{residual_a:.2f}%']],
+             [['P_out (MPP)',       f'{P_out_b:.3f}', f'{P_out_a:.3f}'],
+              ['P_resistive',       f'{Pt_b:.4f}', f'{Pt_a:.4f}'],
+              ['P_shading',         f'{Ps_b:.4f}', f'{Ps_a:.4f}'],
+              ['P_shunt',           f'{Psh_b:.4f}', f'{Psh_a:.4f}'],
+              ['P_recomb',          f'{Prec_b:.4f}', f'{Prec_a:.4f}'],
+              ['P_junction',        f'{Pj_b:.4f}', f'{Pj_a:.4f}'],
+              ['Loss-free ceiling', f'{P_lossfree_b:.3f}', f'{P_lossfree_a:.3f}'],
+              ['Delivered %',       f'{deliver_b:.1f}%', f'{deliver_a:.1f}%']],
              [0.02, 0.45, 0.75])
-    # Pass/fail badge
-    status_b = 'PASS (<5%)' if residual_b < 5.0 else 'CHECK (>5%)'
-    status_a = 'PASS (<5%)' if residual_a < 5.0 else 'CHECK (>5%)'
-    ax1.text(0.50, -0.04, f'Before: {status_b}    After: {status_a}',
-             ha='center', va='top', fontsize=9, fontweight='bold',
-             color=pass_color_b if residual_b < 5 else '#DC2626',
-             transform=ax1.transAxes)
+    ax1.text(0.50, -0.04,
+             'Electrical reconstruction — Jph is a model input, not an optical balance',
+             ha='center', va='top', fontsize=8, fontweight='bold',
+             color='#0F172A', transform=ax1.transAxes)
 
     # === Tier 2: Analytical comparison (Rehman 2023) ===
     aPe_b,aPf_b,aPc_b = _analytical_loss(bp[0],bp[1],bp[2],bp[5],bp[6],bp[4])
@@ -6766,8 +6859,8 @@ def _rpt_p7(f, d):
     # Summary table
     rows = [
         ('Tier 1', 'KCL residual',          '< 1e-8',     'PASS', '#059669'),
-        ('Tier 1', 'Energy balance',         '< 5%',       f'{residual_b:.2f}% / {residual_a:.2f}%',
-                                                          '#059669' if max(residual_b,residual_a) < 5 else '#EA580C'),
+        ('Tier 1', 'Loss reconstruction',   'electrical', f'deliv {deliver_b:.0f}% / {deliver_a:.0f}%',
+                                                          '#0F172A'),
         ('Tier 1', 'Rs_junction model family', 'Griddler-style interlayer',
          'GRIDDLER-STYLE', '#D97706'),
         ('Tier 2', 'Rehman 2023 analytical', '< 5%',       f'max {max_err:.1f}%',
