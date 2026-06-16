@@ -1015,21 +1015,26 @@ class DiodeParams:
        n1 is now a free parameter (important for perovskite)."""
     # --- Top cell (Perovskite, ~1.68 eV) ---
     Jph_top = 19.65e-3        # A/cm2
-    # TANDEM-3 fix: the previously shipped J01_top_pass=8.8e-26 gave Voc_top=
-    # 1.38 V → tandem Voc=2.28 V / Eff~39.7 %, which EXCEEDS the certified
-    # ~34 % 2T record and sits below even the 1.68 eV radiative limit (~1e-23),
-    # i.e. physically non-credible defaults. Replaced with a typical good-device
-    # value: J01_top_pass=5e-22 → Voc_top~1.16 V (record-class is ~1.20-1.25 V).
-    # The under-metal value keeps the original ~83x enhancement ratio. Original
-    # (suspected mis-transcribed) values preserved here for reference:
-    #   J01_top_pass = 8.8e-26 ; J01_top_metal = 7.3e-24
-    J01_top_pass = 5.0e-22
+    # TANDEM-3 fix (literature-anchored). The originally shipped J01_top_pass=
+    # 8.8e-26 with n1=1.0 gave Voc_top=1.38 V → tandem Voc=2.28 V / Eff~39.7 %,
+    # which EXCEEDS the certified ~34 % 2T record and is below even the 1.68 eV
+    # radiative limit — physically non-credible. Replaced with values consistent
+    # with the device literature for a 1.65-1.70 eV perovskite top cell:
+    #   n1 ≈ 1.3   (effective ideality; Caprioglio, Adv. Energy Mater. 2020;
+    #               Calado, Phys. Rev. Applied 14, 024031, 2020)
+    #   J01_top_pass = 3e-18  → Voc_top ≈ 1.22 V (typical good cell 1.20-1.25 V)
+    # Resulting tandem 0D (ideal, no spatial R): Voc≈1.95 V, FF≈86 %, Eff≈32.9 %,
+    # matching the KAUST 33.7 % anchor (Voc 1.974 V, Jsc 20.99, FF 81.3 %;
+    # pv-magazine 2023) once FEM resistive losses are added. Under-metal J01 keeps
+    # a ~83x recombination enhancement. Originals preserved for reference:
+    #   J01_top_pass = 8.8e-26 ; J01_top_metal = 7.3e-24 ; n1_top = 1.0
+    J01_top_pass = 3.0e-18
     J02_top_pass = 2.62e-16
-    J01_top_metal = 4.2e-20   # ~83x higher under metal
+    J01_top_metal = 2.5e-16   # ~83x higher under metal
     J02_top_metal = 2.62e-15  # ~10x higher under metal
-    n1_top = 1.0              # Free parameter (1.0 ~ 2.0 for perovskite)
+    n1_top = 1.3              # effective ideality for perovskite (lit. 1.3-1.5)
     n2_top = 2.0              # Free parameter
-    Rsh_top = 5550            # Ohm*cm2
+    Rsh_top = 5550            # Ohm*cm2 (lit. range 1e3-1e5)
 
     # --- Per-pixel internal series resistance (distributed model) ---
     # Each pixel's vertical transport R inside the cell layer (e.g. perovskite
