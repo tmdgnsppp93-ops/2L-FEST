@@ -12,6 +12,8 @@ CustomTkinter Pro UI + Fixed Report
 [7] CustomTkinter Pro UI -- modern dark/light theme
 [8] Fixed Report -- correct architecture + clean conditions
 
+v28.19: [+] mesh_distribution_metrics 진단 복원 (DESIGN 메시 비대칭/편향 시 제목 경고색)
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -109,7 +111,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.18",
+    "version": "v28.19",
     "date": "2026-06-12",
     "name": "wf_wired",
 }
@@ -1333,6 +1335,67 @@ def mesh_quality_metrics(points, tri):
         "MaxAspect": (
             float(np.max(finite_aspect)) if finite_aspect.size else float("inf")
         ),
+    }
+
+
+def mesh_distribution_metrics(points, geo, *, bins=12, ndigits=6):
+    """Return symmetry and local-density diagnostics for visual mesh checks."""
+    if points is None or len(points) == 0:
+        return {
+            "MirrorNodeHitX": 0.0,
+            "MirrorNodeHitY": 0.0,
+            "CentroidBiasX_um": 0.0,
+            "CentroidBiasY_um": 0.0,
+            "PeakBinOverMedian": 0.0,
+            "PeakBinFraction": 0.0,
+            "PeakBinCenterX_mm": 0.0,
+            "PeakBinCenterY_mm": 0.0,
+            "QuadrantImbalance": 0.0,
+        }
+
+    rounded = np.round(points, ndigits)
+    point_set = set(map(tuple, rounded))
+    width = float(geo.W)
+    height = float(geo.H)
+    mirror_x = sum(
+        ((round(width - x, ndigits), round(y, ndigits)) in point_set)
+        for x, y in point_set
+    ) / len(point_set)
+    mirror_y = sum(
+        ((round(x, ndigits), round(height - y, ndigits)) in point_set)
+        for x, y in point_set
+    ) / len(point_set)
+
+    centroid = np.mean(points, axis=0)
+    hist, x_edges, y_edges = np.histogram2d(
+        points[:, 0], points[:, 1],
+        bins=max(2, int(bins)),
+        range=[[0.0, width], [0.0, height]],
+    )
+    nonzero = hist[hist > 0]
+    median = float(np.median(nonzero)) if nonzero.size else 0.0
+    peak = float(np.max(hist)) if hist.size else 0.0
+    peak_idx = np.unravel_index(int(np.argmax(hist)), hist.shape) if hist.size else (0, 0)
+    peak_center_x = 0.5 * (x_edges[peak_idx[0]] + x_edges[peak_idx[0] + 1])
+    peak_center_y = 0.5 * (y_edges[peak_idx[1]] + y_edges[peak_idx[1] + 1])
+
+    q = np.array([
+        np.sum((points[:, 0] <= width / 2.0) & (points[:, 1] <= height / 2.0)),
+        np.sum((points[:, 0] > width / 2.0) & (points[:, 1] <= height / 2.0)),
+        np.sum((points[:, 0] <= width / 2.0) & (points[:, 1] > height / 2.0)),
+        np.sum((points[:, 0] > width / 2.0) & (points[:, 1] > height / 2.0)),
+    ], dtype=float) / len(points)
+
+    return {
+        "MirrorNodeHitX": float(mirror_x),
+        "MirrorNodeHitY": float(mirror_y),
+        "CentroidBiasX_um": float((centroid[0] - width / 2.0) * 1e4),
+        "CentroidBiasY_um": float((centroid[1] - height / 2.0) * 1e4),
+        "PeakBinOverMedian": float(peak / median) if median > 0 else float("inf"),
+        "PeakBinFraction": float(peak / len(points)) if len(points) else 0.0,
+        "PeakBinCenterX_mm": float(peak_center_x * 10.0),
+        "PeakBinCenterY_mm": float(peak_center_y * 10.0),
+        "QuadrantImbalance": float(np.max(q) - np.min(q)),
     }
 
 
@@ -11037,6 +11100,7 @@ class FESTProApp(ctk.CTk):
         mp_v = mp.get() if mp is not None else "Med"
         n_nodes = len(pts) if pts is not None else 0
         n_tri = len(tri.simplices) if tri is not None else 0
+        _mesh_title_color = '#455A64'
         n_probe = (GEO.front.n_probe_points if GEO.front.n_probe_points > 0
                    else GEO.front.n_terminals)
         try:
@@ -11067,6 +11131,11 @@ class FESTProApp(ctk.CTk):
             ax4.set_xlabel('x [mm]', fontsize=9)
             ax4.set_ylabel('y [mm]', fontsize=9)
             ax4.tick_params(labelsize=8)
+            _md = mesh_distribution_metrics(pts, GEO)
+            if (_md['MirrorNodeHitX'] < 0.99 or _md['MirrorNodeHitY'] < 0.99
+                    or abs(_md['CentroidBiasX_um']) > 25.0
+                    or abs(_md['CentroidBiasY_um']) > 25.0):
+                _mesh_title_color = '#C62828'
             ax4.legend(handles=[
                 _MeshPatch(fc='#FFCC80', ec='#5b6b7a', lw=0.4, label='metal (dense)'),
                 _MeshPatch(fc='#E8F0FE', ec='#5b6b7a', lw=0.4, label='bulk (coarse)'),
@@ -11080,7 +11149,7 @@ class FESTProApp(ctk.CTk):
                      transform=ax4.transAxes, ha='center', va='center',
                      fontsize=9, color='#B0BEC5')
         ax4.set_title(f'Mesh: {n_nodes:,} nodes  |  {n_tri:,} elements   ·   T/P {mt_v}/{mp_v}',
-                      fontweight='bold', fontsize=10.5, color='#455A64')
+                      fontweight='bold', fontsize=10.5, color=_mesh_title_color)
 
         self._refresh()
         self._status(f"DESIGN view: {GEO.n_f}F+{GEO.n_b}BB, mesh T={mt_v}/P={mp_v}, {n_nodes} nodes")
