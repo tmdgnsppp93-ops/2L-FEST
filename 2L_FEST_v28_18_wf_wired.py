@@ -1011,8 +1011,17 @@ class CellGeometry:
 # DIODE PARAMETERS
 # =============================================================
 class DiodeParams:
-    """Jeon et al., Solar Energy 292 (2025), Table 1.
-       n1 is now a free parameter (important for perovskite)."""
+    """Tandem 2-diode parameters.
+
+    Originally based on Jeon et al., Solar Energy 292 (2025), Table 1, but the
+    top/bottom diode defaults were re-anchored to the device literature in the
+    TANDEM-3 fix (perovskite n1≈1.3, J01_top≈3e-18 → Voc_top~1.22V; Si J01≈9e-15
+    → Voc_bot~0.73V), giving a credible tandem (Voc~1.95V, Eff~32.9% 0D-ideal;
+    cf. KAUST 33.7% Voc 1.974V). The Jeon Table 1 values themselves were NOT
+    independently verified against the paper; the Rs_top=2.0/Rs_bot=0.2 Ω·cm²
+    annotations are higher than typical device literature (Rs~0.2-0.4 Ω·cm²) —
+    verify against the source before publication.
+    n1 is a free parameter (important for perovskite)."""
     # --- Top cell (Perovskite, ~1.68 eV) ---
     Jph_top = 19.65e-3        # A/cm2
     # TANDEM-3 fix (literature-anchored). The originally shipped J01_top_pass=
@@ -1126,9 +1135,12 @@ class DiodeParams:
     spatial_gen = None
     spatial_rc  = None
 
-    # --- Luminescent Coupling J01 (Griddler PRO / Zeder 2025 eq. 4) ---
+    # --- Luminescent Coupling J01 (Zeder 2025; Jäger 2021) ---
     # J_LC = J01_coupling × (exp(qV_top/kT)-1), added to bot photocurrent.
     # Scaling: J01_coupling ≈ η_LC × J01_top_rad,  η_LC ≈ 36% (EPFL, Zeder 2025).
+    # ATTRIBUTION FIX: Zeder et al. (Solar RRL 2025) model LC with SETFOS (Fluxim
+    # drift-diffusion), NOT Griddler — LC is not a Griddler PRO feature. The
+    # exp(qV_top/kT) LC form is the standard one (also Jäger, Solar RRL 2021).
     # Expected gain in current-matched PST: +0.1 to +0.5% abs (Jäger 2021, Nguyen 2024).
     J01_coupling = 0.0
 
@@ -3740,7 +3752,8 @@ class FESTSolver:
 
             # --- Luminescent Coupling (LC) ---
             # J_LC = J01_coupling * (exp(V_top/VT) - 1), added to bottom subcell
-            # as extra photogeneration (Zeder et al. 2025 eq. 4, Griddler PRO).
+            # as extra photogeneration (Zeder et al. 2025 / Jäger 2021; modeled
+            # in SETFOS, not a Griddler feature — standard LC form).
             # Depends on V_top, so adds new Jacobian off-diagonal dJb/dVtop.
             if dp.J01_coupling > 0:
                 eLC = np.exp(np.minimum(Vtop / VT, 80))
