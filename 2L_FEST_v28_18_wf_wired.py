@@ -13,6 +13,9 @@ CustomTkinter Pro UI + Fixed Report
 [8] Fixed Report -- correct architecture + clean conditions
 
 v28.19: [+] mesh_distribution_metrics 진단 복원 (DESIGN 메시 비대칭/편향 시 제목 경고색)
+v28.20: [fix] CSV 내보내기 0바이트 버그 수정 — utf-8-sig 인코딩 + 원자적 쓰기
+        (GUI 실행 시 기본 코덱이 ASCII/cp949가 되어 비ASCII 문자에서 write가
+         실패하며 0바이트 파일이 남던 문제. temp→replace로 안전 저장)
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -111,8 +114,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.19",
-    "date": "2026-06-12",
+    "version": "v28.20",
+    "date": "2026-06-21",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -12049,8 +12052,33 @@ class FESTProApp(ctk.CTk):
         lines.append("V [V],J [mA/cm2]")
         for v,j in zip(c['Vs_a'], c['Js_a']):
             lines.append(f"{v:.6f},{j:.6f}")
-        with open(fn, 'w') as f:
-            f.write('\n'.join(lines))
+        # v28.20: robust CSV write. Previously `open(fn,'w')` (a) used the OS
+        # default text codec — on Korean Windows (cp949) any non-ASCII glyph in
+        # the content (Ω, ², ·, →, Korean health/junction messages) raised
+        # UnicodeEncodeError *after* the file was already truncated to 0 bytes,
+        # leaving an unopenable 0-byte file; and (b) wrote in place, so any mid-
+        # write failure destroyed the target. Fix: encode as utf-8-sig (Excel- &
+        # Korean-safe, matching the mesh_convergence writer) and write atomically
+        # to a temp file, replacing the target only on full success — so a
+        # failure can never leave a 0-byte CSV behind.
+        import tempfile
+        try:
+            _dir = os.path.dirname(os.path.abspath(fn)) or '.'
+            _fd, _tmp = tempfile.mkstemp(suffix='.tmp', dir=_dir)
+            try:
+                with os.fdopen(_fd, 'w', encoding='utf-8-sig', newline='') as f:
+                    f.write('\r\n'.join(lines))
+                os.replace(_tmp, fn)
+            except BaseException:
+                try:
+                    os.remove(_tmp)
+                except OSError:
+                    pass
+                raise
+        except Exception as e:
+            self._status(f"CSV save failed: {e}")
+            messagebox.showerror("2L-FEST PRO", f"CSV 저장 실패:\n{e}")
+            return
         self._status(f"CSV saved: {fn}")
         messagebox.showinfo("2L-FEST PRO", f"Results exported:\n{fn}")
 
