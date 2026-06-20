@@ -5,7 +5,7 @@
 
 - **버전**: v28.19 (`wf_wired`)
 - **개발**: Seunghoon Lee — KIST, Dr. Inho Kim's Solar Cell Research Team
-- **언어/UI**: Python 3.9+ / CustomTkinter (다크·라이트 테마)
+- **언어/UI**: Python 3.10+ / CustomTkinter (다크·라이트 테마)
 
 ---
 
@@ -28,6 +28,8 @@
 ---
 
 ## 설치
+
+> **요구사항: Python 3.10 이상** (`X | None` 타입힌트 사용 — 3.9에서는 실행 불가)
 
 ```bash
 # 1) (권장) 가상환경
@@ -88,7 +90,7 @@ python _validate_griddler.py
 ## 동작 환경
 
 - OS: Windows / macOS / Linux (폰트 자동 탐지로 크로스플랫폼 지원)
-- Python: 3.9 이상 (개발·검증 환경 3.9.6)
+- Python: 3.10 이상 (검증 환경 3.12)
 - 디스플레이 필요 (GUI 애플리케이션)
 
 ---

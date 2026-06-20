@@ -1,5 +1,6 @@
 # 2L-FEST PRO — runtime dependencies
-# Python >= 3.9 권장 (개발 환경: Python 3.9.6)
+# Python >= 3.10 필수 (PEP 604 `X | None` 타입힌트 사용; 3.9에서는 임포트 실패)
+# 검증 환경: Python 3.12
 # 설치:  pip install -r requirements.txt
 
 numpy>=1.24
