@@ -35,6 +35,9 @@ v28.24: [ui] REAR 카드 라벨 명확화 — "Rs_rear TCO (L3)" → "Rear Sheet
 v28.25: [ui] 나머지 저항 라벨에도 방향 화살표 추가 — 앞면 "Contact R ↕"(수직),
          "TCO Sheet R ↔"(수평), "Bulk ρ ↔"(핑거 횡전도); 셀 내부 "Rs lumped Top/Bot ↕"
          (수직). 후면·재결합접합 라벨과 스타일 통일. Rsh(shunt)는 병렬 누설경로라 제외.
+v28.26: [ui] 기호 정정 — 접촉저항은 단위가 Ω·cm²(비저항 ρc)이므로 R이 아니라 ρ로 표기.
+         "Contact R ↕"→"Contact ρ ↕"(KR 접촉 비저항), "Rear Contact R ↕"→"Rear Contact ρ ↕".
+         규칙: resistivity(Ω·cm, Ω·cm² 접촉)=ρ / resistance(Ω/sq sheet, Ω·cm² 직렬 Rs)=R.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -133,7 +136,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.25",
+    "version": "v28.26",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -351,7 +354,7 @@ _TR = {
     'finger_h': {'EN': 'Finger Height', 'KR': '핑거 높이'},
     'finger_w': {'EN': 'Finger Width', 'KR': '핑거 폭'},
     'shape_cf': {'EN': 'Shape CF', 'KR': '형상 계수'},
-    'contact_res': {'EN': 'Contact R ↕', 'KR': '접촉저항 ↕'},
+    'contact_res': {'EN': 'Contact ρ ↕', 'KR': '접촉 비저항 ↕'},
     'busbar_w': {'EN': 'Busbar Width', 'KR': '버스바 폭'},
     'tco_rsheet': {'EN': 'TCO Sheet R ↔', 'KR': 'TCO 면저항 ↔'},
     'cell_w': {'EN': 'Cell Width', 'KR': '셀 폭'},
@@ -7815,7 +7818,7 @@ class FESTProApp(ctk.CTk):
         # Blank = same as front rc (legacy). Real cells / Griddler allow front≠rear.
         rc_rear_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rc_rear_row.pack(fill="x"); rc_rear_row.pack_propagate(False)
-        ctk.CTkLabel(rc_rear_row, text="Rear Contact R ↕", font=ctk.CTkFont(size=10),
+        ctk.CTkLabel(rc_rear_row, text="Rear Contact ρ ↕", font=ctk.CTkFont(size=10),
                      text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
         self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=60, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
