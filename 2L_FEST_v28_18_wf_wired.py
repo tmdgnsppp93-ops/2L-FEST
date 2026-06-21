@@ -46,6 +46,9 @@ v28.28: [perf] Phase B bifacial 속도 2.2배 — 기존엔 전압점마다 cold
          Rs_junction 호모토피 램프를 반복. _solve_tandem_junction_bf에 warm-start
          추가(이전 점 해 재사용) + 첫 점 이후 램프 생략. (828s→381s, 측정 케이스)
          Voc·Jsc 동일, FF·Eff는 수렴 허용오차 내 ~0.02% 차이(물리적 무의미).
+v28.29: [ui] 실행 로딩창을 기본으로 맨 위에 표시 — _prog_open 기본값 topmost=True.
+         Compare/Current/Waterfall/Sweep/Contour/효율분석 등 모든 실행에서 진행창이
+         메인 창에 가려지지 않음. 직접 최소화하면 내려간다(기존 Unmap 처리 유지).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -144,7 +147,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.28",
+    "version": "v28.29",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -9853,14 +9856,16 @@ class FESTProApp(ctk.CTk):
             self._status_label.configure(text=msg)
             self.update_idletasks()
 
-    def _prog_open(self, title="Computing...", topmost=False):
+    def _prog_open(self, title="Computing...", topmost=True):
         """Open a progress popup with bar + percentage + elapsed time.
 
         v28.10 (사용자 요청 2026.05.21): X 버튼 클릭 시 취소 플래그 설정.
         다음 _prog_update 호출에서 _UserCancelled 예외 발생 → tab 메서드가 catch.
-        v28.17 (Seunghoon): topmost=True면 작업 중 창을 항상 위에 둔다(메시 재생성
-        처럼 짧고 블로킹인 작업용 — 캔버스 redraw가 메인 창을 앞으로 올려도 가려지지
-        않게). 긴 작업(solve)은 기존대로 topmost=False(최소화 가능)."""
+        v28.17 (Seunghoon): topmost=True면 작업 중 창을 항상 위에 둔다(캔버스 redraw가
+        메인 창을 앞으로 올려도 가려지지 않게).
+        v28.29 (사용자 요청): 기본값을 topmost=True로 변경 — Compare/Sweep/Contour 등
+        모든 실행 로딩창이 맨 위에 뜨게. 사용자가 직접 최소화하면 내려간다(Unmap 시
+        topmost 해제). 굳이 안 띄우려면 호출부에서 topmost=False 지정."""
         # Close any existing popup
         if hasattr(self, '_prog_win') and self._prog_win:
             try: self._prog_win.destroy()
