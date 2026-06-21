@@ -81,6 +81,26 @@ V,J
 
 ---
 
+## 앱으로 배포 (standalone, 파이썬 불필요)
+
+파이썬 설치 없이 더블클릭으로 쓰는 단독 실행 앱을 빌드합니다 (PyInstaller).
+
+```bash
+# 1회: 빌드 도구 설치
+python3.12 -m pip install --break-system-packages pyinstaller
+
+# 빌드
+./build_app.command          # macOS (Finder에서 더블클릭도 가능)
+```
+
+- 결과물: **`dist/2L-FEST PRO.app`** (macOS, ~125 MB) / Windows에서 실행 시 `dist/2L-FEST PRO/2L-FEST PRO.exe`
+- 런타임 의존성(numpy/scipy/matplotlib/customtkinter/ezdxf)이 설치된 환경에서 빌드해야 합니다.
+- **OS별 빌드**: macOS 앱은 macOS에서, Windows exe는 Windows에서 각각 빌드 (크로스 빌드 불가).
+- 미서명 빌드라 첫 실행 시: macOS는 **우클릭 → 열기**, Windows는 SmartScreen **추가 정보 → 실행**.
+- 빌드 산출물(`build/`, `dist/`, `*.spec`)은 git에서 제외됩니다.
+
+---
+
 ## 검증 스크립트
 
 | 파일 | 용도 |
