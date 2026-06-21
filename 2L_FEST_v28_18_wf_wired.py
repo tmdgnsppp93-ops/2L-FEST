@@ -22,6 +22,10 @@ v28.20: [fix] CSV 내보내기 0바이트 버그 수정 — utf-8-sig 인코딩 
 v28.21: [ui] 재결합접합 저항 라벨 명확화 — "Rc Junction ↕/Rs Junction ↔" →
          "Recomb.J Contact↕"(수직 접촉저항, Ω·cm²) / "Recomb.J Sheet↔"(수평 면저항,
          Ω/sq). 입력란/배선은 기존과 동일(tb_diode[5]/[6] → DP.Rc_junction/Rs_junction)
+v28.22: [+] 후면 접촉저항 rc_rear 독립 입력 — 기존엔 앞/뒤가 같은 rc를 공유했으나
+         실제 셀·Griddler처럼 앞면과 후면 접촉 비저항을 따로 줄 수 있게 함. REAR 카드에
+         "rc_rear (L4)" 입력란 추가(mΩ·cm², 빈칸=앞면 rc). DP.rc_rear=None이면 앞면 rc로
+         폴백해 기존 결과와 비트 동일. bifacial 모드에서만 의미.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -120,7 +124,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.21",
+    "version": "v28.22",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -1106,6 +1110,13 @@ class DiodeParams:
     #     IZO ~15-80, BSF ~50-200 Ω/sq. Set ~0 for ideal equipotential rear.
     Rs_rear_tco = 50.0
     Rs_rear = 0.5  # deprecated
+
+    # Rear metal–semiconductor contact resistivity [Ohm·cm²].
+    # Real cells differ front vs rear (different doping polarity / paste /
+    # process); Griddler likewise takes front & rear contact resistivity
+    # independently. None = fall back to the front rc (bit-identical to the
+    # legacy single-rc behavior when left unset). Set >0 to decouple the rear.
+    rc_rear = None
 
     # Rear metal sheet R (박사님 2026.05.21: hot pressing 전면만, 후면 baseline).
     # 13.22 = 13.22 μΩ·cm × 10 μm = hot-pressing BEFORE state. 0 = auto from rm/hf.
@@ -3257,6 +3268,10 @@ class FESTSolver:
         #   Gc = na·mf/rc 가 inf를 만든다. 1e-12 Ω·cm²로 클램프 — 물리적으로
         #   존재하는 어떤 접촉보다도 작아서 수치상 이상 접촉과 동등하다.
         rc = max(float(rc), 1e-12)
+        # v28.22: rear contact resistivity — independent rear value if dp.rc_rear
+        # is set (>0), else fall back to the front rc (legacy bit-identical).
+        _rc_rear = getattr(dp, 'rc_rear', None)
+        rc_rear = rc if (_rc_rear is None or float(_rc_rear) <= 0) else max(float(_rc_rear), 1e-12)
         # v28.18 (wf_wired): 케이스별 버스바 폭. solve()/calc_iv()/losses()
         #   진입점에서 설정; None -> 설계(Before) 폭.
         wb_case = self._case_wb if self._case_wb is not None else self.geo.w_b
@@ -3279,7 +3294,7 @@ class FESTSolver:
                    id(dp.spatial_j02) if dp.spatial_j02 is not None else 0,
                    id(dp.spatial_gen) if dp.spatial_gen is not None else 0,
                    id(dp.spatial_rc)  if dp.spatial_rc  is not None else 0)
-        h = (rm, hf, wf, wb_case, rc, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
+        h = (rm, hf, wf, wb_case, rc, rc_rear, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
         if self._cache_hash == h:
             return
         self._cache_hash = h
@@ -3316,7 +3331,7 @@ class FESTSolver:
             rw_b = self.geo.rear.w_b if self.geo.rear else 0.05
             if np.any(self.isrm):
                 _gc_peak_rear = float(np.max(
-                    self._na[self.isrm] * self.rear_metal_frac[self.isrm])) / rc
+                    self._na[self.isrm] * self.rear_metal_frac[self.isrm])) / rc_rear
             else:
                 _gc_peak_rear = 0.0
             self._Krm = assemble_K_met_1d(
@@ -3325,17 +3340,17 @@ class FESTSolver:
                 fg_y=self.geo.rear_fg_y, bb_x=self.geo.rear_bb_x,
                 band_w_f=rw_f, band_w_b=rw_b)
 
-            # Rear contact conductance: rear metal -> rear emitter
-            # Same rc as front (same process). ASM-2 fix: weight by the
-            # continuous rear_metal_frac exactly as the front path weights by
-            # metal_frac (L3252). Previously this used binary isrm (=1.0), which
-            # at partial-coverage edge nodes overstates Gc_rear → understates
-            # rear contact resistance and overstiffens the rear coupling in
-            # bifacial/patterned mode. rear_metal_frac is the area-weighted
-            # mirror of the front metal_frac (computed at L2985).
+            # Rear contact conductance: rear metal -> rear emitter.
+            # v28.22: uses rc_rear (independent rear contact resistivity if set,
+            # else front rc). ASM-2 fix: weight by the continuous rear_metal_frac
+            # exactly as the front path weights by metal_frac (L3252). Previously
+            # this used binary isrm (=1.0), which at partial-coverage edge nodes
+            # overstates Gc_rear → understates rear contact resistance and
+            # overstiffens the rear coupling in bifacial/patterned mode.
+            # rear_metal_frac is the area-weighted mirror of the front metal_frac.
             self._Gc_rear = np.zeros(self.N)
             self._Gc_rear[self.isrm] = (
-                self._na[self.isrm] * self.rear_metal_frac[self.isrm] / rc)
+                self._na[self.isrm] * self.rear_metal_frac[self.isrm] / rc_rear)
 
             # Cache rear metal row data
             self._Krm_rows = []
@@ -7787,6 +7802,20 @@ class FESTProApp(ctk.CTk):
         ctk.CTkLabel(rs_tco_row, text="Ω/sq", font=ctk.CTkFont(size=8),
                      text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
 
+        # rc_rear (L4 rear metal–semiconductor contact resistivity) — USER-EDITABLE
+        # Blank = same as front rc (legacy). Real cells / Griddler allow front≠rear.
+        rc_rear_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
+        rc_rear_row.pack(fill="x"); rc_rear_row.pack_propagate(False)
+        ctk.CTkLabel(rc_rear_row, text="rc_rear (L4)", font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                           fg_color="white", border_color=CLR_CARD_BD,
+                           corner_radius=4, justify="center",
+                           placeholder_text="=front")
+        self._rc_rear_entry.pack(side="left", padx=2, pady=1)
+        ctk.CTkLabel(rc_rear_row, text="mOhm.cm2", font=ctk.CTkFont(size=8),
+                     text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
+
         # Rear H-pattern inputs (visible only in patterned/bifacial mode)
         # bifacial-focused per Dr. Kim directive
         # Default: denser than front (rear cares less about shading)
@@ -9207,6 +9236,25 @@ class FESTProApp(ctk.CTk):
                         DP.Rs_rear_tco = rs_tco_val
             except ValueError as e:
                 self._status(f"Rs_rear_tco parse error: {e}")
+                return False
+            except AttributeError:
+                pass
+
+            # rc_rear (L4 rear metal contact resistivity, mOhm·cm² -> Ohm·cm²).
+            # Blank = use the front rc (DP.rc_rear = None, legacy-identical).
+            try:
+                rc_rear_str = self._rc_rear_entry.get().strip()
+                if rc_rear_str:
+                    rc_rear_val = _parse_gui_float(rc_rear_str, "rc_rear")
+                    if rc_rear_val < 0 or rc_rear_val > 1e4:
+                        self._status("rc_rear out of range (0~10000 mOhm.cm2), using front rc.")
+                        DP.rc_rear = None
+                    else:
+                        DP.rc_rear = rc_rear_val * 1e-3
+                else:
+                    DP.rc_rear = None
+            except ValueError as e:
+                self._status(f"rc_rear parse error: {e}")
                 return False
             except AttributeError:
                 pass
