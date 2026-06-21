@@ -19,6 +19,9 @@ v28.20: [fix] CSV 내보내기 0바이트 버그 수정 — utf-8-sig 인코딩 
         [fix] 모델 설명(_tab_model) 탭 크래시 수정 — INDEX 라벨이 비BMP 이모지를
          lone surrogate 쌍으로 담고 있어 Tk가 "surrogates not allowed"로 죽던 문제.
          BMP 안전 텍스트로 교체 (Windows/macOS 공통)
+v28.21: [ui] 재결합접합 저항 라벨 명확화 — "Rc Junction ↕/Rs Junction ↔" →
+         "Recomb.J Contact↕"(수직 접촉저항, Ω·cm²) / "Recomb.J Sheet↔"(수평 면저항,
+         Ω/sq). 입력란/배선은 기존과 동일(tb_diode[5]/[6] → DP.Rc_junction/Rs_junction)
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -117,7 +120,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.20",
+    "version": "v28.21",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -7515,8 +7518,8 @@ class FESTProApp(ctk.CTk):
             ("n1 Bot (Si)", f"{DP.n1_bot:.1f}", ""),
             (_t('n2_bot'), f"{DP.n2_bot:.1f}", ""),
             ("LC Coupling", "0.0e+00", "A/cm2"),
-            ("Rc Junction ↕", f"{DP.Rc_junction:.2f}", "Ohm.cm2"),
-            ("Rs Junction ↔", f"{DP.Rs_junction:.1f}", "Ohm/sq"),
+            ("Recomb.J Contact↕", f"{DP.Rc_junction:.2f}", "Ohm.cm2"),
+            ("Recomb.J Sheet↔", f"{DP.Rs_junction:.1f}", "Ohm/sq"),
         ])
         self._card_headers.append(hdr_d)
 
