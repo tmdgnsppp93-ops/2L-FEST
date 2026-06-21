@@ -38,6 +38,10 @@ v28.25: [ui] 나머지 저항 라벨에도 방향 화살표 추가 — 앞면 "C
 v28.26: [ui] 기호 정정 — 접촉저항은 단위가 Ω·cm²(비저항 ρc)이므로 R이 아니라 ρ로 표기.
          "Contact R ↕"→"Contact ρ ↕"(KR 접촉 비저항), "Rear Contact R ↕"→"Rear Contact ρ ↕".
          규칙: resistivity(Ω·cm, Ω·cm² 접촉)=ρ / resistance(Ω/sq sheet, Ω·cm² 직렬 Rs)=R.
+v28.27: [hardening] DXF 임포트 견고화 — (1) 회전/비축정렬 금속 도형 감지 후 경고
+         (이전엔 bbox로 조용히 잘못 임포트), (2) 퇴화(0폭) 도형(LINE/납작한 폴리라인)
+         자동 제외+경고, (3) 셀 크기 비정상(<1mm/>1000mm) 단위오류 경고. 정상
+         축정렬 입력은 결과 불변(비트 동일).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -136,7 +140,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.26",
+    "version": "v28.27",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -2332,7 +2336,12 @@ class DxfGrid:
 
 
 def _entity_rect(e):
-    """LWPOLYLINE/POLYLINE/LINE -> (x0,y0,x1,y1) bbox. 곡선은 flattening."""
+    """LWPOLYLINE/POLYLINE/LINE -> (x0,y0,x1,y1,skewed) bbox. 곡선은 flattening.
+
+    skewed=True 면 폴리라인이 축정렬 직사각형이 아니라 회전/비스듬(또는 다각형)
+    이라는 뜻 — 이 경우 bbox 는 실제 폭/면적을 과대평가하므로 호출부가 경고한다.
+    (하드닝 v28.27: 이전엔 회전 도형도 조용히 bbox 로 임포트했음)
+    """
     t = e.dxftype()
     if t == "LWPOLYLINE":
         try:
@@ -2351,7 +2360,18 @@ def _entity_rect(e):
     if len(pts) < 2:
         return None
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-    return min(xs), min(ys), max(xs), max(ys)
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    # Axis-aligned check: every edge must be (near-)horizontal or (near-)vertical.
+    # A diagonal edge means the shape is rotated/non-rectangular -> bbox is wrong.
+    span = max(x1 - x0, y1 - y0, 1e-12)
+    tol = span * 0.02
+    skewed = False
+    for i in range(len(pts) - 1):
+        dx = abs(pts[i + 1][0] - pts[i][0]); dy = abs(pts[i + 1][1] - pts[i][1])
+        if dx > tol and dy > tol:
+            skewed = True
+            break
+    return x0, y0, x1, y1, skewed
 
 
 def load_dxf_grid(path: str, force_unit: str | None = None,
@@ -2382,6 +2402,7 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
     # --- 엔티티 수집 (블록 재귀) ---
     raw = {"cell": [], "finger": [], "busbar": [], "contact_circle": [], "contact_poly": []}
     unmatched = {}
+    skew_n = [0]   # count of rotated/non-axis-aligned metal shapes (bbox over-reports)
 
     def handle(e):
         cat = _classify_layer(e.dxf.layer or "0", extra_layer_map)
@@ -2397,11 +2418,13 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
             else:
                 r = _entity_rect(e)
                 if r:
-                    raw["contact_poly"].append(r)
+                    raw["contact_poly"].append(r[:4])
             return
         r = _entity_rect(e)
         if r:
-            raw[cat].append(r)
+            if r[4] and cat in ("finger", "busbar"):
+                skew_n[0] += 1
+            raw[cat].append(r[:4])
 
     def walk(ents, depth=0):
         if depth > 8:
@@ -2437,8 +2460,19 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
     def to_rect(b):
         return ((b[0]-ox)*scale, (b[1]-oy)*scale, (b[2]-b[0])*scale, (b[3]-b[1])*scale)
 
-    g.finger_rects = [to_rect(b) for b in raw["finger"]]
-    g.busbar_rects = [to_rect(b) for b in raw["busbar"]]
+    # Hardening v28.27: drop degenerate (zero-width) rects — a LINE or a flat
+    # polyline yields rw==0 or rh==0, which would add a zero-area "finger" and
+    # can break the 1D metal graph. Filter and report them.
+    def _drop_degenerate(rects):
+        good = []; bad = 0
+        for r in rects:
+            if r[2] > 1e-9 and r[3] > 1e-9:   # rw, rh in cm
+                good.append(r)
+            else:
+                bad += 1
+        return good, bad
+    g.finger_rects, f_bad = _drop_degenerate([to_rect(b) for b in raw["finger"]])
+    g.busbar_rects, b_bad = _drop_degenerate([to_rect(b) for b in raw["busbar"]])
     g.terminals = [((cx-ox)*scale, (cy-oy)*scale) for (cx, cy, _r) in raw["contact_circle"]]
     for b in raw["contact_poly"]:
         rx, ry, rw, rh = to_rect(b)
@@ -2450,6 +2484,16 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
         warnings.append("busbar 레이어 도형 없음")
     if not g.terminals:
         warnings.append("contact(probe) 없음 -> 솔버에 단자 없음. busbar 위에 점/원 1개 필요.")
+    # Hardening v28.27: rotated/non-axis-aligned shapes, degenerate drops, and a
+    # cell-size sanity check (catches unit errors the shading check can miss).
+    if skew_n[0]:
+        warnings.append(f"회전/비축정렬 금속 도형 {skew_n[0]}개 -> bbox 근사(폭·면적 과대평가 가능). "
+                        "축정렬 사각형 권장.")
+    if f_bad or b_bad:
+        warnings.append(f"퇴화(0폭) 금속 도형 {f_bad+b_bad}개 제외(LINE/납작한 폴리라인).")
+    _cell_mm = max(g.W, g.H) * 10.0
+    if _cell_mm < 1.0 or _cell_mm > 1000.0:
+        warnings.append(f"셀 크기 {g.W*10:.3f}x{g.H*10:.3f} mm 비정상 -> 단위 확인(force_unit='mm' 등) 필요.")
 
     g.report = {
         "unit": uname, "unit_assumed": assumed if not force_unit else False,
