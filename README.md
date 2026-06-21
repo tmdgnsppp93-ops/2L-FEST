@@ -83,19 +83,30 @@ V,J
 
 ## 앱으로 배포 (standalone, 파이썬 불필요)
 
-파이썬 설치 없이 더블클릭으로 쓰는 단독 실행 앱을 빌드합니다 (PyInstaller).
+파이썬 설치 없이 더블클릭으로 쓰는 단독 실행 앱을 만듭니다 (PyInstaller).
+
+> ⚠️ **하나의 파일로 Mac+Windows 둘 다는 불가능합니다.** PyInstaller는 각 OS의
+> 네이티브 바이너리를 만들기 때문에 **Mac 앱은 macOS에서, Windows exe는 Windows에서**
+> 각각 빌드해야 합니다 (크로스 컴파일 불가 — 모든 파이썬 패키저 공통).
+
+### 방법 A — GitHub Actions로 둘 다 자동 빌드 (Windows PC 불필요, 권장)
+
+`.github/workflows/build-apps.yml` 가 **macOS·Windows 러너에서 동시에** 빌드합니다.
+
+1. GitHub 저장소 **Actions** 탭 → "Build apps (macOS + Windows)" → **Run workflow**
+   (또는 `vXX` 태그 push 시 자동 실행)
+2. 끝나면 **Artifacts** 에서 `2L-FEST-PRO-macOS`, `2L-FEST-PRO-Windows` 각각 다운로드.
+
+### 방법 B — 각 OS에서 직접 빌드
 
 ```bash
-# 1회: 빌드 도구 설치
-python3.12 -m pip install --break-system-packages pyinstaller
+# 1회: 의존성 + 빌드도구
+pip install numpy scipy matplotlib customtkinter ezdxf pyinstaller
 
-# 빌드
-./build_app.command          # macOS (Finder에서 더블클릭도 가능)
+./build_app.command     # macOS  -> dist/"2L-FEST PRO.app"  (~125 MB)
+build_app.bat           # Windows -> dist\"2L-FEST PRO"\"2L-FEST PRO.exe"
 ```
 
-- 결과물: **`dist/2L-FEST PRO.app`** (macOS, ~125 MB) / Windows에서 실행 시 `dist/2L-FEST PRO/2L-FEST PRO.exe`
-- 런타임 의존성(numpy/scipy/matplotlib/customtkinter/ezdxf)이 설치된 환경에서 빌드해야 합니다.
-- **OS별 빌드**: macOS 앱은 macOS에서, Windows exe는 Windows에서 각각 빌드 (크로스 빌드 불가).
 - 미서명 빌드라 첫 실행 시: macOS는 **우클릭 → 열기**, Windows는 SmartScreen **추가 정보 → 실행**.
 - 빌드 산출물(`build/`, `dist/`, `*.spec`)은 git에서 제외됩니다.
 
