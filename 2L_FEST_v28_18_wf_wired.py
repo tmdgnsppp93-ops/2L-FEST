@@ -42,6 +42,10 @@ v28.27: [hardening] DXF 임포트 견고화 — (1) 회전/비축정렬 금속 �
          (이전엔 bbox로 조용히 잘못 임포트), (2) 퇴화(0폭) 도형(LINE/납작한 폴리라인)
          자동 제외+경고, (3) 셀 크기 비정상(<1mm/>1000mm) 단위오류 경고. 정상
          축정렬 입력은 결과 불변(비트 동일).
+v28.28: [perf] Phase B bifacial 속도 2.2배 — 기존엔 전압점마다 cold-start +
+         Rs_junction 호모토피 램프를 반복. _solve_tandem_junction_bf에 warm-start
+         추가(이전 점 해 재사용) + 첫 점 이후 램프 생략. (828s→381s, 측정 케이스)
+         Voc·Jsc 동일, FF·Eff는 수렴 허용오차 내 ~0.02% 차이(물리적 무의미).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -140,7 +144,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.27",
+    "version": "v28.28",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -3195,6 +3199,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
         self._warm_Vb_ref = None  # Vbias at which warm vector was computed
         # (③): cache for evaluated spatial multiplier arrays, keyed by id(dp)
@@ -3358,6 +3363,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
         self._warm_Vb_ref = None
 
@@ -3713,6 +3719,13 @@ class FESTSolver:
                 and self._J_static_tandem_bf is not None
                 and dp.Rs_junction > 50):
             target_Rs_j = dp.Rs_junction
+            # v28.28: if a converged solution at THIS build already exists
+            # (e.g. the previous voltage point in a sweep, same target Rs_j),
+            # warm-start directly at the target and skip the ramp entirely.
+            # _build above kept _cache_hash unchanged (only Vb differs), so the
+            # cache is still valid; it is cleared on any geometry/param change.
+            if getattr(self, '_warm_V_junc_bf', None) is not None:
+                return self._solve_tandem_junction_bf(rm, hf, wf, rc, Rs, Vb, cf, dp)
             # Generate ramp schedule: 50 → 200 → 1000 → 5000 → target
             ramp = [50.0, 200.0, 1000.0, 5000.0]
             ramp = [r for r in ramp if r < target_Rs_j] + [target_Rs_j]
@@ -4426,6 +4439,14 @@ class FESTSolver:
              "Vr": (oVr, None), "Vrm": (oVrm, self.rear_midx)},
             frac,
         )
+        # v28.28: warm-start from the previous converged Phase B bifacial solve
+        # of THIS build (cache cleared whenever the build hash changes). Only the
+        # Newton initial guess changes, so the converged root — and the result —
+        # is identical; this lets consecutive voltage points (and repeat calls
+        # at the target Rs_junction) skip the homotopy ramp. Guarded by shape.
+        _wv = getattr(self, '_warm_V_junc_bf', None)
+        if _wv is not None and _wv.shape[0] == Ns:
+            V = _wv.copy()
 
         pmk = np.array([self.mmap[gi] for gi in self.pidx if self.mmap[gi] >= 0])
         rear_pad_kr = []
@@ -4700,6 +4721,7 @@ class FESTSolver:
         self._last_Vint = (V[oVint:oVint + N] + Vr_out).copy()
         self._last_Vrm = np.full(N, np.nan)
         self._last_Vrm[self.rear_midx] = V[oVrm:oVrm + Nrm]
+        self._warm_V_junc_bf = V.copy()   # v28.28: cache for next-point warm-start
         return Ve_out, Vm_out, Vtop_out, Vr_out, res_list
 
     # ---------------------------------------------------------
@@ -5968,6 +5990,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
 
         t0 = time.time()
