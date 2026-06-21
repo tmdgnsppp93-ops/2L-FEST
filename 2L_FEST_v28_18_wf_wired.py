@@ -26,6 +26,9 @@ v28.22: [+] 후면 접촉저항 rc_rear 독립 입력 — 기존엔 앞/뒤가 �
          실제 셀·Griddler처럼 앞면과 후면 접촉 비저항을 따로 줄 수 있게 함. REAR 카드에
          "rc_rear (L4)" 입력란 추가(mΩ·cm², 빈칸=앞면 rc). DP.rc_rear=None이면 앞면 rc로
          폴백해 기존 결과와 비트 동일. bifacial 모드에서만 의미.
+v28.23: [ui] Rs_junction(Phase B) 입력 시 뜨던 "결과 신뢰성 점검 필요" 안내 배너 및
+         상태바 cross-validation 안내 메시지 제거(사용자 요청). FF/Recomb/수렴 등
+         실제 물리 health 경고는 그대로 유지.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -124,7 +127,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.22",
+    "version": "v28.23",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -9291,13 +9294,6 @@ class FESTProApp(ctk.CTk):
                         DP.Rs_junction = 0.0
                     else:
                         DP.Rs_junction = rs_val
-                        if DP.Rs_junction > 0:
-                            self._status(
-                                "Phase B Rs_junction enabled: Griddler-style interlayer "
-                                "FEM is active; direct Griddler PRO cross-validation "
-                                "is required for absolute equivalence. ~23 mV Voc "
-                                "offset vs Phase A — use relative Delta, not absolute."
-                            )
                 else:
                     DP.Rs_junction = 0.0
             except (ValueError, IndexError) as e:
@@ -10300,12 +10296,9 @@ class FESTProApp(ctk.CTk):
             warnings.append(f"⚠ Recomb AFTER={Prec_a:.1f} mW/cm² (비정상)")
         if iv_b['Eff'] < 15:
             warnings.append(f"⚠ BEFORE PCE={iv_b['Eff']:.1f}% (Tandem 표준 미달)")
-        if model_note_active:
-            warnings.append(
-                "Phase B Rs_junction uses Griddler-style interlayer FEM; "
-                "direct PRO cross-validation is required for absolute equivalence "
-                "(~23 mV Voc offset vs Phase A — relative Delta is preserved)"
-            )
+        # v28.23: Phase B(Rs_junction) 사용 시 띄우던 "신뢰성 점검 필요" 안내 배너
+        # 메시지는 사용자 요청으로 제거(상태바 안내도 함께 제거). 실제 수렴/FF/재결합
+        # 등 물리적 health 경고는 아래에서 그대로 유지된다.
 
         def _non_model_health_message(health):
             msg = str(health.get('message', ''))
