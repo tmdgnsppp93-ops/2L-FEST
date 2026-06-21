@@ -32,6 +32,9 @@ v28.23: [ui] Rs_junction(Phase B) 입력 시 뜨던 "결과 신뢰성 점검 필
 v28.24: [ui] REAR 카드 라벨 명확화 — "Rs_rear TCO (L3)" → "Rear Sheet R ↔"(수평
          면저항, Ω/sq), "rc_rear (L4)" → "Rear Contact R ↕"(수직 접촉저항, mΩ·cm²).
          방향 화살표로 횡/종 구분(Recomb.J 라벨과 스타일 통일). 배선/단위는 동일.
+v28.25: [ui] 나머지 저항 라벨에도 방향 화살표 추가 — 앞면 "Contact R ↕"(수직),
+         "TCO Sheet R ↔"(수평), "Bulk ρ ↔"(핑거 횡전도); 셀 내부 "Rs lumped Top/Bot ↕"
+         (수직). 후면·재결합접합 라벨과 스타일 통일. Rsh(shunt)는 병렬 누설경로라 제외.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -130,7 +133,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.24",
+    "version": "v28.25",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -344,13 +347,13 @@ _TR = {
     'before': {'EN': 'BEFORE', 'KR': '프레싱 전'},
     'after': {'EN': 'AFTER', 'KR': '프레싱 후'},
     'grid_design': {'EN': 'GRID DESIGN', 'KR': '그리드 설계'},
-    'bulk_res': {'EN': 'Bulk Resistivity', 'KR': '벌크 비저항'},
+    'bulk_res': {'EN': 'Bulk ρ ↔', 'KR': '벌크 비저항 ↔'},
     'finger_h': {'EN': 'Finger Height', 'KR': '핑거 높이'},
     'finger_w': {'EN': 'Finger Width', 'KR': '핑거 폭'},
     'shape_cf': {'EN': 'Shape CF', 'KR': '형상 계수'},
-    'contact_res': {'EN': 'Contact Resistivity', 'KR': '접촉 비저항'},
+    'contact_res': {'EN': 'Contact R ↕', 'KR': '접촉저항 ↕'},
     'busbar_w': {'EN': 'Busbar Width', 'KR': '버스바 폭'},
-    'tco_rsheet': {'EN': 'TCO R_sheet', 'KR': 'TCO 면저항'},
+    'tco_rsheet': {'EN': 'TCO Sheet R ↔', 'KR': 'TCO 면저항 ↔'},
     'cell_w': {'EN': 'Cell Width', 'KR': '셀 폭'},
     'cell_h': {'EN': 'Cell Height', 'KR': '셀 높이'},
     'n_fingers': {'EN': 'N Fingers', 'KR': '핑거 수'},
@@ -7554,7 +7557,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Top pass", f"{DP.J02_top_pass:.2e}", "A/cm2"),
                 ("J02 Top metal", f"{DP.J02_top_metal:.2e}", "A/cm2"),
                 ("Rsh Top", f"{DP.Rsh_top:.0f}", "Ohm.cm2"),
-                ("Rs lumped Top", f"{DP.Rs_lumped_top:.2f}", "Ohm.cm2"),
+                ("Rs lumped Top ↕", f"{DP.Rs_lumped_top:.2f}", "Ohm.cm2"),
             ])
         self._card_headers.append(hdr_dt)
 
@@ -7568,7 +7571,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Bot pass",  f"{DP.J02_bot_pass:.2e}",   "A/cm2"),
                 ("J02 Bot metal", f"{DP.J02_bot_metal:.2e}",  "A/cm2"),
                 ("Rsh Bot",       f"{DP.Rsh_bot:.0f}",        "Ohm.cm2"),
-                ("Rs lumped Bot", f"{DP.Rs_lumped_bot:.2f}",  "Ohm.cm2"),
+                ("Rs lumped Bot ↕", f"{DP.Rs_lumped_bot:.2f}",  "Ohm.cm2"),
             ])
         self._card_headers.append(hdr_db)
         # === END v28.1 diode GUI addition ===
