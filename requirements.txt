@@ -1,0 +1,13 @@
+# 2L-FEST PRO — runtime dependencies
+# Python >= 3.10 필수 (PEP 604 `X | None` 타입힌트 사용; 3.9에서는 임포트 실패)
+# 검증 환경: Python 3.12
+# 설치:  pip install -r requirements.txt
+
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+customtkinter>=5.2
+
+# --- 선택적 의존성 (Optional) ---
+# DXF 그리드 도면 가져오기/내보내기 기능 사용 시에만 필요
+ezdxf>=1.0

@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+_validate_*_out.txt
+
+# PyInstaller build artifacts (regenerate with build_app.command)
+build/
+dist/
+*.spec

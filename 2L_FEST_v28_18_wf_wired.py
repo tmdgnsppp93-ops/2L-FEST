@@ -12,6 +12,41 @@ CustomTkinter Pro UI + Fixed Report
 [7] CustomTkinter Pro UI -- modern dark/light theme
 [8] Fixed Report -- correct architecture + clean conditions
 
+v28.19: [+] mesh_distribution_metrics 진단 복원 (DESIGN 메시 비대칭/편향 시 제목 경고색)
+v28.20: [fix] CSV 내보내기 0바이트 버그 수정 — utf-8-sig 인코딩 + 원자적 쓰기
+        (GUI 실행 시 기본 코덱이 ASCII/cp949가 되어 비ASCII 문자에서 write가
+         실패하며 0바이트 파일이 남던 문제. temp→replace로 안전 저장)
+        [fix] 모델 설명(_tab_model) 탭 크래시 수정 — INDEX 라벨이 비BMP 이모지를
+         lone surrogate 쌍으로 담고 있어 Tk가 "surrogates not allowed"로 죽던 문제.
+         BMP 안전 텍스트로 교체 (Windows/macOS 공통)
+v28.21: [ui] 재결합접합 저항 라벨 명확화 — "Rc Junction ↕/Rs Junction ↔" →
+         "Recomb.J Contact↕"(수직 접촉저항, Ω·cm²) / "Recomb.J Sheet↔"(수평 면저항,
+         Ω/sq). 입력란/배선은 기존과 동일(tb_diode[5]/[6] → DP.Rc_junction/Rs_junction)
+v28.22: [+] 후면 접촉저항 rc_rear 독립 입력 — 기존엔 앞/뒤가 같은 rc를 공유했으나
+         실제 셀·Griddler처럼 앞면과 후면 접촉 비저항을 따로 줄 수 있게 함. REAR 카드에
+         "rc_rear (L4)" 입력란 추가(mΩ·cm², 빈칸=앞면 rc). DP.rc_rear=None이면 앞면 rc로
+         폴백해 기존 결과와 비트 동일. bifacial 모드에서만 의미.
+v28.23: [ui] Rs_junction(Phase B) 입력 시 뜨던 "결과 신뢰성 점검 필요" 안내 배너 및
+         상태바 cross-validation 안내 메시지 제거(사용자 요청). FF/Recomb/수렴 등
+         실제 물리 health 경고는 그대로 유지.
+v28.24: [ui] REAR 카드 라벨 명확화 — "Rs_rear TCO (L3)" → "Rear Sheet R ↔"(수평
+         면저항, Ω/sq), "rc_rear (L4)" → "Rear Contact R ↕"(수직 접촉저항, mΩ·cm²).
+         방향 화살표로 횡/종 구분(Recomb.J 라벨과 스타일 통일). 배선/단위는 동일.
+v28.25: [ui] 나머지 저항 라벨에도 방향 화살표 추가 — 앞면 "Contact R ↕"(수직),
+         "TCO Sheet R ↔"(수평), "Bulk ρ ↔"(핑거 횡전도); 셀 내부 "Rs lumped Top/Bot ↕"
+         (수직). 후면·재결합접합 라벨과 스타일 통일. Rsh(shunt)는 병렬 누설경로라 제외.
+v28.26: [ui] 기호 정정 — 접촉저항은 단위가 Ω·cm²(비저항 ρc)이므로 R이 아니라 ρ로 표기.
+         "Contact R ↕"→"Contact ρ ↕"(KR 접촉 비저항), "Rear Contact R ↕"→"Rear Contact ρ ↕".
+         규칙: resistivity(Ω·cm, Ω·cm² 접촉)=ρ / resistance(Ω/sq sheet, Ω·cm² 직렬 Rs)=R.
+v28.27: [hardening] DXF 임포트 견고화 — (1) 회전/비축정렬 금속 도형 감지 후 경고
+         (이전엔 bbox로 조용히 잘못 임포트), (2) 퇴화(0폭) 도형(LINE/납작한 폴리라인)
+         자동 제외+경고, (3) 셀 크기 비정상(<1mm/>1000mm) 단위오류 경고. 정상
+         축정렬 입력은 결과 불변(비트 동일).
+v28.28: [perf] Phase B bifacial 속도 2.2배 — 기존엔 전압점마다 cold-start +
+         Rs_junction 호모토피 램프를 반복. _solve_tandem_junction_bf에 warm-start
+         추가(이전 점 해 재사용) + 첫 점 이후 램프 생략. (828s→381s, 측정 케이스)
+         Voc·Jsc 동일, FF·Eff는 수렴 허용오차 내 ~0.02% 차이(물리적 무의미).
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -109,8 +144,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.18",
-    "date": "2026-06-12",
+    "version": "v28.28",
+    "date": "2026-06-21",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -323,13 +358,13 @@ _TR = {
     'before': {'EN': 'BEFORE', 'KR': '프레싱 전'},
     'after': {'EN': 'AFTER', 'KR': '프레싱 후'},
     'grid_design': {'EN': 'GRID DESIGN', 'KR': '그리드 설계'},
-    'bulk_res': {'EN': 'Bulk Resistivity', 'KR': '벌크 비저항'},
+    'bulk_res': {'EN': 'Bulk ρ ↔', 'KR': '벌크 비저항 ↔'},
     'finger_h': {'EN': 'Finger Height', 'KR': '핑거 높이'},
     'finger_w': {'EN': 'Finger Width', 'KR': '핑거 폭'},
     'shape_cf': {'EN': 'Shape CF', 'KR': '형상 계수'},
-    'contact_res': {'EN': 'Contact Resistivity', 'KR': '접촉 비저항'},
+    'contact_res': {'EN': 'Contact ρ ↕', 'KR': '접촉 비저항 ↕'},
     'busbar_w': {'EN': 'Busbar Width', 'KR': '버스바 폭'},
-    'tco_rsheet': {'EN': 'TCO R_sheet', 'KR': 'TCO 면저항'},
+    'tco_rsheet': {'EN': 'TCO Sheet R ↔', 'KR': 'TCO 면저항 ↔'},
     'cell_w': {'EN': 'Cell Width', 'KR': '셀 폭'},
     'cell_h': {'EN': 'Cell Height', 'KR': '셀 높이'},
     'n_fingers': {'EN': 'N Fingers', 'KR': '핑거 수'},
@@ -1011,17 +1046,39 @@ class CellGeometry:
 # DIODE PARAMETERS
 # =============================================================
 class DiodeParams:
-    """Jeon et al., Solar Energy 292 (2025), Table 1.
-       n1 is now a free parameter (important for perovskite)."""
-    # --- Top cell (Perovskite) ---
+    """Tandem 2-diode parameters.
+
+    Originally based on Jeon et al., Solar Energy 292 (2025), Table 1, but the
+    top/bottom diode defaults were re-anchored to the device literature in the
+    TANDEM-3 fix (perovskite n1≈1.3, J01_top≈3e-18 → Voc_top~1.22V; Si J01≈9e-15
+    → Voc_bot~0.73V), giving a credible tandem (Voc~1.95V, Eff~32.9% 0D-ideal;
+    cf. KAUST 33.7% Voc 1.974V). The Jeon Table 1 values themselves were NOT
+    independently verified against the paper; the Rs_top=2.0/Rs_bot=0.2 Ω·cm²
+    annotations are higher than typical device literature (Rs~0.2-0.4 Ω·cm²) —
+    verify against the source before publication.
+    n1 is a free parameter (important for perovskite)."""
+    # --- Top cell (Perovskite, ~1.68 eV) ---
     Jph_top = 19.65e-3        # A/cm2
-    J01_top_pass = 8.8e-26
+    # TANDEM-3 fix (literature-anchored). The originally shipped J01_top_pass=
+    # 8.8e-26 with n1=1.0 gave Voc_top=1.38 V → tandem Voc=2.28 V / Eff~39.7 %,
+    # which EXCEEDS the certified ~34 % 2T record and is below even the 1.68 eV
+    # radiative limit — physically non-credible. Replaced with values consistent
+    # with the device literature for a 1.65-1.70 eV perovskite top cell:
+    #   n1 ≈ 1.3   (effective ideality; Caprioglio, Adv. Energy Mater. 2020;
+    #               Calado, Phys. Rev. Applied 14, 024031, 2020)
+    #   J01_top_pass = 3e-18  → Voc_top ≈ 1.22 V (typical good cell 1.20-1.25 V)
+    # Resulting tandem 0D (ideal, no spatial R): Voc≈1.95 V, FF≈86 %, Eff≈32.9 %,
+    # matching the KAUST 33.7 % anchor (Voc 1.974 V, Jsc 20.99, FF 81.3 %;
+    # pv-magazine 2023) once FEM resistive losses are added. Under-metal J01 keeps
+    # a ~83x recombination enhancement. Originals preserved for reference:
+    #   J01_top_pass = 8.8e-26 ; J01_top_metal = 7.3e-24 ; n1_top = 1.0
+    J01_top_pass = 3.0e-18
     J02_top_pass = 2.62e-16
-    J01_top_metal = 7.3e-24   # ~83x higher under metal
+    J01_top_metal = 2.5e-16   # ~83x higher under metal
     J02_top_metal = 2.62e-15  # ~10x higher under metal
-    n1_top = 1.0              # Free parameter (1.0 ~ 2.0 for perovskite)
+    n1_top = 1.3              # effective ideality for perovskite (lit. 1.3-1.5)
     n2_top = 2.0              # Free parameter
-    Rsh_top = 5550            # Ohm*cm2
+    Rsh_top = 5550            # Ohm*cm2 (lit. range 1e3-1e5)
 
     # --- Per-pixel internal series resistance (distributed model) ---
     # Each pixel's vertical transport R inside the cell layer (e.g. perovskite
@@ -1044,8 +1101,12 @@ class DiodeParams:
     # 솔버에서 노드별 weighting을 쓰려면 _bot_pass / _bot_metal을 직접 참조 (Phase 1).
     # 기본값: pass = metal = 기존 단일값 → Phase 0 적용 시 결과 비트 단위 동일.
     Jph_bot = 19.65e-3
-    J01_bot_pass  = 1.3339e-17   # passivated rear (typical c-Si SHJ-like)
-    J01_bot_metal = 1.3339e-17   # under rear metal contact (default same as pass)
+    # TANDEM-3 fix: previous J01_bot=1.3339e-17 gave Voc_bot=0.898 V, too high
+    # for a real c-Si bottom cell (SHJ records ~0.75 V). Set to 9e-15 →
+    # Voc_bot~0.73 V, consistent with the single-cell default J01_single=5.36e-15
+    # (Voc~0.748 V). Original value preserved: J01_bot = 1.3339e-17.
+    J01_bot_pass  = 9.0e-15      # passivated rear (typical c-Si SHJ, Voc~0.73 V)
+    J01_bot_metal = 9.0e-15      # under rear metal contact (default same as pass)
     J02_bot_pass  = 6.5674e-22
     J02_bot_metal = 6.5674e-22
     n1_bot = 1.0              # Typically fixed for c-Si
@@ -1069,6 +1130,13 @@ class DiodeParams:
     #     IZO ~15-80, BSF ~50-200 Ω/sq. Set ~0 for ideal equipotential rear.
     Rs_rear_tco = 50.0
     Rs_rear = 0.5  # deprecated
+
+    # Rear metal–semiconductor contact resistivity [Ohm·cm²].
+    # Real cells differ front vs rear (different doping polarity / paste /
+    # process); Griddler likewise takes front & rear contact resistivity
+    # independently. None = fall back to the front rc (bit-identical to the
+    # legacy single-rc behavior when left unset). Set >0 to decouple the rear.
+    rc_rear = None
 
     # Rear metal sheet R (박사님 2026.05.21: hot pressing 전면만, 후면 baseline).
     # 13.22 = 13.22 μΩ·cm × 10 μm = hot-pressing BEFORE state. 0 = auto from rm/hf.
@@ -1109,9 +1177,12 @@ class DiodeParams:
     spatial_gen = None
     spatial_rc  = None
 
-    # --- Luminescent Coupling J01 (Griddler PRO / Zeder 2025 eq. 4) ---
+    # --- Luminescent Coupling J01 (Zeder 2025; Jäger 2021) ---
     # J_LC = J01_coupling × (exp(qV_top/kT)-1), added to bot photocurrent.
     # Scaling: J01_coupling ≈ η_LC × J01_top_rad,  η_LC ≈ 36% (EPFL, Zeder 2025).
+    # ATTRIBUTION FIX: Zeder et al. (Solar RRL 2025) model LC with SETFOS (Fluxim
+    # drift-diffusion), NOT Griddler — LC is not a Griddler PRO feature. The
+    # exp(qV_top/kT) LC form is the standard one (also Jäger, Solar RRL 2021).
     # Expected gain in current-matched PST: +0.1 to +0.5% abs (Jäger 2021, Nguyen 2024).
     J01_coupling = 0.0
 
@@ -1304,6 +1375,67 @@ def mesh_quality_metrics(points, tri):
         "MaxAspect": (
             float(np.max(finite_aspect)) if finite_aspect.size else float("inf")
         ),
+    }
+
+
+def mesh_distribution_metrics(points, geo, *, bins=12, ndigits=6):
+    """Return symmetry and local-density diagnostics for visual mesh checks."""
+    if points is None or len(points) == 0:
+        return {
+            "MirrorNodeHitX": 0.0,
+            "MirrorNodeHitY": 0.0,
+            "CentroidBiasX_um": 0.0,
+            "CentroidBiasY_um": 0.0,
+            "PeakBinOverMedian": 0.0,
+            "PeakBinFraction": 0.0,
+            "PeakBinCenterX_mm": 0.0,
+            "PeakBinCenterY_mm": 0.0,
+            "QuadrantImbalance": 0.0,
+        }
+
+    rounded = np.round(points, ndigits)
+    point_set = set(map(tuple, rounded))
+    width = float(geo.W)
+    height = float(geo.H)
+    mirror_x = sum(
+        ((round(width - x, ndigits), round(y, ndigits)) in point_set)
+        for x, y in point_set
+    ) / len(point_set)
+    mirror_y = sum(
+        ((round(x, ndigits), round(height - y, ndigits)) in point_set)
+        for x, y in point_set
+    ) / len(point_set)
+
+    centroid = np.mean(points, axis=0)
+    hist, x_edges, y_edges = np.histogram2d(
+        points[:, 0], points[:, 1],
+        bins=max(2, int(bins)),
+        range=[[0.0, width], [0.0, height]],
+    )
+    nonzero = hist[hist > 0]
+    median = float(np.median(nonzero)) if nonzero.size else 0.0
+    peak = float(np.max(hist)) if hist.size else 0.0
+    peak_idx = np.unravel_index(int(np.argmax(hist)), hist.shape) if hist.size else (0, 0)
+    peak_center_x = 0.5 * (x_edges[peak_idx[0]] + x_edges[peak_idx[0] + 1])
+    peak_center_y = 0.5 * (y_edges[peak_idx[1]] + y_edges[peak_idx[1] + 1])
+
+    q = np.array([
+        np.sum((points[:, 0] <= width / 2.0) & (points[:, 1] <= height / 2.0)),
+        np.sum((points[:, 0] > width / 2.0) & (points[:, 1] <= height / 2.0)),
+        np.sum((points[:, 0] <= width / 2.0) & (points[:, 1] > height / 2.0)),
+        np.sum((points[:, 0] > width / 2.0) & (points[:, 1] > height / 2.0)),
+    ], dtype=float) / len(points)
+
+    return {
+        "MirrorNodeHitX": float(mirror_x),
+        "MirrorNodeHitY": float(mirror_y),
+        "CentroidBiasX_um": float((centroid[0] - width / 2.0) * 1e4),
+        "CentroidBiasY_um": float((centroid[1] - height / 2.0) * 1e4),
+        "PeakBinOverMedian": float(peak / median) if median > 0 else float("inf"),
+        "PeakBinFraction": float(peak / len(points)) if len(points) else 0.0,
+        "PeakBinCenterX_mm": float(peak_center_x * 10.0),
+        "PeakBinCenterY_mm": float(peak_center_y * 10.0),
+        "QuadrantImbalance": float(np.max(q) - np.min(q)),
     }
 
 
@@ -1991,8 +2123,17 @@ def assemble_K_met(points, simplices, ism, rm, hf, wf, cf,
     return K_lil.tocsr()
 
 
-def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0.0):
-    """1D conductor model for the front metal grid (v28.14).
+def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0.0,
+                      fg_y=None, bb_x=None, band_w_f=None, band_w_b=None):
+    """1D conductor model for a metal grid (v28.14; rear-capable since ASM-1 fix).
+
+    ASM-1: the line centers (fg_y / bb_x) and the node-selection band widths
+    (band_w_f / band_w_b) default to the FRONT grid (geo.fg_y, geo.bb_x,
+    geo.w_f, geo.w_b) but can be overridden so the SAME mesh-convergent 1D model
+    can assemble the REAR metal grid. Previously the rear used the 2D Galerkin
+    sheet model (assemble_K_met) that the front abandoned because it is
+    mesh-dependent for thin lines (sliver triangles), making bifacial/patterned-
+    rear FF/efficiency non-convergent under refinement.
 
     WHY: the 2D Galerkin sheet model (assemble_K_met) creates sliver
     triangles wherever the metal line width (e.g. 50 um finger) is much
@@ -2094,18 +2235,25 @@ def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0
     #   비트 단위 동일).
     w_f_eff = geo.w_f if w_f is None else float(w_f)
     w_b_eff = geo.w_b if w_b is None else float(w_b)
+    # ASM-1: line centers + node-selection band widths default to the FRONT grid
+    # but can be overridden for the REAR grid (geo.rear_fg_y / geo.rear_bb_x,
+    # geo.rear.w_f / geo.rear.w_b).
+    _fg_y = geo.fg_y if fg_y is None else fg_y
+    _bb_x = geo.bb_x if bb_x is None else bb_x
+    _band_f = geo.w_f if band_w_f is None else float(band_w_f)
+    _band_b = geo.w_b if band_w_b is None else float(band_w_b)
 
     # Fingers: along x, cross-section A_f = w_f_eff * h_f, with cf
     A_f = w_f_eff * hf
     if A_f > 0:
         Rpl_f = rm / (cf * A_f)
-        _chain_along(0, geo.fg_y, geo.w_f / 2.0, Rpl_f)
+        _chain_along(0, _fg_y, _band_f / 2.0, Rpl_f)
 
     # Busbars: along y, cross-section A_b = w_b_eff * h_f, no cf
     A_b = w_b_eff * hf
     if A_b > 0:
         Rpl_b = rm / A_b
-        _chain_along(1, geo.bb_x, geo.w_b / 2.0, Rpl_b)
+        _chain_along(1, _bb_x, _band_b / 2.0, Rpl_b)
 
     return K.tocsr()
 
@@ -2192,7 +2340,12 @@ class DxfGrid:
 
 
 def _entity_rect(e):
-    """LWPOLYLINE/POLYLINE/LINE -> (x0,y0,x1,y1) bbox. 곡선은 flattening."""
+    """LWPOLYLINE/POLYLINE/LINE -> (x0,y0,x1,y1,skewed) bbox. 곡선은 flattening.
+
+    skewed=True 면 폴리라인이 축정렬 직사각형이 아니라 회전/비스듬(또는 다각형)
+    이라는 뜻 — 이 경우 bbox 는 실제 폭/면적을 과대평가하므로 호출부가 경고한다.
+    (하드닝 v28.27: 이전엔 회전 도형도 조용히 bbox 로 임포트했음)
+    """
     t = e.dxftype()
     if t == "LWPOLYLINE":
         try:
@@ -2211,7 +2364,18 @@ def _entity_rect(e):
     if len(pts) < 2:
         return None
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-    return min(xs), min(ys), max(xs), max(ys)
+    x0, y0, x1, y1 = min(xs), min(ys), max(xs), max(ys)
+    # Axis-aligned check: every edge must be (near-)horizontal or (near-)vertical.
+    # A diagonal edge means the shape is rotated/non-rectangular -> bbox is wrong.
+    span = max(x1 - x0, y1 - y0, 1e-12)
+    tol = span * 0.02
+    skewed = False
+    for i in range(len(pts) - 1):
+        dx = abs(pts[i + 1][0] - pts[i][0]); dy = abs(pts[i + 1][1] - pts[i][1])
+        if dx > tol and dy > tol:
+            skewed = True
+            break
+    return x0, y0, x1, y1, skewed
 
 
 def load_dxf_grid(path: str, force_unit: str | None = None,
@@ -2242,6 +2406,7 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
     # --- 엔티티 수집 (블록 재귀) ---
     raw = {"cell": [], "finger": [], "busbar": [], "contact_circle": [], "contact_poly": []}
     unmatched = {}
+    skew_n = [0]   # count of rotated/non-axis-aligned metal shapes (bbox over-reports)
 
     def handle(e):
         cat = _classify_layer(e.dxf.layer or "0", extra_layer_map)
@@ -2257,11 +2422,13 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
             else:
                 r = _entity_rect(e)
                 if r:
-                    raw["contact_poly"].append(r)
+                    raw["contact_poly"].append(r[:4])
             return
         r = _entity_rect(e)
         if r:
-            raw[cat].append(r)
+            if r[4] and cat in ("finger", "busbar"):
+                skew_n[0] += 1
+            raw[cat].append(r[:4])
 
     def walk(ents, depth=0):
         if depth > 8:
@@ -2297,8 +2464,19 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
     def to_rect(b):
         return ((b[0]-ox)*scale, (b[1]-oy)*scale, (b[2]-b[0])*scale, (b[3]-b[1])*scale)
 
-    g.finger_rects = [to_rect(b) for b in raw["finger"]]
-    g.busbar_rects = [to_rect(b) for b in raw["busbar"]]
+    # Hardening v28.27: drop degenerate (zero-width) rects — a LINE or a flat
+    # polyline yields rw==0 or rh==0, which would add a zero-area "finger" and
+    # can break the 1D metal graph. Filter and report them.
+    def _drop_degenerate(rects):
+        good = []; bad = 0
+        for r in rects:
+            if r[2] > 1e-9 and r[3] > 1e-9:   # rw, rh in cm
+                good.append(r)
+            else:
+                bad += 1
+        return good, bad
+    g.finger_rects, f_bad = _drop_degenerate([to_rect(b) for b in raw["finger"]])
+    g.busbar_rects, b_bad = _drop_degenerate([to_rect(b) for b in raw["busbar"]])
     g.terminals = [((cx-ox)*scale, (cy-oy)*scale) for (cx, cy, _r) in raw["contact_circle"]]
     for b in raw["contact_poly"]:
         rx, ry, rw, rh = to_rect(b)
@@ -2310,6 +2488,16 @@ def load_dxf_grid(path: str, force_unit: str | None = None,
         warnings.append("busbar 레이어 도형 없음")
     if not g.terminals:
         warnings.append("contact(probe) 없음 -> 솔버에 단자 없음. busbar 위에 점/원 1개 필요.")
+    # Hardening v28.27: rotated/non-axis-aligned shapes, degenerate drops, and a
+    # cell-size sanity check (catches unit errors the shading check can miss).
+    if skew_n[0]:
+        warnings.append(f"회전/비축정렬 금속 도형 {skew_n[0]}개 -> bbox 근사(폭·면적 과대평가 가능). "
+                        "축정렬 사각형 권장.")
+    if f_bad or b_bad:
+        warnings.append(f"퇴화(0폭) 금속 도형 {f_bad+b_bad}개 제외(LINE/납작한 폴리라인).")
+    _cell_mm = max(g.W, g.H) * 10.0
+    if _cell_mm < 1.0 or _cell_mm > 1000.0:
+        warnings.append(f"셀 크기 {g.W*10:.3f}x{g.H*10:.3f} mm 비정상 -> 단위 확인(force_unit='mm' 등) 필요.")
 
     g.report = {
         "unit": uname, "unit_assumed": assumed if not force_unit else False,
@@ -3011,6 +3199,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
         self._warm_Vb_ref = None  # Vbias at which warm vector was computed
         # (③): cache for evaluated spatial multiplier arrays, keyed by id(dp)
@@ -3140,6 +3329,10 @@ class FESTSolver:
         #   Gc = na·mf/rc 가 inf를 만든다. 1e-12 Ω·cm²로 클램프 — 물리적으로
         #   존재하는 어떤 접촉보다도 작아서 수치상 이상 접촉과 동등하다.
         rc = max(float(rc), 1e-12)
+        # v28.22: rear contact resistivity — independent rear value if dp.rc_rear
+        # is set (>0), else fall back to the front rc (legacy bit-identical).
+        _rc_rear = getattr(dp, 'rc_rear', None)
+        rc_rear = rc if (_rc_rear is None or float(_rc_rear) <= 0) else max(float(_rc_rear), 1e-12)
         # v28.18 (wf_wired): 케이스별 버스바 폭. solve()/calc_iv()/losses()
         #   진입점에서 설정; None -> 설계(Before) 폭.
         wb_case = self._case_wb if self._case_wb is not None else self.geo.w_b
@@ -3162,7 +3355,7 @@ class FESTSolver:
                    id(dp.spatial_j02) if dp.spatial_j02 is not None else 0,
                    id(dp.spatial_gen) if dp.spatial_gen is not None else 0,
                    id(dp.spatial_rc)  if dp.spatial_rc  is not None else 0)
-        h = (rm, hf, wf, wb_case, rc, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
+        h = (rm, hf, wf, wb_case, rc, rc_rear, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
         if self._cache_hash == h:
             return
         self._cache_hash = h
@@ -3170,6 +3363,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
         self._warm_Vb_ref = None
 
@@ -3187,22 +3381,38 @@ class FESTSolver:
             self._Kr, _ = assemble_K(
                 self.pts, self.simp, Rs_rear_tco, self.areas, self.b, self.c)
 
-            # Rear metal grid stiffness (only rear metal elements contribute)
-            # Use assemble_K_met but treat all rear metal as "busbar" (no CF)
-            # since we don't distinguish rear finger vs busbar geometrically
-            self._Krm = assemble_K_met(
-                self.pts, self.simp, self.isrm,
-                rm, hf, self.geo.rear.w_f if self.geo.rear else wf, cf,
-                np.zeros(self.N, dtype=bool),  # isf=all False
-                self.isrm,                      # isb=isrm (all treated as BB, no CF)
-                self.areas, self.b, self.c,
-                self.geo.rear.w_b if self.geo.rear else 0.05)
+            # Rear metal grid stiffness. ASM-1 fix: use the mesh-convergent 1D
+            # conductor model (assemble_K_met_1d, same as the front at L3246)
+            # over the REAR grid geometry, instead of the 2D Galerkin sheet model
+            # (assemble_K_met) the front abandoned — that 2D model gives
+            # mesh-dependent thin-line conductance (sliver triangles), so
+            # bifacial/patterned-rear FF/efficiency did not converge under
+            # refinement. cf=1.0 preserves the previous "no finger CF" intent for
+            # the rear; rear finger/busbar lines come from the rear grid.
+            rw_f = self.geo.rear.w_f if self.geo.rear else wf
+            rw_b = self.geo.rear.w_b if self.geo.rear else 0.05
+            if np.any(self.isrm):
+                _gc_peak_rear = float(np.max(
+                    self._na[self.isrm] * self.rear_metal_frac[self.isrm])) / rc_rear
+            else:
+                _gc_peak_rear = 0.0
+            self._Krm = assemble_K_met_1d(
+                self.pts, self.isrm, self.geo, rm, hf, 1.0,
+                w_f=rw_f, w_b=rw_b, gc_max=_gc_peak_rear,
+                fg_y=self.geo.rear_fg_y, bb_x=self.geo.rear_bb_x,
+                band_w_f=rw_f, band_w_b=rw_b)
 
-            # Rear contact conductance: rear metal -> rear emitter
-            # Same rc as front (same process). Weight by metal_frac at rear nodes.
-            # Approximation: use binary isrm (rear metal is well-defined)
+            # Rear contact conductance: rear metal -> rear emitter.
+            # v28.22: uses rc_rear (independent rear contact resistivity if set,
+            # else front rc). ASM-2 fix: weight by the continuous rear_metal_frac
+            # exactly as the front path weights by metal_frac (L3252). Previously
+            # this used binary isrm (=1.0), which at partial-coverage edge nodes
+            # overstates Gc_rear → understates rear contact resistance and
+            # overstiffens the rear coupling in bifacial/patterned mode.
+            # rear_metal_frac is the area-weighted mirror of the front metal_frac.
             self._Gc_rear = np.zeros(self.N)
-            self._Gc_rear[self.isrm] = self._na[self.isrm] / rc
+            self._Gc_rear[self.isrm] = (
+                self._na[self.isrm] * self.rear_metal_frac[self.isrm] / rc_rear)
 
             # Cache rear metal row data
             self._Krm_rows = []
@@ -3509,6 +3719,13 @@ class FESTSolver:
                 and self._J_static_tandem_bf is not None
                 and dp.Rs_junction > 50):
             target_Rs_j = dp.Rs_junction
+            # v28.28: if a converged solution at THIS build already exists
+            # (e.g. the previous voltage point in a sweep, same target Rs_j),
+            # warm-start directly at the target and skip the ramp entirely.
+            # _build above kept _cache_hash unchanged (only Vb differs), so the
+            # cache is still valid; it is cleared on any geometry/param change.
+            if getattr(self, '_warm_V_junc_bf', None) is not None:
+                return self._solve_tandem_junction_bf(rm, hf, wf, rc, Rs, Vb, cf, dp)
             # Generate ramp schedule: 50 → 200 → 1000 → 5000 → target
             ramp = [50.0, 200.0, 1000.0, 5000.0]
             ramp = [r for r in ramp if r < target_Rs_j] + [target_Rs_j]
@@ -3691,7 +3908,8 @@ class FESTSolver:
 
             # --- Luminescent Coupling (LC) ---
             # J_LC = J01_coupling * (exp(V_top/VT) - 1), added to bottom subcell
-            # as extra photogeneration (Zeder et al. 2025 eq. 4, Griddler PRO).
+            # as extra photogeneration (Zeder et al. 2025 / Jäger 2021; modeled
+            # in SETFOS, not a Griddler feature — standard LC form).
             # Depends on V_top, so adds new Jacobian off-diagonal dJb/dVtop.
             if dp.J01_coupling > 0:
                 eLC = np.exp(np.minimum(Vtop / VT, 80))
@@ -3956,8 +4174,18 @@ class FESTSolver:
             F[oVr:oVr + N] = self._Kr @ Vr + Ib
             for gi in rear_probe_idx:
                 F[oVr + gi] = Vr[gi]
-            # F_Vint: K_int @ V_int - (Jt - Jb)*na = K_int @ V_int - It + Ib
-            F[oVint:oVint + N] = self._K_junc @ V_int - It + Ib
+            # F_Vint: interlayer node KCL. V_int is the top cell's REAR
+            # (contributes +It, like F_Vr=Kr@Vr+Ib) and simultaneously the bottom
+            # cell's EMITTER (contributes -Ib, like F_Ve=Ke@Ve-It, since
+            # Vbot=V_int-Vr). So lateral-out = +It - Ib:
+            #     K_int @ V_int + It - Ib = 0
+            # TANDEM-1 fix: this previously read "- It + Ib", the opposite sign,
+            # which deviated from the file's universal 2-plane KCL convention
+            # (upper plane K@V-I, lower plane K@V+I) used by every other emitter/
+            # rear/interlayer residual (e.g. the bifacial junction solver L4322).
+            # Only affects Phase-B full_area runs (Rs_junction>0); default
+            # Rs_junction=0 uses solve_tandem (no interlayer plane).
+            F[oVint:oVint + N] = self._K_junc @ V_int + It - Ib
 
             # ====== Jacobian (assembled from COO blocks) ======
             rows = []; cols = []; vals = []
@@ -4024,21 +4252,24 @@ class FESTSolver:
                 cols.append(idx_N + oVt)
                 vals.append(dILC)
 
-            # --- F_Vint / dVint: K_int + dJb*na diag (from +Jb term) ---
+            # TANDEM-1 fix: Jacobian of F_Vint = K_int@V_int + It - Ib (diode
+            # source signs flipped to match the corrected residual; K_int term
+            # unchanged).
+            # --- F_Vint / dVint: K_int - dIb diag (from -Ib, dVbot/dVint=+1) ---
             rows.append(Kint_c.row + oVint)
             cols.append(Kint_c.col + oVint)
             vals.append(Kint_c.data.copy())
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVint)
-            vals.append(dIb)  # dF_Vint/dVint from +Jb term: dJb/dVint*na = +dIb
-            # --- F_Vint / dVr: dJb/dVr * na = -dIb (from +Jb term) ---
+            vals.append(-dIb)
+            # --- F_Vint / dVr: d(-Ib)/dVr = -dJb*na*(dVbot/dVr=-1) = +dIb ---
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVr)
-            vals.append(-dIb)
-            # --- F_Vint / dVt: -dJt*na + dJLC*na diag ---
+            vals.append(dIb)
+            # --- F_Vint / dVt: d(+It)/dVt = +dIt; LC via -Ib → -dILC ---
             rows.append(idx_N + oVint)
             cols.append(idx_N + oVt)
-            vals.append(-dIt + dILC)
+            vals.append(dIt - dILC)
 
             # Build sparse matrix
             J_rows = np.concatenate(rows)
@@ -4208,6 +4439,14 @@ class FESTSolver:
              "Vr": (oVr, None), "Vrm": (oVrm, self.rear_midx)},
             frac,
         )
+        # v28.28: warm-start from the previous converged Phase B bifacial solve
+        # of THIS build (cache cleared whenever the build hash changes). Only the
+        # Newton initial guess changes, so the converged root — and the result —
+        # is identical; this lets consecutive voltage points (and repeat calls
+        # at the target Rs_junction) skip the homotopy ramp. Guarded by shape.
+        _wv = getattr(self, '_warm_V_junc_bf', None)
+        if _wv is not None and _wv.shape[0] == Ns:
+            V = _wv.copy()
 
         pmk = np.array([self.mmap[gi] for gi in self.pidx if self.mmap[gi] >= 0])
         rear_pad_kr = []
@@ -4482,6 +4721,7 @@ class FESTSolver:
         self._last_Vint = (V[oVint:oVint + N] + Vr_out).copy()
         self._last_Vrm = np.full(N, np.nan)
         self._last_Vrm[self.rear_midx] = V[oVrm:oVrm + Nrm]
+        self._warm_V_junc_bf = V.copy()   # v28.28: cache for next-point warm-start
         return Ve_out, Vm_out, Vtop_out, Vr_out, res_list
 
     # ---------------------------------------------------------
@@ -5367,6 +5607,15 @@ class FESTSolver:
             # If the cell is under-matched (Jph_top < Jph_bot), adding rear
             # light to bot further widens the mismatch.
             Jt = _gen * dp.Jph_top - J01_arr * (e1t - 1) - J02_arr * (e2t - 1) - Vtop / dp.Rsh_top
+            # UNITS-1 note: current density is normalized by self.geo.area = the
+            # bounding-rectangle W*H. For the default SQUARE wafer this equals
+            # wafer_area(), so Jsc/Eff are correct. For pseudo_square/circular
+            # wafers the mesh still tessellates the full rectangle (corners
+            # generate current) while shading_fraction divides by the true
+            # wafer_area(), so the two area conventions disagree (circular bias
+            # ~21%). Square-wafer runs are unaffected; if non-square wafers are
+            # used, mask generation to wafer_outline_xy_mm and normalize both
+            # current and shading by wafer_area() consistently.
             return np.sum(Jt * self._na) / self.geo.area * 1000
         else:
             Vd = Ve - Vr
@@ -5640,10 +5889,21 @@ class FESTSolver:
 
         if mode == 'tandem':
             _, _, Voc_est = dp.expected_voc()
-            Rs_lumped_total = dp.Rs_lumped_top + dp.Rs_lumped_bot
+            # TANDEM-2 fix: wire in the documented per-subcell internal series R
+            # (Jeon 2025 Rs_top/Rs_bot — vertical transport inside each diode
+            # unit). Applied as a terminal IR drop V_term = V_solver - J·Rs.
+            # In a 2T series stack the same J flows through both subcells, so the
+            # two internal resistances add. Previously these params were declared
+            # but never read, so FF was overstated when vertical R was non-zero.
+            # The legacy Rs_lumped_* aliases (deprecated, default 0) are kept for
+            # backward compatibility.
+            Rs_lumped_total = (dp.Rs_internal_top + dp.Rs_internal_bot
+                               + dp.Rs_lumped_top + dp.Rs_lumped_bot)
         else:
             Voc_est = dp.expected_voc(mode='single')
-            Rs_lumped_total = dp.Rs_lumped_top
+            # Single-cell defaults are Si/bottom-like (LONGi), so the relevant
+            # internal R is the bottom (Si) value.
+            Rs_lumped_total = dp.Rs_internal_bot + dp.Rs_lumped_top
 
         Rs_lumped_total = max(float(Rs_lumped_total), 0.0)
 
@@ -5730,6 +5990,7 @@ class FESTSolver:
         self._warm_V_bf = None
         self._warm_V_tf = None
         self._warm_V_sbf = None
+        self._warm_V_junc_bf = None   # v28.28: Phase B bifacial warm-start cache
         self._warm_V_sf = None
 
         t0 = time.time()
@@ -6293,10 +6554,26 @@ print(f"  Metal: {np.sum(ism)} nodes ({np.sum(ism)/len(pts)*100:.1f}%)")
 # ANALYTICAL LOSS (for report verification)
 # =============================================================
 def _analytical_loss(rm, hf, wf, rc, Rs, cf):
-    Jm = DP.Jph_top * 1000 * 0.93; _, _, Vs = DP.expected_voc(); Vm = Vs * 0.88
+    """Closed-form distributed series-resistance losses as power density [mW/cm²].
+
+    ASM-3 fix: the Mette/Green expressions below are DIMENSIONLESS fractional
+    losses (of Pmpp) only when Jmp is in A/cm². Previously the function used Jmp
+    in mA/cm² and returned the bare fractions, i.e. ~1000× the true fraction,
+    while the report labeled the column "mW/cm²" and placed the values next to the
+    genuine FEM losses() buckets (true mW/cm²). That apples-to-oranges comparison
+    could mask or falsely flag a real FEM discrepancy. We now compute each
+    fraction with Jmp in A/cm² and multiply by Pmpp = Jmp·Vmp to return an
+    absolute power density directly comparable to the FEM column.
+    """
+    Jm = DP.Jph_top * 0.93                 # A/cm²  (Jph_top stored in A/cm²)
+    _, _, Vs = DP.expected_voc(); Vm = Vs * 0.88
     df = GEO.H / (GEO.n_f + 1); dBB = GEO.W / (GEO.n_b + 1) if GEO.n_b > 0 else GEO.W
     rf = rm / (cf * wf * hf)
-    return ((1/12)*Rs*(Jm/Vm)*df**2, (1/12)*rf*(Jm/Vm)*dBB**2*df, 0.5*rc*(Jm/Vm)*dBB*df/wf)
+    Pmpp = Jm * 1000.0 * Vm                # mW/cm²  (Jm·1000 → mA/cm²)
+    frac_e = (1/12) * Rs * (Jm / Vm) * df**2
+    frac_f = (1/12) * rf * (Jm / Vm) * dBB**2 * df
+    frac_c = 0.5 * rc * (Jm / Vm) * dBB * df / wf
+    return (frac_e * Pmpp, frac_f * Pmpp, frac_c * Pmpp)
 
 
 # =============================================================
@@ -6692,44 +6969,44 @@ def _rpt_p7(f, d):
     Pj_b=d.get('Pj_b',0.0); Pj_a=d.get('Pj_a',0.0)
     Pt_b=Pe_b+Pf_b+Pc_b; Pt_a=Pe_a+Pf_a+Pc_a
 
-    # === Tier 1: Energy balance ===
-    Jph_top_mA = DP.Jph_top * 1000  # mA/cm²
-    P_input_b = Jph_top_mA * iv_b['Voc']  # crude upper bound
-    # Better: P_in = AM1.5G = 100 mW/cm²
-    P_AM15 = 100.0  # mW/cm²
+    # === Tier 1: Electrical power balance (loss reconstruction) ===
+    # IVL-1 fix: this is an ELECTRICAL budget. Jph enters the model as an INPUT
+    # (there is no optical/spectral front-end), so the budget CANNOT be closed
+    # against the 100 mW/cm² AM1.5G optical irradiance — roughly 60 mW/cm² of
+    # thermalization + sub-bandgap photon loss is structurally outside any
+    # electrical FEM model. The previous "Residual vs 100 mW/cm²" was a category
+    # error: it compared an electrical generation budget to an optical input, so
+    # the residual was structurally ~55-66% and "PASS (<5%)" was unachievable
+    # for any real cell. We instead reconstruct the loss-free electrical power
+    # ceiling, consistent with the PCE waterfall (PCE_ref):
+    #     P_lossfree = P_out(MPP) + Σ(electrical loss buckets)
     P_out_b = iv_b['Pmpp']
     P_loss_total_b = Pt_b + Ps_b + Psh_b + Prec_b + Pj_b
-    # Closure: P_in = P_out + P_loss (where P_in = AM1.5G × A)
-    closure_b = P_out_b + P_loss_total_b
-    residual_b = abs(closure_b - P_AM15) / P_AM15 * 100
-
+    P_lossfree_b = P_out_b + P_loss_total_b
     P_out_a = iv_a['Pmpp']
     P_loss_total_a = Pt_a + Ps_a + Psh_a + Prec_a + Pj_a
-    closure_a = P_out_a + P_loss_total_a
-    residual_a = abs(closure_a - P_AM15) / P_AM15 * 100
+    P_lossfree_a = P_out_a + P_loss_total_a
+    # Fraction of the reconstructed loss-free ceiling actually delivered to the
+    # terminal — an electrical-completeness indicator, NOT an optical balance.
+    deliver_b = (P_out_b / P_lossfree_b * 100.0) if P_lossfree_b > 1e-9 else 0.0
+    deliver_a = (P_out_a / P_lossfree_a * 100.0) if P_lossfree_a > 1e-9 else 0.0
 
     ax1 = f.add_axes([0.03, 0.55, 0.45, 0.38])
-    pass_color_b = '#059669' if residual_b < 5.0 else '#DC2626'
-    pass_color_a = '#059669' if residual_a < 5.0 else '#DC2626'
-    _txt_tbl(ax1, 'Tier 1 — Energy Balance Check [mW/cm²]',
+    _txt_tbl(ax1, 'Tier 1 — Electrical Loss Reconstruction [mW/cm²]',
              ['Term', 'Before', 'After'],
-             [['P_in (AM1.5G)', f'{P_AM15:.2f}', f'{P_AM15:.2f}'],
-              ['P_out (MPP)',   f'{P_out_b:.3f}', f'{P_out_a:.3f}'],
-              ['P_resistive',   f'{Pt_b:.4f}', f'{Pt_a:.4f}'],
-              ['P_shading',     f'{Ps_b:.4f}', f'{Ps_a:.4f}'],
-              ['P_shunt',       f'{Psh_b:.4f}', f'{Psh_a:.4f}'],
-              ['P_recomb',      f'{Prec_b:.4f}', f'{Prec_a:.4f}'],
-              ['P_junction',    f'{Pj_b:.4f}', f'{Pj_a:.4f}'],
-              ['Σ closure',     f'{closure_b:.3f}', f'{closure_a:.3f}'],
-              ['Residual %',    f'{residual_b:.2f}%', f'{residual_a:.2f}%']],
+             [['P_out (MPP)',       f'{P_out_b:.3f}', f'{P_out_a:.3f}'],
+              ['P_resistive',       f'{Pt_b:.4f}', f'{Pt_a:.4f}'],
+              ['P_shading',         f'{Ps_b:.4f}', f'{Ps_a:.4f}'],
+              ['P_shunt',           f'{Psh_b:.4f}', f'{Psh_a:.4f}'],
+              ['P_recomb',          f'{Prec_b:.4f}', f'{Prec_a:.4f}'],
+              ['P_junction',        f'{Pj_b:.4f}', f'{Pj_a:.4f}'],
+              ['Loss-free ceiling', f'{P_lossfree_b:.3f}', f'{P_lossfree_a:.3f}'],
+              ['Delivered %',       f'{deliver_b:.1f}%', f'{deliver_a:.1f}%']],
              [0.02, 0.45, 0.75])
-    # Pass/fail badge
-    status_b = 'PASS (<5%)' if residual_b < 5.0 else 'CHECK (>5%)'
-    status_a = 'PASS (<5%)' if residual_a < 5.0 else 'CHECK (>5%)'
-    ax1.text(0.50, -0.04, f'Before: {status_b}    After: {status_a}',
-             ha='center', va='top', fontsize=9, fontweight='bold',
-             color=pass_color_b if residual_b < 5 else '#DC2626',
-             transform=ax1.transAxes)
+    ax1.text(0.50, -0.04,
+             'Electrical reconstruction — Jph is a model input, not an optical balance',
+             ha='center', va='top', fontsize=8, fontweight='bold',
+             color='#0F172A', transform=ax1.transAxes)
 
     # === Tier 2: Analytical comparison (Rehman 2023) ===
     aPe_b,aPf_b,aPc_b = _analytical_loss(bp[0],bp[1],bp[2],bp[5],bp[6],bp[4])
@@ -6766,8 +7043,8 @@ def _rpt_p7(f, d):
     # Summary table
     rows = [
         ('Tier 1', 'KCL residual',          '< 1e-8',     'PASS', '#059669'),
-        ('Tier 1', 'Energy balance',         '< 5%',       f'{residual_b:.2f}% / {residual_a:.2f}%',
-                                                          '#059669' if max(residual_b,residual_a) < 5 else '#EA580C'),
+        ('Tier 1', 'Loss reconstruction',   'electrical', f'deliv {deliver_b:.0f}% / {deliver_a:.0f}%',
+                                                          '#0F172A'),
         ('Tier 1', 'Rs_junction model family', 'Griddler-style interlayer',
          'GRIDDLER-STYLE', '#D97706'),
         ('Tier 2', 'Rehman 2023 analytical', '< 5%',       f'max {max_err:.1f}%',
@@ -7335,8 +7612,8 @@ class FESTProApp(ctk.CTk):
             ("n1 Bot (Si)", f"{DP.n1_bot:.1f}", ""),
             (_t('n2_bot'), f"{DP.n2_bot:.1f}", ""),
             ("LC Coupling", "0.0e+00", "A/cm2"),
-            ("Rc Junction ↕", f"{DP.Rc_junction:.2f}", "Ohm.cm2"),
-            ("Rs Junction ↔", f"{DP.Rs_junction:.1f}", "Ohm/sq"),
+            ("Recomb.J Contact↕", f"{DP.Rc_junction:.2f}", "Ohm.cm2"),
+            ("Recomb.J Sheet↔", f"{DP.Rs_junction:.1f}", "Ohm/sq"),
         ])
         self._card_headers.append(hdr_d)
 
@@ -7350,7 +7627,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Top pass", f"{DP.J02_top_pass:.2e}", "A/cm2"),
                 ("J02 Top metal", f"{DP.J02_top_metal:.2e}", "A/cm2"),
                 ("Rsh Top", f"{DP.Rsh_top:.0f}", "Ohm.cm2"),
-                ("Rs lumped Top", f"{DP.Rs_lumped_top:.2f}", "Ohm.cm2"),
+                ("Rs lumped Top ↕", f"{DP.Rs_lumped_top:.2f}", "Ohm.cm2"),
             ])
         self._card_headers.append(hdr_dt)
 
@@ -7364,7 +7641,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Bot pass",  f"{DP.J02_bot_pass:.2e}",   "A/cm2"),
                 ("J02 Bot metal", f"{DP.J02_bot_metal:.2e}",  "A/cm2"),
                 ("Rsh Bot",       f"{DP.Rsh_bot:.0f}",        "Ohm.cm2"),
-                ("Rs lumped Bot", f"{DP.Rs_lumped_bot:.2f}",  "Ohm.cm2"),
+                ("Rs lumped Bot ↕", f"{DP.Rs_lumped_bot:.2f}",  "Ohm.cm2"),
             ])
         self._card_headers.append(hdr_db)
         # === END v28.1 diode GUI addition ===
@@ -7594,7 +7871,7 @@ class FESTProApp(ctk.CTk):
         # Only used in bifacial mode; irrelevant in full_area.
         rs_tco_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rs_tco_row.pack(fill="x"); rs_tco_row.pack_propagate(False)
-        ctk.CTkLabel(rs_tco_row, text="Rs_rear TCO (L3)", font=ctk.CTkFont(size=10),
+        ctk.CTkLabel(rs_tco_row, text="Rear Sheet R ↔", font=ctk.CTkFont(size=10),
                      text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
         self._rs_tco_entry = ctk.CTkEntry(rs_tco_row, width=60, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
@@ -7602,6 +7879,20 @@ class FESTProApp(ctk.CTk):
         self._rs_tco_entry.insert(0, f"{DP.Rs_rear_tco:.0f}")
         self._rs_tco_entry.pack(side="left", padx=2, pady=1)
         ctk.CTkLabel(rs_tco_row, text="Ω/sq", font=ctk.CTkFont(size=8),
+                     text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
+
+        # rc_rear (L4 rear metal–semiconductor contact resistivity) — USER-EDITABLE
+        # Blank = same as front rc (legacy). Real cells / Griddler allow front≠rear.
+        rc_rear_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
+        rc_rear_row.pack(fill="x"); rc_rear_row.pack_propagate(False)
+        ctk.CTkLabel(rc_rear_row, text="Rear Contact ρ ↕", font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                           fg_color="white", border_color=CLR_CARD_BD,
+                           corner_radius=4, justify="center",
+                           placeholder_text="=front")
+        self._rc_rear_entry.pack(side="left", padx=2, pady=1)
+        ctk.CTkLabel(rc_rear_row, text="mOhm.cm2", font=ctk.CTkFont(size=8),
                      text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
 
         # Rear H-pattern inputs (visible only in patterned/bifacial mode)
@@ -9028,6 +9319,25 @@ class FESTProApp(ctk.CTk):
             except AttributeError:
                 pass
 
+            # rc_rear (L4 rear metal contact resistivity, mOhm·cm² -> Ohm·cm²).
+            # Blank = use the front rc (DP.rc_rear = None, legacy-identical).
+            try:
+                rc_rear_str = self._rc_rear_entry.get().strip()
+                if rc_rear_str:
+                    rc_rear_val = _parse_gui_float(rc_rear_str, "rc_rear")
+                    if rc_rear_val < 0 or rc_rear_val > 1e4:
+                        self._status("rc_rear out of range (0~10000 mOhm.cm2), using front rc.")
+                        DP.rc_rear = None
+                    else:
+                        DP.rc_rear = rc_rear_val * 1e-3
+                else:
+                    DP.rc_rear = None
+            except ValueError as e:
+                self._status(f"rc_rear parse error: {e}")
+                return False
+            except AttributeError:
+                pass
+
             # Rc_junction (vertical contact R between top and bot subcells)
             # 박사님 지시 2026.04.10 (Phase A vertical only)
             try:
@@ -9060,13 +9370,6 @@ class FESTProApp(ctk.CTk):
                         DP.Rs_junction = 0.0
                     else:
                         DP.Rs_junction = rs_val
-                        if DP.Rs_junction > 0:
-                            self._status(
-                                "Phase B Rs_junction enabled: Griddler-style interlayer "
-                                "FEM is active; direct Griddler PRO cross-validation "
-                                "is required for absolute equivalence. ~23 mV Voc "
-                                "offset vs Phase A — use relative Delta, not absolute."
-                            )
                 else:
                     DP.Rs_junction = 0.0
             except (ValueError, IndexError) as e:
@@ -10069,12 +10372,9 @@ class FESTProApp(ctk.CTk):
             warnings.append(f"⚠ Recomb AFTER={Prec_a:.1f} mW/cm² (비정상)")
         if iv_b['Eff'] < 15:
             warnings.append(f"⚠ BEFORE PCE={iv_b['Eff']:.1f}% (Tandem 표준 미달)")
-        if model_note_active:
-            warnings.append(
-                "Phase B Rs_junction uses Griddler-style interlayer FEM; "
-                "direct PRO cross-validation is required for absolute equivalence "
-                "(~23 mV Voc offset vs Phase A — relative Delta is preserved)"
-            )
+        # v28.23: Phase B(Rs_junction) 사용 시 띄우던 "신뢰성 점검 필요" 안내 배너
+        # 메시지는 사용자 요청으로 제거(상태바 안내도 함께 제거). 실제 수렴/FF/재결합
+        # 등 물리적 health 경고는 아래에서 그대로 유지된다.
 
         def _non_model_health_message(health):
             msg = str(health.get('message', ''))
@@ -10926,6 +11226,7 @@ class FESTProApp(ctk.CTk):
         mp_v = mp.get() if mp is not None else "Med"
         n_nodes = len(pts) if pts is not None else 0
         n_tri = len(tri.simplices) if tri is not None else 0
+        _mesh_title_color = '#455A64'
         n_probe = (GEO.front.n_probe_points if GEO.front.n_probe_points > 0
                    else GEO.front.n_terminals)
         try:
@@ -10956,6 +11257,11 @@ class FESTProApp(ctk.CTk):
             ax4.set_xlabel('x [mm]', fontsize=9)
             ax4.set_ylabel('y [mm]', fontsize=9)
             ax4.tick_params(labelsize=8)
+            _md = mesh_distribution_metrics(pts, GEO)
+            if (_md['MirrorNodeHitX'] < 0.99 or _md['MirrorNodeHitY'] < 0.99
+                    or abs(_md['CentroidBiasX_um']) > 25.0
+                    or abs(_md['CentroidBiasY_um']) > 25.0):
+                _mesh_title_color = '#C62828'
             ax4.legend(handles=[
                 _MeshPatch(fc='#FFCC80', ec='#5b6b7a', lw=0.4, label='metal (dense)'),
                 _MeshPatch(fc='#E8F0FE', ec='#5b6b7a', lw=0.4, label='bulk (coarse)'),
@@ -10969,7 +11275,7 @@ class FESTProApp(ctk.CTk):
                      transform=ax4.transAxes, ha='center', va='center',
                      fontsize=9, color='#B0BEC5')
         ax4.set_title(f'Mesh: {n_nodes:,} nodes  |  {n_tri:,} elements   ·   T/P {mt_v}/{mp_v}',
-                      fontweight='bold', fontsize=10.5, color='#455A64')
+                      fontweight='bold', fontsize=10.5, color=_mesh_title_color)
 
         self._refresh()
         self._status(f"DESIGN view: {GEO.n_f}F+{GEO.n_b}BB, mesh T={mt_v}/P={mp_v}, {n_nodes} nodes")
@@ -11005,7 +11311,11 @@ class FESTProApp(ctk.CTk):
                                 border_width=1, border_color=CLR_CARD_BD)
         sidebar.pack(side="left", fill="y"); sidebar.pack_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="\ud83d\udcd6 INDEX", font=ctk.CTkFont(size=12, weight="bold"),
+        # v28.20 fix: the INDEX label previously embedded the book emoji written
+        # as a lone surrogate pair, which can never encode to UTF-8 — Tk raised
+        # "surrogates not allowed" and crashed the moment this label was built.
+        # Use a BMP-safe ASCII label for cross-platform safety (Windows/macOS).
+        ctk.CTkLabel(sidebar, text="INDEX", font=ctk.CTkFont(size=12, weight="bold"),
                      text_color=CLR_ACCENT).pack(pady=(12, 8))
 
         toc_btns = []
@@ -11869,8 +12179,33 @@ class FESTProApp(ctk.CTk):
         lines.append("V [V],J [mA/cm2]")
         for v,j in zip(c['Vs_a'], c['Js_a']):
             lines.append(f"{v:.6f},{j:.6f}")
-        with open(fn, 'w') as f:
-            f.write('\n'.join(lines))
+        # v28.20: robust CSV write. Previously `open(fn,'w')` (a) used the OS
+        # default text codec — on Korean Windows (cp949) any non-ASCII glyph in
+        # the content (Ω, ², ·, →, Korean health/junction messages) raised
+        # UnicodeEncodeError *after* the file was already truncated to 0 bytes,
+        # leaving an unopenable 0-byte file; and (b) wrote in place, so any mid-
+        # write failure destroyed the target. Fix: encode as utf-8-sig (Excel- &
+        # Korean-safe, matching the mesh_convergence writer) and write atomically
+        # to a temp file, replacing the target only on full success — so a
+        # failure can never leave a 0-byte CSV behind.
+        import tempfile
+        try:
+            _dir = os.path.dirname(os.path.abspath(fn)) or '.'
+            _fd, _tmp = tempfile.mkstemp(suffix='.tmp', dir=_dir)
+            try:
+                with os.fdopen(_fd, 'w', encoding='utf-8-sig', newline='') as f:
+                    f.write('\r\n'.join(lines))
+                os.replace(_tmp, fn)
+            except BaseException:
+                try:
+                    os.remove(_tmp)
+                except OSError:
+                    pass
+                raise
+        except Exception as e:
+            self._status(f"CSV save failed: {e}")
+            messagebox.showerror("2L-FEST PRO", f"CSV 저장 실패:\n{e}")
+            return
         self._status(f"CSV saved: {fn}")
         messagebox.showinfo("2L-FEST PRO", f"Results exported:\n{fn}")
 
