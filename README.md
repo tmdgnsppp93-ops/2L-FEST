@@ -62,7 +62,8 @@ python 2L_FEST_v28_18_wf_wired.py
 |------|------|
 | `_validate_tandem.py` | 0D 해석해 ↔ FEM 솔버 탠덤 결과 교차검증 |
 | `_validate_griddler.py` | 그리드 설계 모듈 검증 |
-| `_audit.py` | 30개 계산 경로 헤드리스 스모크 테스트 (전 모드·지오메트리·SpatialMap·리포트·DXF) |
+| `_audit.py` | 31개 계산 경로 헤드리스 스모크 테스트 (전 모드·지오메트리·SpatialMap·리포트·DXF) |
+| `_gui_test.py` | 실제 GUI 구동 스모크 테스트 (탭 렌더·CSV/PNG 저장·DXF/실측 CSV 로드) |
 | `_diag_bifacial.py` | bifacial 후면조도 진단 (top/bottom 전류정합 분석) |
 
 ```bash

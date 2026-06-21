@@ -16,6 +16,9 @@ v28.19: [+] mesh_distribution_metrics 진단 복원 (DESIGN 메시 비대칭/편
 v28.20: [fix] CSV 내보내기 0바이트 버그 수정 — utf-8-sig 인코딩 + 원자적 쓰기
         (GUI 실행 시 기본 코덱이 ASCII/cp949가 되어 비ASCII 문자에서 write가
          실패하며 0바이트 파일이 남던 문제. temp→replace로 안전 저장)
+        [fix] 모델 설명(_tab_model) 탭 크래시 수정 — INDEX 라벨이 비BMP 이모지를
+         lone surrogate 쌍으로 담고 있어 Tk가 "surrogates not allowed"로 죽던 문제.
+         BMP 안전 텍스트로 교체 (Windows/macOS 공통)
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -11188,7 +11191,11 @@ class FESTProApp(ctk.CTk):
                                 border_width=1, border_color=CLR_CARD_BD)
         sidebar.pack(side="left", fill="y"); sidebar.pack_propagate(False)
 
-        ctk.CTkLabel(sidebar, text="\ud83d\udcd6 INDEX", font=ctk.CTkFont(size=12, weight="bold"),
+        # v28.20 fix: the INDEX label previously embedded the book emoji written
+        # as a lone surrogate pair, which can never encode to UTF-8 — Tk raised
+        # "surrogates not allowed" and crashed the moment this label was built.
+        # Use a BMP-safe ASCII label for cross-platform safety (Windows/macOS).
+        ctk.CTkLabel(sidebar, text="INDEX", font=ctk.CTkFont(size=12, weight="bold"),
                      text_color=CLR_ACCENT).pack(pady=(12, 8))
 
         toc_btns = []
