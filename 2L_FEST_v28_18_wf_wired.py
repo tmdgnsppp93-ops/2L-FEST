@@ -29,6 +29,9 @@ v28.22: [+] 후면 접촉저항 rc_rear 독립 입력 — 기존엔 앞/뒤가 �
 v28.23: [ui] Rs_junction(Phase B) 입력 시 뜨던 "결과 신뢰성 점검 필요" 안내 배너 및
          상태바 cross-validation 안내 메시지 제거(사용자 요청). FF/Recomb/수렴 등
          실제 물리 health 경고는 그대로 유지.
+v28.24: [ui] REAR 카드 라벨 명확화 — "Rs_rear TCO (L3)" → "Rear Sheet R ↔"(수평
+         면저항, Ω/sq), "rc_rear (L4)" → "Rear Contact R ↕"(수직 접촉저항, mΩ·cm²).
+         방향 화살표로 횡/종 구분(Recomb.J 라벨과 스타일 통일). 배선/단위는 동일.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -127,7 +130,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.23",
+    "version": "v28.24",
     "date": "2026-06-21",
     "name": "wf_wired",
 }
@@ -7795,7 +7798,7 @@ class FESTProApp(ctk.CTk):
         # Only used in bifacial mode; irrelevant in full_area.
         rs_tco_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rs_tco_row.pack(fill="x"); rs_tco_row.pack_propagate(False)
-        ctk.CTkLabel(rs_tco_row, text="Rs_rear TCO (L3)", font=ctk.CTkFont(size=10),
+        ctk.CTkLabel(rs_tco_row, text="Rear Sheet R ↔", font=ctk.CTkFont(size=10),
                      text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
         self._rs_tco_entry = ctk.CTkEntry(rs_tco_row, width=60, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
@@ -7809,7 +7812,7 @@ class FESTProApp(ctk.CTk):
         # Blank = same as front rc (legacy). Real cells / Griddler allow front≠rear.
         rc_rear_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rc_rear_row.pack(fill="x"); rc_rear_row.pack_propagate(False)
-        ctk.CTkLabel(rc_rear_row, text="rc_rear (L4)", font=ctk.CTkFont(size=10),
+        ctk.CTkLabel(rc_rear_row, text="Rear Contact R ↕", font=ctk.CTkFont(size=10),
                      text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
         self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=60, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
