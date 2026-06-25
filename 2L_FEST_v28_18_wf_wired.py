@@ -176,6 +176,13 @@ def _build_label():
 print(_build_label())
 
 
+# Griddler식 입력 정책: 빈칸은 막지 않고 default로 채운다 (박사님 결정 2026.06.25).
+# Phase B = production 모델이므로, tandem에서 Rs_junction 미입력/0(=Phase A trigger)이면
+# 이 GUI default(Ω/sq)로 채워 Phase B를 유지한다. 클래스 DiodeParams.Rs_junction=0
+# default는 내부 리포트/bifacial baseline용으로 그대로 둔다.
+GUI_DEFAULT_RS_JUNCTION = 100.0   # ITO/nc-SiOx 문헌 중간값 (50~500 Ω/sq)
+
+
 def _parse_gui_float(raw, name, *, scale=1.0, allow_blank=False, blank_value=0.0):
     text = str(raw).strip()
     if text == "":
@@ -9361,20 +9368,34 @@ class FESTProApp(ctk.CTk):
                 return False
 
             # Rs_junction (interlayer lateral sheet R, Phase B)
-            # When > 0, activates 5/6-plane Phase B solver
+            # 박사님 결정 2026.06.25: Phase B = production 모델, Phase A 미사용.
+            #   Griddler식 입력 — 빈칸은 막지 않고 default(GUI_DEFAULT_RS_JUNCTION)로
+            #   채운다. tandem에서 Rs_junction=0 은 Phase A(local-node) trigger이므로
+            #   (phase_b_active = mode=='tandem' and Rs_junction>0, :251), 빈칸/0은
+            #   default로 끌어올려 Phase B를 유지한다 → Phase A로 떨어질 경로가 없다.
+            #   single 모드는 중간층이 없으므로 0.
+            _mode_now = self._mode_var.get() if hasattr(self, '_mode_var') else 'tandem'
             try:
                 rs_str = self.tb_diode[6].get().strip()
-                if rs_str:
+                if not rs_str:
+                    if _mode_now == 'tandem':
+                        DP.Rs_junction = GUI_DEFAULT_RS_JUNCTION
+                        self._status(
+                            f"Rs_junction 미입력 → default "
+                            f"{GUI_DEFAULT_RS_JUNCTION:.0f} Ω/sq 사용 (Phase B).")
+                    else:
+                        DP.Rs_junction = 0.0   # single: 중간층 없음
+                else:
                     rs_val = _parse_gui_float(rs_str, "Rs_junction")
                     if rs_val < 0 or rs_val > 100000:
                         raise ValueError("Rs_junction must be between 0 and 100000")
-                    if rs_val < 0 or rs_val > 100000:
-                        self._status(f"Rs_junction out of range (0~100000 Ω/sq), disabled.")
-                        DP.Rs_junction = 0.0
+                    if _mode_now == 'tandem' and rs_val == 0:
+                        DP.Rs_junction = GUI_DEFAULT_RS_JUNCTION
+                        self._status(
+                            f"Rs_junction=0 은 Phase A → default "
+                            f"{GUI_DEFAULT_RS_JUNCTION:.0f} Ω/sq (Phase B)로 대체.")
                     else:
                         DP.Rs_junction = rs_val
-                else:
-                    DP.Rs_junction = 0.0
             except (ValueError, IndexError) as e:
                 self._status(f"Rs_junction parse error: {e}")
                 return False
