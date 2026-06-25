@@ -49,6 +49,18 @@ v28.28: [perf] Phase B bifacial 속도 2.2배 — 기존엔 전압점마다 cold
 v28.29: [ui] 실행 로딩창을 기본으로 맨 위에 표시 — _prog_open 기본값 topmost=True.
          Compare/Current/Waterfall/Sweep/Contour/효율분석 등 모든 실행에서 진행창이
          메인 창에 가려지지 않음. 직접 최소화하면 내려간다(기존 Unmap 처리 유지).
+v28.30: [ui] 영구 always-on-top 폐기 (사용자 요청) — 진행창·About·MODEL 뷰어·Report
+         창이 계속 맨 앞에 박혀 다른 창/앱을 클릭해도 양보하지 않아 동시 작업이 막히던
+         문제. 새 _raise_once() 헬퍼로 "뜰 때 한 번만 앞으로 올리고 곧 일반 창으로 양보"
+         하도록 통일 (lift+focus 후 다음 틱에 -topmost 해제). 처음엔 앞에 보이되, 다른
+         창을 누르면 그 창이 앞으로 온다. 진행창은 작업 중에도 다른 일을 동시에 가능.
+v28.31: [ui] 라벨 정리 마무리 — (1) Recomb.J 라벨을 v28.26 규칙에 맞춤:
+         "Recomb.J Contact↕"→"Recomb.J Contact ρ ↕"(접촉 비저항), "Recomb.J Sheet↔"→
+         "Recomb.J Sheet R ↔"(면저항). 배선은 인덱스(tb_diode[5]/[6]) 기반이라 불변.
+         (2) 사이드바 카드 단위 표기를 유니코드로 통일 — Ohm→Ω, .cm2→·cm², um→µm,
+         (pi/4~1)→(π/4~1). 앞면/다이오드/TOP/BOT/뒷면 카드 전부. 단위 문자열은 표시
+         전용(로직 파싱 없음 확인). matplotlib 차트 라벨·DXF 단위파싱·CSV 헤더는 글리프/
+         인코딩 안전 위해 ASCII 유지. mm은 그대로(이미 정상).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -147,8 +159,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.29",
-    "date": "2026-06-21",
+    "version": "v28.31",
+    "date": "2026-06-25",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -7498,13 +7510,13 @@ class FESTProApp(ctk.CTk):
 
         # Parameters definition (hot pressing effects only)
         self.param_defs = [
-            ("Bulk Resistivity", "13.22", "6.81", "uOhm.cm"),
-            ("Finger Height", "10.0", "8.5", "um"),
-            ("Finger Width", "50", "65", "um"),
-            ("Busbar Width", "50", "65", "um"),
-            ("Shape CF", "0.785", "0.95", "(pi/4~1)"),
-            ("Contact Resistivity", "10.0", "10.0", "mOhm.cm2"),
-            ("TCO R_sheet", "55", "", "Ohm/sq"),
+            ("Bulk Resistivity", "13.22", "6.81", "µΩ·cm"),
+            ("Finger Height", "10.0", "8.5", "µm"),
+            ("Finger Width", "50", "65", "µm"),
+            ("Busbar Width", "50", "65", "µm"),
+            ("Shape CF", "0.785", "0.95", "(π/4~1)"),
+            ("Contact Resistivity", "10.0", "10.0", "mΩ·cm²"),
+            ("TCO R_sheet", "55", "", "Ω/sq"),
         ]
 
         # --- BEFORE Card --- [STEP 2]
@@ -7621,9 +7633,9 @@ class FESTProApp(ctk.CTk):
             (_t('n2_top'), f"{DP.n2_top:.1f}", ""),
             ("n1 Bot (Si)", f"{DP.n1_bot:.1f}", ""),
             (_t('n2_bot'), f"{DP.n2_bot:.1f}", ""),
-            ("LC Coupling", "0.0e+00", "A/cm2"),
-            ("Recomb.J Contact↕", f"{DP.Rc_junction:.2f}", "Ohm.cm2"),
-            ("Recomb.J Sheet↔", f"{DP.Rs_junction:.1f}", "Ohm/sq"),
+            ("LC Coupling", "0.0e+00", "A/cm²"),
+            ("Recomb.J Contact ρ ↕", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
+            ("Recomb.J Sheet R ↔", f"{DP.Rs_junction:.1f}", "Ω/sq"),
         ])
         self._card_headers.append(hdr_d)
 
@@ -7631,13 +7643,13 @@ class FESTProApp(ctk.CTk):
         ctk.CTkFrame(step3, height=8, fg_color="transparent").pack()
         self.tb_dtop, self._sidebar_labels_dt, hdr_dt = self._make_card(
             step3, "TOP CELL (Pvsk)", "#D84315", [
-                ("Jph Top", f"{DP.Jph_top*1000:.2f}", "mA/cm2"),
-                ("J01 Top pass", f"{DP.J01_top_pass:.2e}", "A/cm2"),
-                ("J01 Top metal", f"{DP.J01_top_metal:.2e}", "A/cm2"),
-                ("J02 Top pass", f"{DP.J02_top_pass:.2e}", "A/cm2"),
-                ("J02 Top metal", f"{DP.J02_top_metal:.2e}", "A/cm2"),
-                ("Rsh Top", f"{DP.Rsh_top:.0f}", "Ohm.cm2"),
-                ("Rs lumped Top ↕", f"{DP.Rs_lumped_top:.2f}", "Ohm.cm2"),
+                ("Jph Top", f"{DP.Jph_top*1000:.2f}", "mA/cm²"),
+                ("J01 Top pass", f"{DP.J01_top_pass:.2e}", "A/cm²"),
+                ("J01 Top metal", f"{DP.J01_top_metal:.2e}", "A/cm²"),
+                ("J02 Top pass", f"{DP.J02_top_pass:.2e}", "A/cm²"),
+                ("J02 Top metal", f"{DP.J02_top_metal:.2e}", "A/cm²"),
+                ("Rsh Top", f"{DP.Rsh_top:.0f}", "Ω·cm²"),
+                ("Rs lumped Top ↕", f"{DP.Rs_lumped_top:.2f}", "Ω·cm²"),
             ])
         self._card_headers.append(hdr_dt)
 
@@ -7645,13 +7657,13 @@ class FESTProApp(ctk.CTk):
         ctk.CTkFrame(step3, height=8, fg_color="transparent").pack()
         self.tb_dbot, self._sidebar_labels_db, hdr_db = self._make_card(
             step3, "BOT CELL (c-Si)", "#0277BD", [
-                ("Jph Bot",       f"{DP.Jph_bot*1000:.2f}",   "mA/cm2"),
-                ("J01 Bot pass",  f"{DP.J01_bot_pass:.2e}",   "A/cm2"),
-                ("J01 Bot metal", f"{DP.J01_bot_metal:.2e}",  "A/cm2"),
-                ("J02 Bot pass",  f"{DP.J02_bot_pass:.2e}",   "A/cm2"),
-                ("J02 Bot metal", f"{DP.J02_bot_metal:.2e}",  "A/cm2"),
-                ("Rsh Bot",       f"{DP.Rsh_bot:.0f}",        "Ohm.cm2"),
-                ("Rs lumped Bot ↕", f"{DP.Rs_lumped_bot:.2f}",  "Ohm.cm2"),
+                ("Jph Bot",       f"{DP.Jph_bot*1000:.2f}",   "mA/cm²"),
+                ("J01 Bot pass",  f"{DP.J01_bot_pass:.2e}",   "A/cm²"),
+                ("J01 Bot metal", f"{DP.J01_bot_metal:.2e}",  "A/cm²"),
+                ("J02 Bot pass",  f"{DP.J02_bot_pass:.2e}",   "A/cm²"),
+                ("J02 Bot metal", f"{DP.J02_bot_metal:.2e}",  "A/cm²"),
+                ("Rsh Bot",       f"{DP.Rsh_bot:.0f}",        "Ω·cm²"),
+                ("Rs lumped Bot ↕", f"{DP.Rs_lumped_bot:.2f}",  "Ω·cm²"),
             ])
         self._card_headers.append(hdr_db)
         # === END v28.1 diode GUI addition ===
@@ -7902,7 +7914,7 @@ class FESTProApp(ctk.CTk):
                            corner_radius=4, justify="center",
                            placeholder_text="=front")
         self._rc_rear_entry.pack(side="left", padx=2, pady=1)
-        ctk.CTkLabel(rc_rear_row, text="mOhm.cm2", font=ctk.CTkFont(size=8),
+        ctk.CTkLabel(rc_rear_row, text="mΩ·cm²", font=ctk.CTkFont(size=8),
                      text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
 
         # Rear H-pattern inputs (visible only in patterned/bifacial mode)
@@ -7913,8 +7925,8 @@ class FESTProApp(ctk.CTk):
         rear_params = [
             ("N Fingers", "4", "#"),         # idx 0
             ("N Busbars", "2", "#"),         # idx 1
-            ("Finger Width", "100", "um"),       # idx 2
-            ("Busbar Width", "100", "um"),       # idx 3
+            ("Finger Width", "100", "µm"),       # idx 2
+            ("Busbar Width", "100", "µm"),       # idx 3
             ("Fg Length", "95", "%"),        # idx 4
             ("BB Length", "90", "%"),        # idx 5
             ("Probe Pts/BB", "1", "# per BB"),  # idx 6 (v28.10: default 0→1)
@@ -9336,7 +9348,7 @@ class FESTProApp(ctk.CTk):
                 if rc_rear_str:
                     rc_rear_val = _parse_gui_float(rc_rear_str, "rc_rear")
                     if rc_rear_val < 0 or rc_rear_val > 1e4:
-                        self._status("rc_rear out of range (0~10000 mOhm.cm2), using front rc.")
+                        self._status("rc_rear out of range (0~10000 mΩ·cm²), using front rc.")
                         DP.rc_rear = None
                     else:
                         DP.rc_rear = rc_rear_val * 1e-3
@@ -9765,7 +9777,7 @@ class FESTProApp(ctk.CTk):
         win.title("About 2L-FEST")
         win.geometry("520x620+500+200")
         win.resizable(False, False)
-        win.attributes('-topmost', True)
+        self._raise_once(win)  # v28.30: 뜰 때만 앞으로, 그 뒤 다른 창에 양보
         win.configure(fg_color="#F8FAFC")
 
         hdr = ctk.CTkFrame(win, fg_color="#0F172A", height=80, corner_radius=0)
@@ -9877,6 +9889,28 @@ class FESTProApp(ctk.CTk):
             self._status_label.configure(text=msg)
             self.update_idletasks()
 
+    def _raise_once(self, win, delay=200):
+        """창을 뜰 때 '한 번만' 맨 앞으로 올리고, 곧바로 일반 창으로 되돌린다.
+
+        v28.30 (사용자 요청): 영구 -topmost는 다른 창/앱을 클릭해도 계속 앞을 가려
+        동시 작업을 막는다. 대신 lift+focus로 한 번 올린 뒤 다음 이벤트 루프 틱에서
+        topmost를 즉시 해제 → 처음엔 앞에 보이되, 다른 창을 누르면 그 창이 앞으로 온다."""
+        try:
+            win.lift()
+            win.focus_force()
+            win.attributes('-topmost', True)
+
+            def _release(_w=win):
+                try:
+                    if _w.winfo_exists():
+                        _w.attributes('-topmost', False)
+                except Exception:
+                    pass
+
+            win.after(delay, _release)
+        except Exception:
+            pass
+
     def _prog_open(self, title="Computing...", topmost=True):
         """Open a progress popup with bar + percentage + elapsed time.
 
@@ -9884,9 +9918,10 @@ class FESTProApp(ctk.CTk):
         다음 _prog_update 호출에서 _UserCancelled 예외 발생 → tab 메서드가 catch.
         v28.17 (Seunghoon): topmost=True면 작업 중 창을 항상 위에 둔다(캔버스 redraw가
         메인 창을 앞으로 올려도 가려지지 않게).
-        v28.29 (사용자 요청): 기본값을 topmost=True로 변경 — Compare/Sweep/Contour 등
-        모든 실행 로딩창이 맨 위에 뜨게. 사용자가 직접 최소화하면 내려간다(Unmap 시
-        topmost 해제). 굳이 안 띄우려면 호출부에서 topmost=False 지정."""
+        v28.29 (사용자 요청): 기본값을 topmost=True로 변경 — 모든 실행 로딩창이 맨 위에 뜨게.
+        v28.30 (사용자 요청): 영구 topmost 폐기. 진행창을 뜰 때 한 번만 앞으로 올리고
+        (_raise_once) 그 뒤엔 일반 창처럼 둔다 — 다른 창을 누르면 그 창이 앞으로 와서
+        작업 중에도 동시에 다른 일을 할 수 있다. topmost=False면 momentary 띄움도 생략."""
         # Close any existing popup
         if hasattr(self, '_prog_win') and self._prog_win:
             try: self._prog_win.destroy()
@@ -9897,37 +9932,16 @@ class FESTProApp(ctk.CTk):
         try:
             w = ctk.CTkToplevel(self); w.title("2L-FEST")
             w.geometry("420x130+600+400"); w.resizable(False, False)
-            # (Seunghoon): make the progress popup a normal, MINIMIZABLE
-            # and movable window. The previous permanent always-on-top
-            # (attributes('-topmost', True)) pinned it in front and blocked the
-            # OS minimize button. Instead we lift + focus it once on open and
-            # leave it as an ordinary top-level: the user can now minimize it,
-            # move it, or send it behind other windows.
+            # (Seunghoon, v28.30): 진행창을 일반적인, 최소화/이동 가능한 창으로 둔다.
+            # 영구 always-on-top은 다른 창/앱을 클릭해도 계속 앞을 가려 동시 작업을
+            # 막았다. 대신 뜰 때 한 번만 앞으로 올리고(_raise_once) 곧 양보한다:
+            # 처음엔 앞에 보이되, 다른 창을 누르면 그 창이 앞으로 온다.
             try:
-                w.lift()
-                w.focus_force()
                 if topmost:
-                    # 항상 위에 두되, 사용자가 직접 최소화하면 내려가게 한다:
-                    #   최소화(iconic) 순간엔 topmost를 풀고, 복원(map)되면 다시 위로.
-                    #   (permanent topmost는 최소화 버튼을 무력화해서 못 내림.)
-                    w.attributes('-topmost', True)
-
-                    def _prog_on_unmap(_e=None, _w=w):
-                        try:
-                            if _w.state() == 'iconic':
-                                _w.attributes('-topmost', False)
-                        except Exception:
-                            pass
-
-                    def _prog_on_map(_e=None, _w=w):
-                        try:
-                            if _w.state() != 'iconic':
-                                _w.attributes('-topmost', True)
-                        except Exception:
-                            pass
-
-                    w.bind('<Unmap>', _prog_on_unmap)
-                    w.bind('<Map>', _prog_on_map)
+                    self._raise_once(w)
+                else:
+                    w.lift()
+                    w.focus_force()
             except Exception:
                 pass
             # hook X (close button) to cancel handler
@@ -11317,7 +11331,7 @@ class FESTProApp(ctk.CTk):
         mwin = ctk.CTkToplevel(self)
         mwin.title("2L-FEST PRO \u2014 Model & Methodology")
         mwin.geometry("1300x850")
-        mwin.attributes('-topmost', True)
+        self._raise_once(mwin)  # v28.30: \ub730 \ub54c\ub9cc \uc55e\uc73c\ub85c, \uadf8 \ub4a4 \ub2e4\ub978 \ucc3d\uc5d0 \uc591\ubcf4
 
         # --- PAGE TITLES ---
         _TITLES_EN = ['Overview', 'Architecture', 'FEM Equations',
@@ -11942,7 +11956,7 @@ class FESTProApp(ctk.CTk):
         rwin = ctk.CTkToplevel(self)
         rwin.title("2L-FEST PRO Report")
         rwin.geometry("1200x800")
-        rwin.attributes('-topmost', True)
+        self._raise_once(rwin)  # v28.30: 뜰 때만 앞으로, 그 뒤 다른 창에 양보
 
         # Report figure
         rfig = Figure(figsize=(11, 8.5), facecolor='white', dpi=100)
