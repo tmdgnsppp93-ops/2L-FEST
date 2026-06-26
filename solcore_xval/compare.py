@@ -84,8 +84,10 @@ term = int((contacts > 200).sum())
 print(f"mask {nx}x{ny} px ({PIX_UM:.0f}um), shading(areal)={shade*100:.2f}%, terminal px={term}")
 
 # ---------------------------------------------------------------- Solcore side
-# resistance mapping: metal sheet R = bulk resistivity / finger height
-Rline = rm / hf                                     # Ohm/sq
+# resistance mapping: metal sheet R = bulk resistivity / finger height.
+# /cf accounts for 2L-FEST's finger cross-section shape factor (area = w*h*cf),
+# so the per-square metal resistance matches between the two solvers.
+Rline = rm / (hf * cf)                              # Ohm/sq
 Vmax = float(max(Vf.max(), mf["Voc"]) * 1.02)
 Vs, Js = run_quasi3d(
     injection, contacts,
