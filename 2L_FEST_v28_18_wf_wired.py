@@ -61,6 +61,14 @@ v28.31: [ui] 라벨 정리 마무리 — (1) Recomb.J 라벨을 v28.26 규칙에
          (pi/4~1)→(π/4~1). 앞면/다이오드/TOP/BOT/뒷면 카드 전부. 단위 문자열은 표시
          전용(로직 파싱 없음 확인). matplotlib 차트 라벨·DXF 단위파싱·CSV 헤더는 글리프/
          인코딩 안전 위해 ASCII 유지. mm은 그대로(이미 정상).
+v28.32: [ui] (1) 앞면 TCO sheet R 입력칸을 Process(BEFORE 카드)에서 Design(REAR
+         DESIGN 카드, "Rear Sheet R" 바로 위 "Front Sheet R")으로 이동 — 프레싱 무관
+         단일 전극값이라 위치가 맞고, 앞/뒤 sheet R을 한 곳에서 봄. tb_b 6행으로 축소,
+         rs는 self._tco_front_entry에서 읽음(결과 비트 동일). [fix] bifacial 후면 조도
+         버그 — mono 기본 모드가 초기화 시 Suns Rear를 0으로 강제/비활성화하는데
+         bifacial 전환 시 값 복원을 안 해 후면 조도가 0으로 남던 문제. 이제 bifacial
+         전환 시 후면 조도가 0이면 기본 0.20(IEC 61853-4 grass albedo)으로 채움
+         (사용자 입력값 >0은 보존). DP.bifacial_gain 기본값(0.20)과도 일치.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -159,8 +167,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.31",
-    "date": "2026-06-25",
+    "version": "v28.32",
+    "date": "2026-06-26",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -7520,10 +7528,13 @@ class FESTProApp(ctk.CTk):
         ]
 
         # --- BEFORE Card --- [STEP 2]
+        # v28.32: TCO sheet R 줄 제거 — 프레싱으로 안 변하는 단일 전극값이라
+        # Design 탭(REAR DESIGN 카드, 뒷면 sheet R 바로 위)으로 이동. tb_b는 이제
+        # 6행(0-5: bulk/finger_h/wf/wb/cf/rc)만; rs는 self._tco_front_entry에서 읽음.
         self.tb_b, self._sidebar_labels_b, hdr_b = self._make_card(step2, _t('before'), CLR_RED,
                                      [(_t(k), p[1], p[3]) for k,p in zip(
-                                      ['bulk_res','finger_h','w_finger','w_busbar','shape_cf','contact_res','tco_rsheet'],
-                                      self.param_defs)])
+                                      ['bulk_res','finger_h','w_finger','w_busbar','shape_cf','contact_res'],
+                                      self.param_defs[:6])])
 
         ctk.CTkFrame(step2, height=8, fg_color="transparent").pack()
 
@@ -7887,6 +7898,22 @@ class FESTProApp(ctk.CTk):
         self._rs_rear_entry = ctk.CTkEntry(rear_card, width=1, height=1)
         self._rs_rear_entry.insert(0, "0.5")
         # Don't pack it - hidden
+
+        # Front TCO sheet R (v28.32: moved here from the Process/BEFORE card so
+        # the front & rear sheet resistances sit together in Design). Single
+        # shared value, unchanged by hot pressing. Read by _get_params via
+        # self._tco_front_entry (was tb_b[6]).
+        fs_tco_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
+        fs_tco_row.pack(fill="x"); fs_tco_row.pack_propagate(False)
+        ctk.CTkLabel(fs_tco_row, text="Front Sheet R ↔", font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._tco_front_entry = ctk.CTkEntry(fs_tco_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                           fg_color="white", border_color=CLR_CARD_BD,
+                           corner_radius=4, justify="center")
+        self._tco_front_entry.insert(0, "55")
+        self._tco_front_entry.pack(side="left", padx=2, pady=1)
+        ctk.CTkLabel(fs_tco_row, text="Ω/sq", font=ctk.CTkFont(size=8),
+                     text_color=CLR_TEXT_SEC, width=45, anchor="w").pack(side="left", padx=2)
 
         # Rs_rear_tco (L3 layer sheet R) — USER-EDITABLE
         # Represents the rear TCO / doped Si lateral conductance layer.
@@ -9656,7 +9683,20 @@ class FESTProApp(ctk.CTk):
             # Bifacial: Suns Rear 입력/preset 활성화
             if hasattr(self, 'tb_illum') and len(self.tb_illum) > 1:
                 try:
-                    self.tb_illum[1].configure(state="normal")
+                    ent = self.tb_illum[1]
+                    ent.configure(state="normal")
+                    # v28.32: mono->bifacial 전환 시 후면 조도가 0이면 기본값 0.20으로
+                    # 채운다 (IEC 61853-4 grass albedo). mono 모드가 0.00으로 강제했던
+                    # 값을 복원하는 것. 사용자가 직접 넣은 값(>0)은 그대로 보존.
+                    try:
+                        cur_val = float(ent.get().strip())
+                    except ValueError:
+                        cur_val = 0.0
+                    if cur_val <= 0.0:
+                        ent.delete(0, "end")
+                        ent.insert(0, "0.20")
+                        if hasattr(self, '_albedo_preset_var'):
+                            self._albedo_preset_var.set("Grass / IEC 61853-4 (0.20)")
                 except Exception:
                     pass
             if hasattr(self, '_albedo_preset_dropdown'):
@@ -9863,13 +9903,14 @@ class FESTProApp(ctk.CTk):
 
     def _update_sidebar_labels(self):
         """Update sidebar card/param labels for current language."""
-        param_keys = ['bulk_res','finger_h','shape_cf','contact_res','tco_rsheet']
+        # v28.32: BEFORE/AFTER 카드는 이제 6행(tco_rsheet 제거됨)
+        param_keys = ['bulk_res','finger_h','w_finger','w_busbar','shape_cf','contact_res']
         grid_keys = ['cell_w','cell_h']
         if hasattr(self, '_sidebar_labels_b'):
             for lbl, key in zip(self._sidebar_labels_b, param_keys):
                 lbl.configure(text=_t(key))
         if hasattr(self, '_sidebar_labels_a'):
-            for lbl, key in zip(self._sidebar_labels_a, param_keys[:4]):
+            for lbl, key in zip(self._sidebar_labels_a, param_keys):
                 lbl.configure(text=_t(key))
         if hasattr(self, '_sidebar_labels_g'):
             for lbl, key in zip(self._sidebar_labels_g, grid_keys):
@@ -10068,7 +10109,7 @@ class FESTProApp(ctk.CTk):
             wb_b = float(self.tb_b[3].get()) * 1e-4   # busbar width (Before) -- MASTER
             cf_b = float(self.tb_b[4].get())          # shape CF
             rc_b = float(self.tb_b[5].get()) * 1e-3   # contact resistivity
-            rs   = float(self.tb_b[6].get())          # TCO R_sheet
+            rs   = float(self._tco_front_entry.get())  # TCO sheet R (moved to REAR DESIGN card, v28.32)
 
             # AFTER card (6 fields, no TCO since unchanged):
             #   [0]=BulkR, [1]=FingerH, [2]=WFinger, [3]=WBusbar,
