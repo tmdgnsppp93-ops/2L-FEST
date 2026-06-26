@@ -1,8 +1,12 @@
-__pycache__/
-*.pyc
-_validate_*_out.txt
 
 # PyInstaller build artifacts (regenerate with build_app.command)
+*.pyc
+*.spec
+.DS_Store
+__pycache__/
+_validate_*_out.txt
 build/
 dist/
-*.spec
+solcore_xval/*.npz
+solcore_xval/__pycache__/
+solcore_xval/compare_iv.png
