@@ -90,6 +90,47 @@ def run_quasi3d(injection, contacts, *, jsc, j01, j02, n1, n2, Eg,
     return V, J
 
 
+def run_quasi3d_tandem(injection, contacts, *, top, bot, Rc_junction=0.0,
+                       RsTop_front, RsBot_rear=1e-3, Rline, Rcontact,
+                       Lx=10e-6, Ly=10e-6, vini=0.0, vfin=2.2, step=0.005):
+    """2-junction (2T tandem) Solcore quasi-3D: junction 0 = top, 1 = bottom.
+
+    Front metal grid sits on junction 0 (top) only; rear contact on junction 1.
+    The recombination junction between them is a vertical series resistance
+    (Rc_junction, Ohm*cm^2) -> Phase-A representation, the only one Solcore's
+    series-junction model supports (Phase-B lateral interlayer sheet has no DOF).
+
+    `top`/`bot` are dicts with cm-unit keys: jsc, j01, j02, n1, n2, Eg, Rshunt.
+    Returns (V [V], J [A/cm^2]) with generation positive at short circuit.
+    """
+    def col(k, scale):
+        return np.array([top[k] * scale, bot[k] * scale])
+    Isc = col("jsc", CM2_PER_M2)
+    I01 = col("j01", CM2_PER_M2)
+    I02 = np.array([max(top["j02"], 1e-30) * CM2_PER_M2, max(bot["j02"], 1e-30) * CM2_PER_M2])
+    n1 = np.array([top["n1"], bot["n1"]]); n2 = np.array([top["n2"], bot["n2"]])
+    Eg = np.array([top["Eg"], bot["Eg"]])
+    Rsh = col("Rshunt", 1.0 / CM2_PER_M2)
+    # series between junctions: [top->bot recomb junction, bot->back]. R_back small.
+    Rseries = np.array([max(Rc_junction, 1e-16) / CM2_PER_M2, 1e-16])
+    # lateral sheet: only the front TCO (top junction's top plane) is resistive;
+    # interlayer & rear planes ~0 (vertical transport in Phase A).
+    RsTop = np.array([max(RsTop_front, 1e-16), 1e-16])
+    RsBot = np.array([1e-16, max(RsBot_rear, 1e-16)])
+
+    V, I, Vall, Vmet = solve_circuit_quasi3D(
+        vini, vfin, step, Isc, I01, I02, n1, n2, Eg, Rsh, Rseries,
+        injection, contacts, RsTop, RsBot, Rline, Rcontact / CM2_PER_M2, Lx, Ly)
+
+    V = np.asarray(V, float); I = np.asarray(I, float)
+    nx, ny = injection.shape
+    area_cm2 = (nx * Lx) * (ny * Ly) * CM2_PER_M2
+    J = I / area_cm2
+    if J[np.argmin(np.abs(V))] < 0:
+        J = -J
+    return V, J
+
+
 def iv_metrics(V, J):
     """Metrics from a (V [V], J [A/cm^2]) generation curve (J>0 at V=0)."""
     V = np.asarray(V, float); J = np.asarray(J, float)
