@@ -7906,8 +7906,8 @@ class FESTProApp(ctk.CTk):
         fs_tco_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         fs_tco_row.pack(fill="x"); fs_tco_row.pack_propagate(False)
         ctk.CTkLabel(fs_tco_row, text="Front Sheet R ↔", font=ctk.CTkFont(size=10),
-                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
-        self._tco_front_entry = ctk.CTkEntry(fs_tco_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=100, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._tco_front_entry = ctk.CTkEntry(fs_tco_row, width=65, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
                            corner_radius=4, justify="center")
         self._tco_front_entry.insert(0, "55")
@@ -7921,8 +7921,8 @@ class FESTProApp(ctk.CTk):
         rs_tco_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rs_tco_row.pack(fill="x"); rs_tco_row.pack_propagate(False)
         ctk.CTkLabel(rs_tco_row, text="Rear Sheet R ↔", font=ctk.CTkFont(size=10),
-                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
-        self._rs_tco_entry = ctk.CTkEntry(rs_tco_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=100, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._rs_tco_entry = ctk.CTkEntry(rs_tco_row, width=65, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
                            corner_radius=4, justify="center")
         self._rs_tco_entry.insert(0, f"{DP.Rs_rear_tco:.0f}")
@@ -7935,8 +7935,8 @@ class FESTProApp(ctk.CTk):
         rc_rear_row = ctk.CTkFrame(rear_card, fg_color=CLR_CARD_BG, height=30, corner_radius=0)
         rc_rear_row.pack(fill="x"); rc_rear_row.pack_propagate(False)
         ctk.CTkLabel(rc_rear_row, text="Rear Contact ρ ↕", font=ctk.CTkFont(size=10),
-                     text_color=CLR_TEXT, width=110, anchor="w").pack(side="left", padx=(8, 2), pady=1)
-        self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=60, height=24, font=ctk.CTkFont(size=10),
+                     text_color=CLR_TEXT, width=100, anchor="w").pack(side="left", padx=(8, 2), pady=1)
+        self._rc_rear_entry = ctk.CTkEntry(rc_rear_row, width=65, height=24, font=ctk.CTkFont(size=10),
                            fg_color="white", border_color=CLR_CARD_BD,
                            corner_radius=4, justify="center",
                            placeholder_text="=front")
