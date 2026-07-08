@@ -86,6 +86,11 @@ v28.34: [fix] 후면 금속 dead wiring + 단위 수정. (1) _build가 계산만
          rm 슬롯에 hf=1.0으로 넘겨 R_per_len=Rs/w. (2) DiodeParams.Rs_rear_metal_sheet
          13.22→0.01322 (µΩ·cm를 Ω/sq로 오기입, 1000배). ≤0이면 rm/hf 폴백(hf>0에서
          레거시 비트 동일). assemble_K_met_1d 함수 자체는 불변(호출부만 변경).
+v28.35: [verify] Phase B bifacial Vint-Vr 퇴화 재조사 — v28.16 Method B가 이미 해소
+         (Vint 비-DOF화, oVint 슬롯이 Vbot 직접 보유 → (V_int+c,Vr+c) null mode 제거),
+         Vrm 0V 앵커도 rear-pad에 기존 존재. 코드 무변경, 18조합 수렴 회귀 가드 추가.
+         Vb=0 residual plateau는 legacy와 공통인 단락점 척도 아티팩트로 문서화
+         (해는 legacy Phase A와 0.015% 일치).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -184,7 +189,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.34",
+    "version": "v28.35",
     "date": "2026-07-08",
     "name": "wf_wired",
 }
