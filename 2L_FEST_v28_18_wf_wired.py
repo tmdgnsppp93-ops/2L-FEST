@@ -69,6 +69,16 @@ v28.32: [ui] (1) 앞면 TCO sheet R 입력칸을 Process(BEFORE 카드)에서 De
          bifacial 전환 시 값 복원을 안 해 후면 조도가 0으로 남던 문제. 이제 bifacial
          전환 시 후면 조도가 0이면 기본 0.20(IEC 61853-4 grass albedo)으로 채움
          (사용자 입력값 >0은 보존). DP.bifacial_gain 기본값(0.20)과도 일치.
+v28.33: [physics] interlayer 모델 기본화 (Griddler PRO 등가). DiodeParams 기본값
+         Rs_junction 0→5000 Ω/sq(PRO 10k∥10k), Rc_junction 0→0.1 Ω·cm²(PRO
+         100 mΩ·cm²). 이제 tandem은 항상 Phase B(유한 lateral interlayer plane)로
+         디스패치된다. Rs_j=0(Phase A local current matching)은 물리적으로 lateral
+         전도 없는 Rs_j→∞ 극한이라 라벨과 반대였으며, 이제 환경변수
+         FEST_LEGACY_LOCAL_MATCH=1 일 때만 허용(_legacy_local_match_enabled()).
+         상수 RS_JUNCTION_MIN=0.1 로 Rs_j≤0 입력을 _build/_apply_diode_params에서
+         클램프(_cache_hash 이전) → _K_junc 항상 빌드. _phase_b_model_info가
+         interlayer 문자열을 iv dict에 상시 표기. solve_tandem/_solve_tandem_*
+         내부·조립·메시 함수는 불변(호출부/기본값/디스패치 게이트만 변경).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -167,8 +177,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.32",
-    "date": "2026-06-26",
+    "version": "v28.33",
+    "date": "2026-07-08",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -201,6 +211,22 @@ print(_build_label())
 # 이 GUI default(Ω/sq)로 채워 Phase B를 유지한다. 클래스 DiodeParams.Rs_junction=0
 # default는 내부 리포트/bifacial baseline용으로 그대로 둔다.
 GUI_DEFAULT_RS_JUNCTION = 100.0   # ITO/nc-SiOx 문헌 중간값 (50~500 Ω/sq)
+
+# Phase 1 (v28.33): the interlayer is always a finite lateral plane (Phase B).
+# RS_JUNCTION_MIN is the Ω/sq floor applied to any Rs_junction ≤ 0 input so the
+# interlayer stiffness (_K_junc) is always buildable and the solver never falls
+# back to the Phase-A local-matching path — unless the legacy escape hatch is on.
+RS_JUNCTION_MIN = 0.1
+
+
+def _legacy_local_match_enabled():
+    """True only when env FEST_LEGACY_LOCAL_MATCH=1.
+
+    Enables the legacy Rs_junction=0 Phase-A local current-matching path.
+    os.environ is read on EVERY call (never cached at import) so tests can
+    monkeypatch the environment between solves.
+    """
+    return os.environ.get("FEST_LEGACY_LOCAL_MATCH", "") == "1"
 
 
 def _parse_gui_float(raw, name, *, scale=1.0, allow_blank=False, blank_value=0.0):
@@ -273,23 +299,50 @@ _PHASE_B_GRIDDLER_MESSAGE = (
 
 def _phase_b_model_info(dp=None, mode='tandem'):
     rs_junction = 0.0
+    rc_junction = 0.0
     if dp is not None:
         rs_junction = _finite_or_none(getattr(dp, "Rs_junction", 0.0)) or 0.0
-    phase_b_active = bool(mode == 'tandem' and rs_junction > 0.0)
+        rc_junction = _finite_or_none(getattr(dp, "Rc_junction", 0.0)) or 0.0
+    legacy = _legacy_local_match_enabled()
+    # Phase 1 (v28.33): tandem always runs Phase B unless the legacy flag is set
+    # AND Rs_j ≤ 0. Any Rs_j ≤ 0 in non-legacy mode is clamped by _build to
+    # RS_JUNCTION_MIN, so the reported model is Phase B with the effective sheet R.
+    legacy_active = bool(legacy and rs_junction <= 0.0)
+    phase_b_active = bool(mode == 'tandem' and not legacy_active)
     if phase_b_active:
+        eff_rs = rs_junction if rs_junction > 0.0 else RS_JUNCTION_MIN
+        interlayer = (
+            f"Interlayer: Phase B lateral "
+            f"(Rs_j={eff_rs:.1f} ohm/sq, Rc_j={rc_junction:.3f} ohm.cm2)"
+        )
         return {
             "phase_b_active": True,
             "phase_b_status": "GRIDDLER_STYLE",
             "phase_b_message": _PHASE_B_GRIDDLER_MESSAGE,
             "junction_model": "Phase B Griddler-style single-plane interlayer",
-            "rs_junction": float(rs_junction),
+            "interlayer_model": interlayer,
+            "rs_junction": float(eff_rs),
+            "rc_junction": float(rc_junction),
         }
+    interlayer = (
+        "LEGACY local matching (no lateral conduction, Rs_j->inf limit)"
+        if legacy_active else
+        "Interlayer: n/a (single-cell mode)"
+    )
     return {
         "phase_b_active": False,
-        "phase_b_status": "BASELINE",
-        "phase_b_message": "Phase A local current matching baseline.",
-        "junction_model": "Phase A local current matching",
+        "phase_b_status": "LEGACY_LOCAL_MATCH" if legacy_active else "BASELINE",
+        "phase_b_message": (
+            "LEGACY local current matching (Rs_j->inf limit, no lateral interlayer conduction)."
+            if legacy_active else "Single-cell mode: no interlayer."
+        ),
+        "junction_model": (
+            "LEGACY local current matching" if legacy_active
+            else "n/a (single-cell)"
+        ),
+        "interlayer_model": interlayer,
         "rs_junction": float(rs_junction),
+        "rc_junction": float(rc_junction),
     }
 
 
@@ -1179,17 +1232,21 @@ class DiodeParams:
     bifacial_gain = 0.20
 
     # --- Interlayer / Recombination Junction (박사님 2026.04.10) ---
-    # Phase A: vertical contact R only.  V_bot_eff = (Ve-Vtop-Vr) - Rc_j × J_local.
-    # Default 0 = ideal junction.  Typical PST: 0.02-0.2 Ω·cm², poor contact: 0.5-2.
-    Rc_junction = 0.0
+    # Phase B (default, v28.33): the interlayer is ALWAYS a finite lateral sheet-R
+    # plane — the Griddler PRO model (Manual v7.0 §7). Phase A local current
+    # matching (Rs_j=0) is the Rs_j→∞ limit (no lateral conduction) and is only
+    # reachable via the FEST_LEGACY_LOCAL_MATCH escape hatch.
+    #
+    # Rc_junction: vertical contact resistivity between top and bot subcells.
+    # Default 0.1 Ω·cm² = PRO 100 mΩ·cm². Typical PST: 0.02-0.2, poor contact: 0.5-2.
+    Rc_junction = 0.1
 
-    # Phase B: Griddler-style lateral interlayer sheet R.
-    # Rs_junction>0 enables the single-plane interlayer FEM model used for
-    # Griddler-style runs. This is not the same model family as the Phase A
-    # local-node Rs_junction=0 baseline, so direct Griddler PRO cross-validation
-    # is required before claiming absolute equivalence.
-    # Typical ITO/nc-SiOx: 50-500 Ω/sq. Default 0 = Phase A baseline.
-    Rs_junction = 0.0
+    # Rs_junction: interlayer lateral sheet R [Ω/sq] (single-plane interlayer FEM).
+    # Default 5000 = PRO 10k∥10k parallel sum of the upper/lower interlayer planes
+    # collapsed to one plane. The single-plane approximation is valid because the
+    # coupling length ℓ = √(Rc/(Rs_n+Rs_p)) ≈ 22 µm ≪ finger pitch, so the two
+    # planes are locally equipotential. Typical ITO/nc-SiOx: 50-500 Ω/sq.
+    Rs_junction = 5000.0
 
     # --- Spatial multiplier maps (v28.16 feature ③) ---
     # Per-node multipliers applied ON TOP OF the metal_frac pass/metal weighting,
@@ -1210,9 +1267,10 @@ class DiodeParams:
     # --- Luminescent Coupling J01 (Zeder 2025; Jäger 2021) ---
     # J_LC = J01_coupling × (exp(qV_top/kT)-1), added to bot photocurrent.
     # Scaling: J01_coupling ≈ η_LC × J01_top_rad,  η_LC ≈ 36% (EPFL, Zeder 2025).
-    # ATTRIBUTION FIX: Zeder et al. (Solar RRL 2025) model LC with SETFOS (Fluxim
-    # drift-diffusion), NOT Griddler — LC is not a Griddler PRO feature. The
-    # exp(qV_top/kT) LC form is the standard one (also Jäger, Solar RRL 2021).
+    # ATTRIBUTION: Zeder et al. (Solar RRL 2025) parametrise LC with SETFOS (Fluxim
+    # drift-diffusion). The SAME functional form is a Griddler PRO feature — Manual
+    # v7.0 §7 item 7 "Photon Coupling J01" implements J01_coupling × (exp(qV_Jtop/kT)−1).
+    # The exp(qV_top/kT) LC form is the standard one (also Jäger, Solar RRL 2021).
     # Expected gain in current-matched PST: +0.1 to +0.5% abs (Jäger 2021, Nguyen 2024).
     J01_coupling = 0.0
 
@@ -2885,6 +2943,16 @@ def solve_0d_tandem_iv(dp, npts=200, shading_frac=0.0, metal_frac=0.0, j_match=F
        J_top(V_top) = J_bot(V_total - V_top)
     using Newton iteration on V_top.
 
+    Model scope: this 0D reference enforces a SINGLE global current-matching
+    constraint over the whole cell — i.e. the equipotential-interlayer limit of
+    Phase B (Rs_junction → 0), where the interlayer plane is perfectly conductive.
+    It is therefore the correct cross-check for Phase B in that limit. It is NOT
+    consistent in principle with the legacy Phase-A local (per-node) current
+    matching when pass/metal J0 separation is enabled: local matching lets the
+    match point vary spatially with the metal_frac-weighted J0, which no single
+    global V_top can reproduce. Use j_match/metal_frac to align the area-weighted
+    J0, but expect a residual model-formulation difference vs legacy Phase A.
+
     Args:
       dp           : DiodeParams
       npts         : number of V_total sweep points
@@ -3377,7 +3445,12 @@ class FESTSolver:
         # Rear emitter/TCO sheet R — physical value from DiodeParams
         Rs_rear_tco = dp.Rs_rear_tco
         # Interlayer lateral sheet R (Phase B) — affects K_int matrix
+        # Phase 1 (v28.33): unless the legacy local-matching flag is set, clamp
+        # Rs_j ≤ 0 to RS_JUNCTION_MIN so _K_junc is always built (Phase B). Applied
+        # BEFORE the _cache_hash tuple so the cache key reflects the effective Rs_j.
         Rs_j = dp.Rs_junction
+        if not _legacy_local_match_enabled() and (Rs_j is None or Rs_j <= 0):
+            Rs_j = RS_JUNCTION_MIN
         # (③): include spatial-map identities so changing a map (esp. the
         # rc map, which feeds Gc built here) invalidates the build cache. Use a
         # cheap id()-based tag; None maps tag as 0.
@@ -7645,8 +7718,8 @@ class FESTProApp(ctk.CTk):
             ("n1 Bot (Si)", f"{DP.n1_bot:.1f}", ""),
             (_t('n2_bot'), f"{DP.n2_bot:.1f}", ""),
             ("LC Coupling", "0.0e+00", "A/cm²"),
-            ("Recomb.J Contact ρ ↕", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
-            ("Recomb.J Sheet R ↔", f"{DP.Rs_junction:.1f}", "Ω/sq"),
+            ("Recomb.J Contact ρ ↕ (Griddler PRO equiv.)", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
+            ("Recomb.J Sheet R ↔ (Griddler PRO equiv.)", f"{DP.Rs_junction:.1f}", "Ω/sq"),
         ])
         self._card_headers.append(hdr_d)
 
@@ -9395,13 +9468,10 @@ class FESTProApp(ctk.CTk):
                     rc_val = _parse_gui_float(rc_str, "Rc_junction")
                     if rc_val < 0 or rc_val > 100:
                         raise ValueError("Rc_junction must be between 0 and 100")
-                    if rc_val < 0 or rc_val > 100:
-                        self._status(f"Rc_junction out of range (0~100 Ω·cm²), disabled.")
-                        DP.Rc_junction = 0.0
-                    else:
-                        DP.Rc_junction = rc_val
+                    DP.Rc_junction = rc_val
                 else:
-                    DP.Rc_junction = 0.0
+                    # blank → class default (Griddler PRO equiv. 100 mΩ·cm²)
+                    DP.Rc_junction = DiodeParams.Rc_junction
             except (ValueError, IndexError) as e:
                 self._status(f"Rc_junction parse error: {e}")
                 return False
@@ -9414,25 +9484,29 @@ class FESTProApp(ctk.CTk):
             #   default로 끌어올려 Phase B를 유지한다 → Phase A로 떨어질 경로가 없다.
             #   single 모드는 중간층이 없으므로 0.
             _mode_now = self._mode_var.get() if hasattr(self, '_mode_var') else 'tandem'
+            _legacy = _legacy_local_match_enabled()
             try:
                 rs_str = self.tb_diode[6].get().strip()
                 if not rs_str:
                     if _mode_now == 'tandem':
-                        DP.Rs_junction = GUI_DEFAULT_RS_JUNCTION
+                        DP.Rs_junction = DiodeParams.Rs_junction  # class default (Phase B)
                         self._status(
                             f"Rs_junction 미입력 → default "
-                            f"{GUI_DEFAULT_RS_JUNCTION:.0f} Ω/sq 사용 (Phase B).")
+                            f"{DiodeParams.Rs_junction:.0f} Ω/sq 사용 (Phase B).")
                     else:
                         DP.Rs_junction = 0.0   # single: 중간층 없음
                 else:
                     rs_val = _parse_gui_float(rs_str, "Rs_junction")
                     if rs_val < 0 or rs_val > 100000:
                         raise ValueError("Rs_junction must be between 0 and 100000")
-                    if _mode_now == 'tandem' and rs_val == 0:
-                        DP.Rs_junction = GUI_DEFAULT_RS_JUNCTION
+                    if _mode_now == 'tandem' and rs_val <= 0 and not _legacy:
+                        # Phase 1 (v28.33): Rs_j≤0 is the Phase-A trigger; clamp to
+                        # RS_JUNCTION_MIN to keep Phase B. Legacy Phase A requires
+                        # FEST_LEGACY_LOCAL_MATCH=1.
+                        DP.Rs_junction = RS_JUNCTION_MIN
                         self._status(
-                            f"Rs_junction=0 은 Phase A → default "
-                            f"{GUI_DEFAULT_RS_JUNCTION:.0f} Ω/sq (Phase B)로 대체.")
+                            f"Rs_junction≤0 → {RS_JUNCTION_MIN} Ω/sq로 클램프 (Phase B 유지). "
+                            f"legacy Phase A는 FEST_LEGACY_LOCAL_MATCH=1 필요.")
                     else:
                         DP.Rs_junction = rs_val
             except (ValueError, IndexError) as e:

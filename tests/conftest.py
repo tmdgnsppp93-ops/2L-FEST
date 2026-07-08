@@ -100,25 +100,46 @@ def _build_solver(fest, geo):
     )
 
 
-@pytest.fixture(scope="session")
-def mono(fest):
-    """Small full-area (monofacial) cell: 2x2mm, 8F+1BB, ~3.8k nodes."""
-    geo = fest.CellGeometry(
+def _mono_geo(fest):
+    return fest.CellGeometry(
         cell_w=2.0, cell_h=2.0,
         front=fest.GridDesign(n_fingers=8, n_busbars=1,
                               w_finger=50e-4, w_busbar=600e-4),
     )
-    return _build_solver(fest, geo)
 
 
-@pytest.fixture(scope="session")
-def bifacial(fest):
-    """Small bifacial cell: same front + patterned rear (6F+1BB)."""
-    geo = fest.CellGeometry(
+def _bifacial_geo(fest):
+    return fest.CellGeometry(
         cell_w=2.0, cell_h=2.0,
         front=fest.GridDesign(n_fingers=8, n_busbars=1,
                               w_finger=50e-4, w_busbar=600e-4),
         rear=fest.GridDesign(n_fingers=6, n_busbars=1,
                              w_finger=80e-4, w_busbar=600e-4),
     )
-    return _build_solver(fest, geo)
+
+
+@pytest.fixture(scope="session")
+def mono(fest):
+    """Small full-area (monofacial) cell: 2x2mm, 8F+1BB, ~3.8k nodes."""
+    return _build_solver(fest, _mono_geo(fest))
+
+
+@pytest.fixture(scope="session")
+def bifacial(fest):
+    """Small bifacial cell: same front + patterned rear (6F+1BB)."""
+    return _build_solver(fest, _bifacial_geo(fest))
+
+
+@pytest.fixture
+def make_mono(fest):
+    """Factory: build a FRESH monofacial solver (no warm-start history).
+
+    Pin tests need a clean solver so results are independent of test order.
+    """
+    return lambda: _build_solver(fest, _mono_geo(fest))
+
+
+@pytest.fixture
+def make_bifacial(fest):
+    """Factory: build a FRESH bifacial solver (no warm-start history)."""
+    return lambda: _build_solver(fest, _bifacial_geo(fest))
