@@ -79,6 +79,13 @@ v28.33: [physics] interlayer 모델 기본화 (Griddler PRO 등가). DiodeParams
          클램프(_cache_hash 이전) → _K_junc 항상 빌드. _phase_b_model_info가
          interlayer 문자열을 iv dict에 상시 표기. solve_tandem/_solve_tandem_*
          내부·조립·메시 함수는 불변(호출부/기본값/디스패치 게이트만 변경).
+v28.34: [fix] 후면 금속 dead wiring + 단위 수정. (1) _build가 계산만 하고 버리던
+         Rs_rear_metal_auto를 실제 후면 금속 조립에 배선 — 기존엔 후면 _Krm이
+         전면 rm/hf를 그대로 써서 "핫프레싱 전면만, 후면 baseline" 의도가 미구현
+         이었다. assemble_K_met_1d(..., Rs_rear_metal_auto, 1.0, 1.0, ...)로 sheet R을
+         rm 슬롯에 hf=1.0으로 넘겨 R_per_len=Rs/w. (2) DiodeParams.Rs_rear_metal_sheet
+         13.22→0.01322 (µΩ·cm를 Ω/sq로 오기입, 1000배). ≤0이면 rm/hf 폴백(hf>0에서
+         레거시 비트 동일). assemble_K_met_1d 함수 자체는 불변(호출부만 변경).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -177,7 +184,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.33",
+    "version": "v28.34",
     "date": "2026-07-08",
     "name": "wf_wired",
 }
@@ -1221,9 +1228,12 @@ class DiodeParams:
     # legacy single-rc behavior when left unset). Set >0 to decouple the rear.
     rc_rear = None
 
-    # Rear metal sheet R (박사님 2026.05.21: hot pressing 전면만, 후면 baseline).
-    # 13.22 = 13.22 μΩ·cm × 10 μm = hot-pressing BEFORE state. 0 = auto from rm/hf.
-    Rs_rear_metal_sheet = 13.22
+    # Rear metal sheet R [Ω/sq] (박사님 2026.05.21: hot pressing 전면만, 후면 baseline).
+    # v28.34 단위 수정: sheet R = ρ / t.  Rs = 13.22 µΩ·cm / 10 µm
+    #   = 13.22e-6 Ω·cm / 10e-4 cm = 0.01322 Ω/sq (hot-pressing BEFORE state).
+    # 이전 값 13.22는 µΩ·cm(비저항)를 Ω/sq(면저항)로 오기입한 것(1000배 과다).
+    # ≤ 0 이면 전면 rm/hf 커플링으로 폴백(레거시 동작 비트 동일, hf>0 시).
+    Rs_rear_metal_sheet = 0.01322
 
     # --- Bifacial illumination (rear-side) ---
     # bifacial_gain = Jph_rear_eff / Jph_front. Range: 0 (mono) to 0.30 (outdoor + albedo).
@@ -3499,8 +3509,15 @@ class FESTSolver:
                     self._na[self.isrm] * self.rear_metal_frac[self.isrm])) / rc_rear
             else:
                 _gc_peak_rear = 0.0
+            # v28.34: use the rear metal sheet R (Rs_rear_metal_auto), NOT the
+            # front rm/hf, so hot pressing (front-only) leaves the rear at its
+            # baseline. Passing the sheet R [Ω/sq] in the rm slot with hf=1.0,
+            # cf=1.0 makes the function's R_per_len = rm/(cf·w·hf) = Rs_sheet/w
+            # (correct per-unit-length line R). Fallback (Rs_rear_metal_sheet≤0):
+            # Rs_rear_metal_auto = rm/hf, so R_per_len = (rm/hf)/w = rm/(hf·w),
+            # bit-identical to the previous front-coupled rear (for hf>0).
             self._Krm = assemble_K_met_1d(
-                self.pts, self.isrm, self.geo, rm, hf, 1.0,
+                self.pts, self.isrm, self.geo, Rs_rear_metal_auto, 1.0, 1.0,
                 w_f=rw_f, w_b=rw_b, gc_max=_gc_peak_rear,
                 fg_y=self.geo.rear_fg_y, bb_x=self.geo.rear_bb_x,
                 band_w_f=rw_f, band_w_b=rw_b)
