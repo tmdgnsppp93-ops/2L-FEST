@@ -10,3 +10,4 @@ dist/
 solcore_xval/*.npz
 solcore_xval/__pycache__/
 solcore_xval/compare_iv.png
+.pytest_cache/
