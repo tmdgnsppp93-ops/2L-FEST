@@ -91,6 +91,12 @@ v28.35: [verify] Phase B bifacial Vint-Vr 퇴화 재조사 — v28.16 Method B�
          Vrm 0V 앵커도 rear-pad에 기존 존재. 코드 무변경, 18조합 수렴 회귀 가드 추가.
          Vb=0 residual plateau는 legacy와 공통인 단락점 척도 아티팩트로 문서화
          (해는 legacy Phase A와 0.015% 일치).
+v28.36: [naming] 서브셀 수직 직렬저항 이름 명확화 — Rs_internal_*/Rs_lumped_* →
+         Rs_vert_top/bot (Ω·cm², 서브셀 내부 수직 R). GUI "Rs lumped Top/Bot ↕" →
+         "Rs vert. Top/Bot ↕ (subcell)", CSV/리포트 "Rs lumped total" → "Rs_vert_total".
+         Rc_junction(서브셀 '사이' 수직 접촉 R)과 구분 명시. 기존 이름은 @property
+         별칭으로 유지(비파괴). calc_iv 합산을 canonical 2필드(top+bot)만 쓰도록
+         정리(별칭 4개 합산 시 이중계산 방지); 기본값 0에서 결과 비트 동일.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -189,8 +195,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.35",
-    "date": "2026-07-08",
+    "version": "v28.36",
+    "date": "2026-07-10",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -406,7 +412,7 @@ def _iv_health(iv):
         "fallback_used": fallback,
         "pmpp_consistency_error": p_error,
         "vmpp_internal": _finite_or_none(iv.get("Vmpp_internal")),
-        "rs_lumped_total": _finite_or_none(iv.get("Rs_lumped_total")),
+        "rs_vert_total": _finite_or_none(iv.get("Rs_vert_total")),
         "phase_b_active": phase_b_active,
         "phase_b_status": iv.get("phase_b_status", "BASELINE"),
         "phase_b_message": iv.get("phase_b_message", ""),
@@ -1175,20 +1181,39 @@ class DiodeParams:
     n2_top = 2.0              # Free parameter
     Rsh_top = 5550            # Ohm*cm2 (lit. range 1e3-1e5)
 
-    # --- Per-pixel internal series resistance (distributed model) ---
-    # Each pixel's vertical transport R inside the cell layer (e.g. perovskite
-    # bulk transport, contact at top of perovskite). This is part of the
-    # 2D distributed diode model — NOT a global lumped Rs. v28's FEM grid
-    # already handles lateral grid R / TCO R / contact R distributively;
-    # this term adds the per-pixel vertical R that's inside each diode unit.
-    # Jeon 2025 Table 1 calls this Rs_top / Rs_bot.
-    # Applied as terminal IR drop: V_terminal = V_solver - J × Rs_internal.
-    # Default 0 = no per-pixel internal R. Jeon: Rs_top=2.0, Rs_bot=0.2.
-    Rs_internal_top = 0.0     # Ohm*cm2 (Jeon Rs_top: 2.0)
-    Rs_internal_bot = 0.0     # Ohm*cm2 (Jeon Rs_bot: 0.2)
-    # Backward compat aliases (deprecated, will be removed)
-    Rs_lumped_top = 0.0
-    Rs_lumped_bot = 0.0
+    # --- Per-subcell vertical (through-thickness) series resistance ---
+    # Rs_vert_top / Rs_vert_bot: the vertical (↕) series R INSIDE each subcell
+    # [Ω·cm²] — e.g. perovskite bulk transport + top contact (top), Si bulk /
+    # contact (bottom). This is the through-thickness R that the 2D lateral FEM
+    # planes (metal grid / TCO sheet / contact, all ↔) do NOT capture. Applied
+    # as a terminal IR drop: V_terminal = V_solver − J × (Rs_vert_top+Rs_vert_bot).
+    # DISTINCT from Rc_junction, which is the vertical contact R BETWEEN the two
+    # subcells (the recombination junction). Jeon 2025 Table 1 names these
+    # Rs_top / Rs_bot (Rs_top=2.0, Rs_bot=0.2). Default 0.
+    Rs_vert_top = 0.0     # Ω·cm² (Jeon Rs_top: 2.0)
+    Rs_vert_bot = 0.0     # Ω·cm² (Jeon Rs_bot: 0.2)
+
+    # Deprecated name aliases (non-breaking) → the Rs_vert_* storage above.
+    # (v28.36 rename: Rs_internal_* / Rs_lumped_* → Rs_vert_*.)
+    @property
+    def Rs_internal_top(self): return self.Rs_vert_top
+    @Rs_internal_top.setter
+    def Rs_internal_top(self, v): self.Rs_vert_top = v
+
+    @property
+    def Rs_internal_bot(self): return self.Rs_vert_bot
+    @Rs_internal_bot.setter
+    def Rs_internal_bot(self, v): self.Rs_vert_bot = v
+
+    @property
+    def Rs_lumped_top(self): return self.Rs_vert_top
+    @Rs_lumped_top.setter
+    def Rs_lumped_top(self, v): self.Rs_vert_top = v
+
+    @property
+    def Rs_lumped_bot(self): return self.Rs_vert_bot
+    @Rs_lumped_bot.setter
+    def Rs_lumped_bot(self, v): self.Rs_vert_bot = v
 
     # --- Bottom cell (c-Si) ---
     # pass/metal split for backward-compatible tandem extension.
@@ -6014,26 +6039,22 @@ class FESTSolver:
 
         if mode == 'tandem':
             _, _, Voc_est = dp.expected_voc()
-            # TANDEM-2 fix: wire in the documented per-subcell internal series R
-            # (Jeon 2025 Rs_top/Rs_bot — vertical transport inside each diode
-            # unit). Applied as a terminal IR drop V_term = V_solver - J·Rs.
-            # In a 2T series stack the same J flows through both subcells, so the
-            # two internal resistances add. Previously these params were declared
-            # but never read, so FF was overstated when vertical R was non-zero.
-            # The legacy Rs_lumped_* aliases (deprecated, default 0) are kept for
-            # backward compatibility.
-            Rs_lumped_total = (dp.Rs_internal_top + dp.Rs_internal_bot
-                               + dp.Rs_lumped_top + dp.Rs_lumped_bot)
+            # TANDEM-2 fix: wire in the documented per-subcell vertical series R
+            # (Jeon 2025 Rs_top/Rs_bot — through-thickness R inside each subcell).
+            # Applied as a terminal IR drop V_term = V_solver - J·Rs. In a 2T
+            # series stack the same J flows through both subcells, so the two
+            # vertical resistances add. (Rs_internal_*/Rs_lumped_* are deprecated
+            # aliases of Rs_vert_*; read the canonical fields once here.)
+            Rs_vert_total = dp.Rs_vert_top + dp.Rs_vert_bot
         else:
             Voc_est = dp.expected_voc(mode='single')
-            # Single-cell defaults are Si/bottom-like (LONGi), so the relevant
-            # internal R is the bottom (Si) value.
-            Rs_lumped_total = dp.Rs_internal_bot + dp.Rs_lumped_top
+            # Single-cell: one diode; sum the (default-0) vertical R terms.
+            Rs_vert_total = dp.Rs_vert_bot + dp.Rs_vert_top
 
-        Rs_lumped_total = max(float(Rs_lumped_total), 0.0)
+        Rs_vert_total = max(float(Rs_vert_total), 0.0)
 
         def _V_terminal(V_internal, J_mA_cm2):
-            return np.asarray(V_internal) - (np.asarray(J_mA_cm2) * 1e-3) * Rs_lumped_total
+            return np.asarray(V_internal) - (np.asarray(J_mA_cm2) * 1e-3) * Rs_vert_total
 
         eval_cache = {}
 
@@ -6157,10 +6178,10 @@ class FESTSolver:
         # Phase 2: Fine sweep around MPP (±50mV), also high-to-low
         # Reduced from 20 to 10 points for ~50% speedup at MPP step
         Vsc_internal = 0.0
-        if Rs_lumped_total > 1e-6:
+        if Rs_vert_total > 1e-6:
             def _terminal_at_internal(v):
                 J, _ = _eval_internal(v)
-                return float(v - J * 1e-3 * Rs_lumped_total)
+                return float(v - J * 1e-3 * Rs_vert_total)
 
             f0 = _terminal_at_internal(0.0)
             fvoc = _terminal_at_internal(Voc_internal)
@@ -6208,7 +6229,7 @@ class FESTSolver:
         Vs_internal = Vs_all[order]
         Js = Js_all[order]
         # Remove near-duplicates
-        duplicate_tol = 1e-10 if Rs_lumped_total > 1e-6 else 1e-6
+        duplicate_tol = 1e-10 if Rs_vert_total > 1e-6 else 1e-6
         mask = np.diff(Vs_internal, prepend=-1) > duplicate_tol
         Vs_internal = Vs_internal[mask]
         Js = Js[mask]
@@ -6217,7 +6238,7 @@ class FESTSolver:
         # V_terminal = V_solver - J × Rs_lumped (J in mA/cm² → ×1e-3 to A)
         Vs = _V_terminal(Vs_internal, Js)
         Vs_internal_for_terminal = Vs_internal.copy()
-        if Rs_lumped_total > 1e-6:
+        if Rs_vert_total > 1e-6:
             Jsc_root, _ = _eval_internal(Vsc_internal)
             Vs = np.concatenate([Vs, np.array([0.0, float(Voc_internal)])])
             Js = np.concatenate([Js, np.array([Jsc_root, 0.0])])
@@ -6246,7 +6267,7 @@ class FESTSolver:
         # The I-V curve near Voc is exponential (dJ/dV rises sharply), so linear
         # interpolation between coarse sweep points underestimates Voc by ~10-20 mV.
         # Refine with 8-step bisection using actual solver calls to reach <0.1 mV.
-        if Voc_bracket is not None and Rs_lumped_total <= 1e-6:
+        if Voc_bracket is not None and Rs_vert_total <= 1e-6:
             V_lo, V_hi, J_lo, J_hi = Voc_bracket
             def _J_at_Vterm(V_term):
                 # V_term includes Rs_lumped drop; need V_int = V_term + J*Rs for solver.
@@ -6255,7 +6276,7 @@ class FESTSolver:
                 for _ in range(3):
                     res = self.solve(rm, hf, wf, rc, Rs, V_int, cf, dp, mode, wb=wb)
                     J = self.cell_current(res, dp)
-                    V_int_new = V_term + J * 1e-3 * Rs_lumped_total
+                    V_int_new = V_term + J * 1e-3 * Rs_vert_total
                     if abs(V_int_new - V_int) < 1e-6:
                         break
                     V_int = V_int_new
@@ -6293,7 +6314,7 @@ class FESTSolver:
         if Pmpp > 0 and len(Vs_internal_for_terminal) >= 3:
             def _power_at_internal(v_internal):
                 J_here, _ = _eval_internal(float(v_internal))
-                V_term_here = float(v_internal - J_here * 1e-3 * Rs_lumped_total)
+                V_term_here = float(v_internal - J_here * 1e-3 * Rs_vert_total)
                 if not (np.isfinite(V_term_here) and np.isfinite(J_here)):
                     return 0.0, V_term_here, J_here
                 if V_term_here <= 0.0 or J_here <= 0.0:
@@ -6341,7 +6362,7 @@ class FESTSolver:
         iv = {
             'Jsc': Jsc, 'Voc': Voc, 'Vmpp': Vmpp, 'Jmpp': Jmpp,
             'Vmpp_internal': Vmpp_internal,
-            'Rs_lumped_total': Rs_lumped_total,
+            'Rs_vert_total': Rs_vert_total,
             'Pmpp': Pmpp, 'FF': FF, 'Eff': Eff, 'time': dt,
             'mode': mode,
             '_mpp_result': mpp_result,
@@ -7755,7 +7776,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Top pass", f"{DP.J02_top_pass:.2e}", "A/cm²"),
                 ("J02 Top metal", f"{DP.J02_top_metal:.2e}", "A/cm²"),
                 ("Rsh Top", f"{DP.Rsh_top:.0f}", "Ω·cm²"),
-                ("Rs lumped Top ↕", f"{DP.Rs_lumped_top:.2f}", "Ω·cm²"),
+                ("Rs vert. Top ↕ (subcell)", f"{DP.Rs_vert_top:.2f}", "Ω·cm²"),
             ])
         self._card_headers.append(hdr_dt)
 
@@ -7769,7 +7790,7 @@ class FESTProApp(ctk.CTk):
                 ("J02 Bot pass",  f"{DP.J02_bot_pass:.2e}",   "A/cm²"),
                 ("J02 Bot metal", f"{DP.J02_bot_metal:.2e}",  "A/cm²"),
                 ("Rsh Bot",       f"{DP.Rsh_bot:.0f}",        "Ω·cm²"),
-                ("Rs lumped Bot ↕", f"{DP.Rs_lumped_bot:.2f}",  "Ω·cm²"),
+                ("Rs vert. Bot ↕ (subcell)", f"{DP.Rs_vert_bot:.2f}",  "Ω·cm²"),
             ])
         self._card_headers.append(hdr_db)
         # === END v28.1 diode GUI addition ===
@@ -9554,7 +9575,7 @@ class FESTProApp(ctk.CTk):
                         ("Top J02 pass", j02_top_pass),
                         ("Top J02 metal", j02_top_metal),
                         ("Top Rsh", rsh_top),
-                        ("Top Rs_lumped", rs_lumped_top_val),
+                        ("Top Rs_vert", rs_lumped_top_val),
                     )
                     for name, value in top_values:
                         if not np.isfinite(value):
@@ -9564,7 +9585,7 @@ class FESTProApp(ctk.CTk):
                     if j01_top_metal < 0 or j02_top_pass < 0 or j02_top_metal < 0:
                         raise ValueError("Top diode saturation currents must be >= 0")
                     if rs_lumped_top_val < 0:
-                        raise ValueError("Top Rs_lumped must be >= 0")
+                        raise ValueError("Top Rs_vert must be >= 0")
                     # Apply to DP (Tandem mode uses these)
                     DP.Jph_top = jph_top
                     DP.J01_top_pass = j01_top_pass
@@ -9575,7 +9596,7 @@ class FESTProApp(ctk.CTk):
                     # In Tandem: use TOP card's Rs_lumped_top
                     # In Single: TOP card is ignored; BOT mirror handles Rs_lumped_top below
                     if current_mode == 'tandem':
-                        DP.Rs_lumped_top = rs_lumped_top_val
+                        DP.Rs_vert_top = rs_lumped_top_val
             except (ValueError, IndexError, AttributeError) as e:
                 self._status(f"Top diode param parse error: {e}")
                 return False
@@ -9631,7 +9652,7 @@ class FESTProApp(ctk.CTk):
                         ("Bot J02 pass", j02_bot_pass),
                         ("Bot J02 metal", j02_bot_metal),
                         ("Bot Rsh", rsh_bot),
-                        ("Bot Rs_lumped", rs_lumped_bot_val),
+                        ("Bot Rs_vert", rs_lumped_bot_val),
                     )
                     for name, value in bot_values:
                         if not np.isfinite(value):
@@ -9641,7 +9662,7 @@ class FESTProApp(ctk.CTk):
                     if j01_bot_metal < 0 or j02_bot_pass < 0 or j02_bot_metal < 0:
                         raise ValueError("Bot diode saturation currents must be >= 0")
                     if rs_lumped_bot_val < 0:
-                        raise ValueError("Bot Rs_lumped must be >= 0")
+                        raise ValueError("Bot Rs_vert must be >= 0")
 
                     if j01_bot_metal < j01_bot_pass * 0.99:
                         self._status(
@@ -9656,7 +9677,7 @@ class FESTProApp(ctk.CTk):
                     DP.J02_bot_pass   = j02_bot_pass
                     DP.J02_bot_metal  = j02_bot_metal
                     DP.Rsh_bot        = rsh_bot
-                    DP.Rs_lumped_bot  = rs_lumped_bot_val
+                    DP.Rs_vert_bot  = rs_lumped_bot_val
 
                     # Mirror to Single mode — pass 값만 사용 (Griddler c-Si 도메인)
                     DP.Jph_single        = jph_bot
@@ -9667,7 +9688,7 @@ class FESTProApp(ctk.CTk):
                     DP.Rsh_single        = rsh_bot
 
                     if current_mode == 'single':
-                        DP.Rs_lumped_top = rs_lumped_bot_val
+                        DP.Rs_vert_top = rs_lumped_bot_val
             except (ValueError, IndexError, AttributeError) as e:
                 self._status(f"Bot diode param parse error: {e}")
                 return False
@@ -10527,7 +10548,7 @@ class FESTProApp(ctk.CTk):
                  f'MPP err: {_sci(health_b["pmpp_consistency_error"])} / {_sci(health_a["pmpp_consistency_error"])}',
                  ha='center',fontsize=7.5,transform=ax6.transAxes,color='#555')
         ax6.text(0.5,0.09,
-                 f'Rs_lumped: {_num(health_b["rs_lumped_total"],2)} / {_num(health_a["rs_lumped_total"],2)} ohm*cm2',
+                 f'Rs_vert: {_num(health_b["rs_vert_total"],2)} / {_num(health_a["rs_vert_total"],2)} ohm*cm2',
                  ha='center',fontsize=7.5,transform=ax6.transAxes,color='#555')
         ax6.text(0.5,0.02,
                  f'Model B/A: {health_b.get("phase_b_status","BASELINE")}/{health_a.get("phase_b_status","BASELINE")} '
@@ -12318,7 +12339,7 @@ class FESTProApp(ctk.CTk):
         lines.append(f"Fallback used,{hb['fallback_used']},{ha['fallback_used']},")
         lines.append(f"MPP consistency error,{_csv_num(hb['pmpp_consistency_error'])},{_csv_num(ha['pmpp_consistency_error'])},mW/cm2")
         lines.append(f"Vmpp internal,{_csv_num(hb['vmpp_internal'])},{_csv_num(ha['vmpp_internal'])},V")
-        lines.append(f"Rs lumped total,{_csv_num(hb['rs_lumped_total'])},{_csv_num(ha['rs_lumped_total'])},Ohm*cm2")
+        lines.append(f"Rs_vert_total,{_csv_num(hb['rs_vert_total'])},{_csv_num(ha['rs_vert_total'])},Ohm*cm2")
         lines.append(f"Junction model,{hb.get('junction_model','')},{ha.get('junction_model','')},")
         lines.append(f"Rs junction,{_csv_num(hb.get('rs_junction'))},{_csv_num(ha.get('rs_junction'))},Ohm/sq")
         lines.append(f"Phase B status,{hb.get('phase_b_status','')},{ha.get('phase_b_status','')},")
