@@ -97,6 +97,9 @@ v28.36: [naming] 서브셀 수직 직렬저항 이름 명확화 — Rs_internal_
          Rc_junction(서브셀 '사이' 수직 접촉 R)과 구분 명시. 기존 이름은 @property
          별칭으로 유지(비파괴). calc_iv 합산을 canonical 2필드(top+bot)만 쓰도록
          정리(별칭 4개 합산 시 이중계산 방지); 기본값 0에서 결과 비트 동일.
+v28.37: [ui] compare 진행창에서 솔버 내부 용어("Phase B", "5-plane/6-plane") 제거 —
+         "계산 중... (예상 15-30s)"처럼 상태+예상 대기시간만 표시. 예상시간은 솔버
+         경로별로 유지, EN/KR 토글 반영. 다른 계산 버튼은 이미 깔끔(변경 없음).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -195,7 +198,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.36",
+    "version": "v28.37",
     "date": "2026-07-10",
     "name": "wf_wired",
 }
@@ -10285,27 +10288,32 @@ class FESTProApp(ctk.CTk):
         mode = self._mode_var.get()  # 'tandem' or 'single'
         rm_b,hf_b,wf_b,wb_b,cf_b,rc_b,rs = bp
         rm_a,hf_a,wf_a,wb_a,cf_a,rc_a,_ = ap
-        # Inform user which solver path will run (timing varies dramatically)
+        # Estimated wait time by solver path — shown WITHOUT model-internal jargon
+        # (no "Phase B / 5-plane / 6-plane"); just "computing + estimated time".
         rear_mode = self._rear_mode_var.get() if hasattr(self, '_rear_mode_var') else 'full_area'
+        _kr = (_LANG['current'] == 'KR')
         if mode == 'tandem' and DP.Rs_junction > 0 and rear_mode == 'bifacial':
-            solver_info = "Phase B + bifacial (6-plane, ~30-60s)"
+            eta = "30~60초" if _kr else "30-60s"
         elif mode == 'tandem' and DP.Rs_junction > 0:
-            solver_info = "Phase B (5-plane, ~15-30s)"
+            eta = "15~30초" if _kr else "15-30s"
         elif mode == 'tandem' and rear_mode == 'bifacial':
-            solver_info = "Bifacial Phase A (~10-20s)"
+            eta = "10~20초" if _kr else "10-20s"
         elif mode == 'tandem':
-            solver_info = "Tandem full_area (~5-10s)"
+            eta = "5~10초" if _kr else "5-10s"
         else:
-            solver_info = "Single cell (~2-5s)"
+            eta = "2~5초" if _kr else "2-5s"
+        _c = "계산 중" if _kr else "Computing"
+        _el = "경과" if _kr else "elapsed"
+        _est = "예상" if _kr else "est."
         import time as _time
         _t0 = _time.time()
-        self._prog_update(f"[{solver_info}] Computing Before I-V...", pct=0.05)
+        self._prog_update(f"{_c}... ({_est} {eta})", pct=0.05)
         Vs_b,Js_b,iv_b = S.calc_iv(rm_b,hf_b,wf_b,rc_b,rs,cf_b,DP,mode=mode,wb=wb_b)
         _t1 = _time.time()
-        self._prog_update(f"[{solver_info}] Before done ({_t1-_t0:.1f}s). Computing After I-V...", pct=0.45)
+        self._prog_update(f"{_c}... ({_t1-_t0:.1f}s {_el}, {_est} {eta})", pct=0.45)
         Vs_a,Js_a,iv_a = S.calc_iv(rm_a,hf_a,wf_a,rc_a,rs,cf_a,DP,mode=mode,wb=wb_a)
         _t2 = _time.time()
-        self._prog_update(f"[{solver_info}] Computing losses at MPP (Before)... [{_t2-_t0:.1f}s elapsed]", pct=0.85)
+        self._prog_update(f"{_c}... ({_t2-_t0:.1f}s {_el})", pct=0.85)
         vmpp_b_bias = iv_b.get('Vmpp_internal', iv_b['Vmpp'])
         vmpp_a_bias = iv_a.get('Vmpp_internal', iv_a['Vmpp'])
         res_b = iv_b.get('_mpp_result') or S.solve(rm_b,hf_b,wf_b,rc_b,rs,vmpp_b_bias,cf_b,DP,mode=mode,wb=wb_b)
@@ -10318,7 +10326,7 @@ class FESTProApp(ctk.CTk):
         # v28: stash V_int for Before (Phase B only; None otherwise)
         Vint_b = (res_b.get('Vint').copy()
                   if res_b.get('Vint') is not None else None)
-        self._prog_update("Computing losses at MPP (After)...", pct=0.92)
+        self._prog_update(f"{_c}...", pct=0.92)
         res_a = iv_a.get('_mpp_result') or S.solve(rm_a,hf_a,wf_a,rc_a,rs,vmpp_a_bias,cf_a,DP,mode=mode,wb=wb_a)
         Ve_a=res_a['Ve']; Vm_a=res_a['Vm']; Vt_a=res_a.get('Vtop'); Vr_a=res_a['Vr']
         loss_a = S.losses(res_a,rm_a,hf_a,wf_a,rc_a,rs,cf_a,DP,Vmpp=iv_a['Vmpp'],Jmpp=iv_a['Jmpp'],wb=wb_a)
