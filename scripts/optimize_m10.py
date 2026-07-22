@@ -97,10 +97,16 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
       (c) 조합별 timestamp + 소요초 기록
     """
     if csv_path is None:
-        csv_path = os.path.join(_HERE, "opt_busbars_m10.csv")
+        # 시나리오별 CSV 분리 — 양 시나리오가 한 파일에 섞이거나 --resume 키가
+        # 시나리오를 넘나들며 잘못 skip되는 것을 방지.
+        tag = "measured" if "measured" in scenario["label"] else "default"
+        csv_path = os.path.join(_HERE, f"opt_busbars_m10_{tag}.csv")
     print(f"\n=== Stage 2 (busbars, M10 182mm) — {scenario['label']} ===")
     print(f"    finger fixed: w={wf}um pitch={pitch}mm | nbb={BUSBAR_NUMBERS} wbb={BUSBAR_WIDTHS_MM}")
+    print("    finger 채택 근거: 효율 최적은 wf15um/pitch1.39mm이나 인쇄 현실성(ITRPV상 "
+          "15um는 2035 목표, 현 양산 ~30um대) 고려해 wf20um/pitch1.77mm 채택 — 효율차 ~0.003%abs.")
     print(f"    ⚠ 풀 M10: 1조합 ≈17분. CSV(append): {csv_path}")
+    print("    목적함수=efficiency. total_loss는 recovery OFF와 25% 반영본을 별도 컬럼 병기.")
 
     combos = list(itertools.product(BUSBAR_NUMBERS, BUSBAR_WIDTHS_MM))
     done = set()
@@ -118,12 +124,25 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
         grid = dict(cell_w_mm=182.0, cell_h_mm=182.0, finger_spacing_mm=pitch,
                     w_finger_um=wf, n_busbars=n_bb, w_busbar_mm=w_bb, n_probe_points=10)
         t0 = time.time()
+        # efficiency 목적: 엔진은 recovery=0(base)로 실행(효율은 recovery 무관).
         out = evaluate_existing_simulation(
-            fest, grid, scenario=scenario, busbar_recovery_factor=recovery,
+            fest, grid, scenario=scenario, busbar_recovery_factor=0.0,
             mode="tandem", npts=14, target_nodes=82000)
         dt = time.time() - t0
+        # recovery 25%(KIST 가정) 반영 total_loss를 별도 컬럼으로 병기 —
+        # 25% 복원이 busbar 개수 선택에 주는 영향을 보기 위함. 회수는 busbar
+        # shading line-item에만 적용(회수광 = raw_busbar × 0.25 × Jmpp × Vmpp).
+        rec = 0.25
+        raw_bb = out["results"]["raw_busbar_shading"]
+        jmpp = out["engine_raw"]["Jmpp"]
+        vmpp = out["engine_raw"]["Vmpp"]
+        recovered_power = raw_bb * rec * jmpp * vmpp
         row = dict(out["parameters"])
-        row.update(out["results"])
+        row.update(out["results"])              # total_loss = recovery OFF(base)
+        row["recovered_busbar_light_25"] = raw_bb * rec
+        row["effective_busbar_shading_25"] = raw_bb * (1.0 - rec)
+        row["optical_loss_rec25"] = out["results"]["optical_loss"] - recovered_power
+        row["total_loss_rec25"] = out["results"]["total_loss"] - recovered_power
         row["scenario_label"] = scenario["label"]
         row["nodes"] = out["meta"]["nodes"]
         row["mode"] = out["meta"]["mode"]
@@ -150,7 +169,9 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
     if best is not None:
         r = best[1]
         print(f"\n>>> BEST [busbars, by efficiency] nbb={r['busbar_number']} "
-              f"wbb={r['busbar_width_mm']}mm eff={r['efficiency']} total_loss={r['total_loss']}")
+              f"wbb={r['busbar_width_mm']}mm eff={r['efficiency']}")
+        print(f"    total_loss(recovery OFF)={r['total_loss']}  "
+              f"total_loss(recovery 25%)={r.get('total_loss_rec25','-')}")
     return csv_path
 
 
