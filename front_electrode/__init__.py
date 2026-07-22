@@ -14,9 +14,23 @@ from .adapter import (
     busbar_shading_breakdown,
     evaluate_existing_simulation,
 )
+from .optimizer import (
+    SCENARIO_MEASURED,
+    SCENARIO_ENGINE_DEFAULT,
+    optimize_fingers,
+    optimize_busbars,
+    roundtrip_check,
+    export_csv,
+)
 
 __all__ = [
     "DEFAULT_BUSBAR_RECOVERY_FACTOR",
     "busbar_shading_breakdown",
     "evaluate_existing_simulation",
+    "SCENARIO_MEASURED",
+    "SCENARIO_ENGINE_DEFAULT",
+    "optimize_fingers",
+    "optimize_busbars",
+    "roundtrip_check",
+    "export_csv",
 ]
