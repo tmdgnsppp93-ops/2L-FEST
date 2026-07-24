@@ -31,6 +31,11 @@ matplotlib.use("Agg", force=True)
 matplotlib.use = lambda *a, **k: None  # app's matplotlib.use('TkAgg') -> no-op
 
 
+def pytest_configure(config):
+    config.addinivalue_line("markers", "slow: 느린 M10 핀(약 17분)")
+    config.addinivalue_line("markers", "bgrade: B등급(샘플링 변경) 허용오차 핀")
+
+
 # --- 2. mock GUI modules -----------------------------------------------------
 class _DummyCTk:
     """Real, subclassable stand-in for customtkinter.CTk.
