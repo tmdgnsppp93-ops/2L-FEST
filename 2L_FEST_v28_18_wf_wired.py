@@ -104,6 +104,12 @@ v28.38: [feat] 전면전극 최적화 연결 — 상단 툴바에 "⚙ Optimize"
          최적화/adapter/preset/UI 로직은 별도 패키지 front_electrode/에 있고, 엔진엔
          버튼+핸들러(_open_electrode_optimizer)만 연결. 계산 엔진·손실·효율식 무변경 —
          이 버튼을 쓰지 않으면 기존 결과와 완전 동일(회귀 핀 비트 동일 유지).
+v28.39: [perf] compute_metal_frac / _compute_rear_metal_frac에 bbox 사전필터
+         (_elem_metal_frac 헬퍼). 이전엔 모든 (삼각형 n_elem × rect) 쌍에 정확
+         clip을 수행(M10 170k×144 ≈ 24M회, FESTSolver.__init__의 ~215초 지배).
+         이제 bbox가 겹치는 쌍만 clip — 겹치지 않는 쌍은 _tri_rect_area가 정확히
+         0을 반환하므로 생략해도 **결과 비트 동일**(각 삼각형 합은 rect 순서대로
+         누적, +0 생략은 부동소수 값 불변). 손실·효율·shading 수식 무변경.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -202,8 +208,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.38",
-    "date": "2026-07-23",
+    "version": "v28.39",
+    "date": "2026-07-24",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -2031,25 +2037,36 @@ def _tri_rect_area(tri_pts, rx, ry, rw, rh):
     return _poly_area(poly)
 
 
+def _elem_metal_frac(points, simplices, areas, rects):
+    """삼각형별 금속 면적비 elem_mf. v28.39(perf): bbox 사전필터로 bbox가 겹치는
+    (삼각형, rect) 쌍만 정확 clip을 수행한다. 겹치지 않는 쌍은 _tri_rect_area가
+    정확히 0을 반환하므로 생략해도 결과가 **비트 동일**하다(각 삼각형의 합은
+    rect 인덱스 순서대로 누적 → 부동소수 합 순서·값 불변)."""
+    n_elem = len(simplices)
+    elem_inter = np.zeros(n_elem)
+    valid = areas >= 1e-15
+    tx = points[:, 0][simplices]      # (n_elem, 3)
+    ty = points[:, 1][simplices]
+    txmin = tx.min(axis=1); txmax = tx.max(axis=1)
+    tymin = ty.min(axis=1); tymax = ty.max(axis=1)
+    for (rx, ry, rw, rh) in rects:    # rect 순서 유지(원본과 동일 합 순서)
+        rxmax = rx + rw; rymax = ry + rh
+        mask = valid & (txmax >= rx) & (txmin <= rxmax) & (tymax >= ry) & (tymin <= rymax)
+        for ei in np.nonzero(mask)[0]:
+            i0, i1, i2 = simplices[ei]
+            tri = ((points[i0][0], points[i0][1]),
+                   (points[i1][0], points[i1][1]),
+                   (points[i2][0], points[i2][1]))
+            elem_inter[ei] += _tri_rect_area(tri, rx, ry, rw, rh)
+    return np.where(valid, np.minimum(elem_inter / np.where(valid, areas, 1.0), 1.0), 0.0)
+
+
 def compute_metal_frac(points, simplices, areas, geo):
     """Exact geometric metal fraction per node (area-weighted, Griddler method).
        Uses geo.metal_rects_front() for proper finger/busbar lengths."""
     N = len(points)
-    n_elem = len(simplices)
     rects = geo.metal_rects_front()
-
-    elem_mf = np.zeros(n_elem)
-    for ei in range(n_elem):
-        if areas[ei] < 1e-15:
-            continue
-        i0, i1, i2 = simplices[ei]
-        tri = ((points[i0][0], points[i0][1]),
-               (points[i1][0], points[i1][1]),
-               (points[i2][0], points[i2][1]))
-        total_inter = 0.0
-        for (rx, ry, rw, rh) in rects:
-            total_inter += _tri_rect_area(tri, rx, ry, rw, rh)
-        elem_mf[ei] = min(total_inter / areas[ei], 1.0)
+    elem_mf = _elem_metal_frac(points, simplices, areas, rects)
 
     metal_area = np.zeros(N)
     total_area = np.zeros(N)
@@ -2070,19 +2087,7 @@ def _compute_rear_metal_frac(points, simplices, areas, geo):
         return np.ones(len(points))
 
     N = len(points)
-    n_elem = len(simplices)
-    elem_mf = np.zeros(n_elem)
-    for ei in range(n_elem):
-        if areas[ei] < 1e-15:
-            continue
-        i0, i1, i2 = simplices[ei]
-        tri = ((points[i0][0], points[i0][1]),
-               (points[i1][0], points[i1][1]),
-               (points[i2][0], points[i2][1]))
-        total_inter = 0.0
-        for (rx, ry, rw, rh) in rects:
-            total_inter += _tri_rect_area(tri, rx, ry, rw, rh)
-        elem_mf[ei] = min(total_inter / areas[ei], 1.0)
+    elem_mf = _elem_metal_frac(points, simplices, areas, rects)
 
     metal_area = np.zeros(N)
     total_area = np.zeros(N)
