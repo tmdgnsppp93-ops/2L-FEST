@@ -100,6 +100,10 @@ v28.36: [naming] 서브셀 수직 직렬저항 이름 명확화 — Rs_internal_
 v28.37: [ui] compare 진행창에서 솔버 내부 용어("Phase B", "5-plane/6-plane") 제거 —
          "계산 중... (예상 15-30s)"처럼 상태+예상 대기시간만 표시. 예상시간은 솔버
          경로별로 유지, EN/KR 토글 반영. 다른 계산 버튼은 이미 깔끔(변경 없음).
+v28.38: [feat] 전면전극 최적화 연결 — 상단 툴바에 "⚙ Optimize" 버튼 추가(최소 침습).
+         최적화/adapter/preset/UI 로직은 별도 패키지 front_electrode/에 있고, 엔진엔
+         버튼+핸들러(_open_electrode_optimizer)만 연결. 계산 엔진·손실·효율식 무변경 —
+         이 버튼을 쓰지 않으면 기존 결과와 완전 동일(회귀 핀 비트 동일 유지).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -198,8 +202,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.37",
-    "date": "2026-07-10",
+    "version": "v28.38",
+    "date": "2026-07-23",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -9775,6 +9779,12 @@ class FESTProApp(ctk.CTk):
                        fg_color=CLR_BLUE, hover_color="#1D4ED8",
                        text_color="white", corner_radius=6,
                        width=50, height=32, command=self._save_png).pack(side="right", padx=2, pady=6)
+        # v28.38: 전면전극 최적화 창(front_electrode 별도 모듈) — 최소 연결 버튼.
+        ctk.CTkButton(bar, text="⚙ Optimize", font=ctk.CTkFont(size=10, weight="bold"),
+                       fg_color="#00897B", hover_color="#00695C",
+                       text_color="white", corner_radius=6,
+                       width=84, height=32,
+                       command=self._open_electrode_optimizer).pack(side="right", padx=2, pady=6)
 
 
     def _build_statusbar(self, parent):
@@ -12425,6 +12435,17 @@ class FESTProApp(ctk.CTk):
         if fn:
             self.fig.savefig(fn, dpi=150, bbox_inches='tight', facecolor='white')
             self._status(f"Saved: {fn}")
+
+    def _open_electrode_optimizer(self):
+        """전면전극 최적화 창 열기 — UI 로직은 front_electrode.ui(별도 모듈)에 있고
+        여기서는 엔진 모듈 자신을 넘겨 연결만 한다(최소 침습)."""
+        try:
+            import sys as _sys
+            from front_electrode import ui as _fe_ui
+            _fe_ui.open_optimizer_window(_sys.modules[__name__], self)
+            self._status("Front Electrode Optimization 창을 열었습니다.")
+        except Exception as e:
+            self._status(f"Optimize 창 오류: {e}")
 
 
 # =============================================================

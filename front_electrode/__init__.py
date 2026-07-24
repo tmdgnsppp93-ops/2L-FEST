@@ -22,6 +22,7 @@ from .optimizer import (
     roundtrip_check,
     export_csv,
 )
+from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 
 __all__ = [
     "DEFAULT_BUSBAR_RECOVERY_FACTOR",
@@ -33,4 +34,7 @@ __all__ = [
     "optimize_busbars",
     "roundtrip_check",
     "export_csv",
+    "PRESETS",
+    "MAINSTREAM_PRESETS",
+    "get_preset",
 ]

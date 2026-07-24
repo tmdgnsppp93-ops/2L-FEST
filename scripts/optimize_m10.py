@@ -88,7 +88,8 @@ def _csv_key(n_bb, w_bb):
     return (int(n_bb), round(float(w_bb), 4))
 
 
-def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
+def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
+                nbb_list=None, wbb_list=None):
     """Stage 2 — 풀 M10 busbar 스윕 (장시간 실행 안전장치 포함).
 
     안전장치(드라이버 전용 — optimizer/adapter는 무수정):
@@ -101,14 +102,16 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
         # 시나리오를 넘나들며 잘못 skip되는 것을 방지.
         tag = "measured" if "measured" in scenario["label"] else "default"
         csv_path = os.path.join(_HERE, f"opt_busbars_m10_{tag}.csv")
+    nbb_list = nbb_list if nbb_list is not None else BUSBAR_NUMBERS
+    wbb_list = wbb_list if wbb_list is not None else BUSBAR_WIDTHS_MM
     print(f"\n=== Stage 2 (busbars, M10 182mm) — {scenario['label']} ===")
-    print(f"    finger fixed: w={wf}um pitch={pitch}mm | nbb={BUSBAR_NUMBERS} wbb={BUSBAR_WIDTHS_MM}")
+    print(f"    finger fixed: w={wf}um pitch={pitch}mm | nbb={nbb_list} wbb={wbb_list}")
     print("    finger 채택 근거: 효율 최적은 wf15um/pitch1.39mm이나 인쇄 현실성(ITRPV상 "
           "15um는 2035 목표, 현 양산 ~30um대) 고려해 wf20um/pitch1.77mm 채택 — 효율차 ~0.003%abs.")
     print(f"    ⚠ 풀 M10: 1조합 ≈17분. CSV(append): {csv_path}")
     print("    목적함수=efficiency. total_loss는 recovery OFF와 25% 반영본을 별도 컬럼 병기.")
 
-    combos = list(itertools.product(BUSBAR_NUMBERS, BUSBAR_WIDTHS_MM))
+    combos = list(itertools.product(nbb_list, wbb_list))
     done = set()
     if resume and os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
         with open(csv_path, encoding="utf-8-sig") as fh:
@@ -155,9 +158,12 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None):
                 header_written = True
             w.writerow(row)
             fh.flush()
+        er = out["engine_raw"]
         print(f"    [busbars {n_bb}BB {w_bb}mm] {dt:.0f}s "
               f"total_loss={out['results']['total_loss']:.4f} "
-              f"eff={out['results']['efficiency']:.3f} → CSV append", flush=True)
+              f"eff={out['results']['efficiency']:.3f} "
+              f"| Pf_busbar={er['Pf_busbar']:.4f} Pf_finger={er['Pf_finger']:.4f} "
+              f"P_shade={er['P_shade']:.4f} → CSV append", flush=True)
 
     # 요약: CSV 재읽기 → efficiency 최대 조합 보고
     best = None
@@ -186,7 +192,13 @@ def main():
     ap.add_argument("--pitch", type=float, default=1.6, help="stage2 고정 finger pitch [mm]")
     ap.add_argument("--resume", action="store_true",
                     help="stage2: 기존 CSV의 완료 조합을 건너뜀(장시간 실행 재개)")
+    ap.add_argument("--nbb", type=str, default=None,
+                    help="stage2 busbar 개수 override, 쉼표구분 (예: 4,6,8,10)")
+    ap.add_argument("--wbb", type=str, default=None,
+                    help="stage2 busbar 폭[mm] override, 쉼표구분 (예: 0.20)")
     args = ap.parse_args()
+    nbb_list = [int(x) for x in args.nbb.split(",")] if args.nbb else None
+    wbb_list = [float(x) for x in args.wbb.split(",")] if args.wbb else None
 
     scenarios = {"measured": [SCENARIO_MEASURED], "default": [SCENARIO_ENGINE_DEFAULT],
                  "both": [SCENARIO_MEASURED, SCENARIO_ENGINE_DEFAULT]}[args.scenario]
@@ -196,7 +208,8 @@ def main():
         if args.stage in ("fingers", "both"):
             run_fingers(sc, args.quick, args.recovery, args.ax)
         if args.stage in ("busbars", "both"):
-            run_busbars(sc, args.wf, args.pitch, args.recovery, resume=args.resume)
+            run_busbars(sc, args.wf, args.pitch, args.recovery, resume=args.resume,
+                        nbb_list=nbb_list, wbb_list=wbb_list)
 
 
 if __name__ == "__main__":
