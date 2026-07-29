@@ -16,6 +16,16 @@ import csv
 import time
 import itertools
 import argparse
+import multiprocessing as mp
+
+# 헤드리스 로그 안전: Windows에서 stdout이 파일/파이프로 리다이렉트되면 로케일
+# 인코딩(cp949)이 되어 em-dash 등 비-cp949 문자 print가 UnicodeEncodeError로
+# 죽는다(장시간 stage2를 로그로 남길 때 치명적). utf-8로 재구성.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
@@ -88,14 +98,95 @@ def _csv_key(n_bb, w_bb):
     return (int(n_bb), round(float(w_bb), 4))
 
 
+def _eval_combo(task):
+    """워커 진입점 — 모듈 레벨 함수여야 multiprocessing(spawn) picklable.
+
+    각 워커는 spawn으로 이 모듈을 재import → 최상단 ``fest = conftest._load_fest()``
+    가 실행되어 **프로세스마다 독립 엔진**을 로드한다(상태 공유·warm-start 누수 없음).
+    한 조합(busbar 개수×폭)을 평가해 CSV 1행 dict를 반환. 엔진/효율식 무수정.
+
+    task: dict(n_bb, w_bb, wf, pitch, scenario, target_nodes, npts)
+    """
+    n_bb = int(task["n_bb"])
+    w_bb = float(task["w_bb"])
+    grid = dict(cell_w_mm=182.0, cell_h_mm=182.0, finger_spacing_mm=task["pitch"],
+                w_finger_um=task["wf"], n_busbars=n_bb, w_busbar_mm=w_bb,
+                n_probe_points=10)
+    t0 = time.time()
+    out = evaluate_existing_simulation(
+        fest, grid, scenario=task["scenario"], busbar_recovery_factor=0.0,
+        mode="tandem", npts=int(task["npts"]), target_nodes=int(task["target_nodes"]))
+    dt = time.time() - t0
+    # recovery 25%(KIST 가정) 반영 total_loss 병기 — 순차 버전과 동일 산식.
+    rec = 0.25
+    raw_bb = out["results"]["raw_busbar_shading"]
+    jmpp = out["engine_raw"]["Jmpp"]
+    vmpp = out["engine_raw"]["Vmpp"]
+    recovered_power = raw_bb * rec * jmpp * vmpp
+    row = dict(out["parameters"])
+    row.update(out["results"])                  # total_loss = recovery OFF(base)
+    row["recovered_busbar_light_25"] = raw_bb * rec
+    row["effective_busbar_shading_25"] = raw_bb * (1.0 - rec)
+    row["optical_loss_rec25"] = out["results"]["optical_loss"] - recovered_power
+    row["total_loss_rec25"] = out["results"]["total_loss"] - recovered_power
+    # 엔진 손실 분해(engine_raw) — 원본은 print만 했으나 CSV 컬럼으로 병기(유용).
+    er = out["engine_raw"]
+    row["Pe"] = er["Pe"]
+    row["Pf_finger"] = er["Pf_finger"]
+    row["Pf_busbar"] = er["Pf_busbar"]
+    row["Pc"] = er["Pc"]
+    row["P_shade"] = er["P_shade"]
+    row["scenario_label"] = task["scenario"]["label"]
+    row["nodes"] = out["meta"]["nodes"]
+    row["mode"] = out["meta"]["mode"]
+    row["elapsed_s"] = round(dt, 1)             # 비결정(워커 스케줄) — 비교 시 제외
+    row["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")  # 비결정 — 비교 시 제외
+    return row
+
+
+# elapsed_s/timestamp는 워커 스케줄·벽시계에 의존 → 병렬==순차 대조 시 제외.
+NONDETERMINISTIC_COLS = ("elapsed_s", "timestamp")
+
+
+def _sort_csv(csv_path):
+    """CSV를 (busbar_number, busbar_width_mm) 오름차순으로 재작성(원자적).
+
+    imap_unordered는 완료 순서대로 행을 append하므로 파일 순서가 워커 스케줄에
+    의존한다. 실행 종료 후 한 번 정렬해 **스케줄링과 무관하게 재현 가능한** 순서로
+    고정한다(값 자체는 엔진 결정성으로 이미 동일)."""
+    if not (os.path.exists(csv_path) and os.path.getsize(csv_path) > 0):
+        return
+    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
+        reader = csv.DictReader(fh)
+        fieldnames = reader.fieldnames
+        rows = list(reader)
+    if not rows:
+        return
+    rows.sort(key=lambda r: _csv_key(float(r["busbar_number"]), r["busbar_width_mm"]))
+    tmp = csv_path + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
+        w = csv.DictWriter(fh, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+        fh.flush()
+    os.replace(tmp, csv_path)
+
+
 def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
-                nbb_list=None, wbb_list=None):
-    """Stage 2 — 풀 M10 busbar 스윕 (장시간 실행 안전장치 포함).
+                nbb_list=None, wbb_list=None, workers=1,
+                target_nodes=82000, npts=14):
+    """Stage 2 — 풀 M10 busbar 스윕 (장시간 실행 안전장치 + 병렬 실행).
 
     안전장치(드라이버 전용 — optimizer/adapter는 무수정):
       (a) 조합 1개 끝날 때마다 CSV에 즉시 append + flush → 중간 크래시에도 보존
       (b) --resume: 기존 CSV의 완료 조합(n_bb, w_bb)을 건너뜀
       (c) 조합별 timestamp + 소요초 기록
+
+    병렬(workers>1): 조합을 multiprocessing spawn 풀에 분배. 각 워커는 독립
+    프로세스로 엔진을 로드(상태 공유 없음). **CSV 기록은 부모 프로세스만** 수행
+    (imap_unordered로 완료분을 받아 append) → 동시 쓰기 충돌 없음. 완료 후
+    _sort_csv로 (n_bb,w_bb) 정렬해 스케줄링과 무관하게 재현 가능한 파일로 고정.
+    엔진 결정성 덕에 병렬 결과 == 순차 결과(elapsed_s/timestamp 제외).
     """
     if csv_path is None:
         # 시나리오별 CSV 분리 — 양 시나리오가 한 파일에 섞이거나 --resume 키가
@@ -120,37 +211,19 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
         print(f"    resume: 완료 {len(done)}개 조합 건너뜀")
 
     header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
+
+    # 실행할 조합만 task로 (resume 완료분 제외). 순서는 combos(정렬) 유지.
+    pending = []
     for n_bb, w_bb in combos:
         if _csv_key(n_bb, w_bb) in done:
             print(f"    skip {n_bb}BB {w_bb}mm (완료됨)", flush=True)
             continue
-        grid = dict(cell_w_mm=182.0, cell_h_mm=182.0, finger_spacing_mm=pitch,
-                    w_finger_um=wf, n_busbars=n_bb, w_busbar_mm=w_bb, n_probe_points=10)
-        t0 = time.time()
-        # efficiency 목적: 엔진은 recovery=0(base)로 실행(효율은 recovery 무관).
-        out = evaluate_existing_simulation(
-            fest, grid, scenario=scenario, busbar_recovery_factor=0.0,
-            mode="tandem", npts=14, target_nodes=82000)
-        dt = time.time() - t0
-        # recovery 25%(KIST 가정) 반영 total_loss를 별도 컬럼으로 병기 —
-        # 25% 복원이 busbar 개수 선택에 주는 영향을 보기 위함. 회수는 busbar
-        # shading line-item에만 적용(회수광 = raw_busbar × 0.25 × Jmpp × Vmpp).
-        rec = 0.25
-        raw_bb = out["results"]["raw_busbar_shading"]
-        jmpp = out["engine_raw"]["Jmpp"]
-        vmpp = out["engine_raw"]["Vmpp"]
-        recovered_power = raw_bb * rec * jmpp * vmpp
-        row = dict(out["parameters"])
-        row.update(out["results"])              # total_loss = recovery OFF(base)
-        row["recovered_busbar_light_25"] = raw_bb * rec
-        row["effective_busbar_shading_25"] = raw_bb * (1.0 - rec)
-        row["optical_loss_rec25"] = out["results"]["optical_loss"] - recovered_power
-        row["total_loss_rec25"] = out["results"]["total_loss"] - recovered_power
-        row["scenario_label"] = scenario["label"]
-        row["nodes"] = out["meta"]["nodes"]
-        row["mode"] = out["meta"]["mode"]
-        row["elapsed_s"] = round(dt, 1)
-        row["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        pending.append(dict(n_bb=n_bb, w_bb=w_bb, wf=wf, pitch=pitch,
+                            scenario=scenario, target_nodes=target_nodes, npts=npts))
+
+    # CSV 기록은 항상 부모 프로세스에서만 (동시 쓰기 충돌 원천 차단).
+    def _append_row(row):
+        nonlocal header_written
         with open(csv_path, "a", newline="", encoding="utf-8-sig") as fh:
             w = csv.DictWriter(fh, fieldnames=list(row.keys()))
             if not header_written:
@@ -158,12 +231,30 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
                 header_written = True
             w.writerow(row)
             fh.flush()
-        er = out["engine_raw"]
-        print(f"    [busbars {n_bb}BB {w_bb}mm] {dt:.0f}s "
-              f"total_loss={out['results']['total_loss']:.4f} "
-              f"eff={out['results']['efficiency']:.3f} "
-              f"| Pf_busbar={er['Pf_busbar']:.4f} Pf_finger={er['Pf_finger']:.4f} "
-              f"P_shade={er['P_shade']:.4f} → CSV append", flush=True)
+        print(f"    [busbars {int(row['busbar_number'])}BB {float(row['busbar_width_mm'])}mm] "
+              f"{row['elapsed_s']}s total_loss={float(row['total_loss']):.4f} "
+              f"eff={float(row['efficiency']):.3f} "
+              f"| Pf_busbar={float(row['Pf_busbar']):.4f} Pf_finger={float(row['Pf_finger']):.4f} "
+              f"P_shade={float(row['P_shade']):.4f} → CSV append", flush=True)
+
+    n_workers = max(1, int(workers))
+    if n_workers <= 1 or len(pending) <= 1:
+        if pending:
+            print(f"    실행: 순차(workers=1), {len(pending)}조합", flush=True)
+        for task in pending:
+            _append_row(_eval_combo(task))
+    else:
+        n_workers = min(n_workers, len(pending))
+        print(f"    실행: 병렬 spawn 풀 workers={n_workers}, {len(pending)}조합 "
+              f"(각 워커 독립 엔진 로드; CSV는 부모만 기록)", flush=True)
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            # imap_unordered: 먼저 끝난 조합부터 부모가 즉시 append+flush(크래시 안전).
+            for row in pool.imap_unordered(_eval_combo, pending):
+                _append_row(row)
+
+    # 스케줄링과 무관한 재현성 위해 (n_bb, w_bb)로 정렬 고정.
+    _sort_csv(csv_path)
 
     # 요약: CSV 재읽기 → efficiency 최대 조합 보고
     best = None
@@ -196,6 +287,12 @@ def main():
                     help="stage2 busbar 개수 override, 쉼표구분 (예: 4,6,8,10)")
     ap.add_argument("--wbb", type=str, default=None,
                     help="stage2 busbar 폭[mm] override, 쉼표구분 (예: 0.20)")
+    ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1),
+                    help="stage2 병렬 워커 수(각 독립 프로세스로 엔진 로드). "
+                         "기본=코어수-1. 1이면 순차.")
+    ap.add_argument("--target-nodes", dest="target_nodes", type=int, default=82000,
+                    help="stage2 M10 메시 목표 노드수(작게 주면 빠른 검증/미리보기).")
+    ap.add_argument("--npts", type=int, default=14, help="stage2 calc_iv 스윕 점수")
     args = ap.parse_args()
     nbb_list = [int(x) for x in args.nbb.split(",")] if args.nbb else None
     wbb_list = [float(x) for x in args.wbb.split(",")] if args.wbb else None
@@ -209,7 +306,8 @@ def main():
             run_fingers(sc, args.quick, args.recovery, args.ax)
         if args.stage in ("busbars", "both"):
             run_busbars(sc, args.wf, args.pitch, args.recovery, resume=args.resume,
-                        nbb_list=nbb_list, wbb_list=wbb_list)
+                        nbb_list=nbb_list, wbb_list=wbb_list, workers=args.workers,
+                        target_nodes=args.target_nodes, npts=args.npts)
 
 
 if __name__ == "__main__":
