@@ -110,6 +110,18 @@ v28.39: [perf] compute_metal_frac / _compute_rear_metal_frac에 bbox 사전필�
          이제 bbox가 겹치는 쌍만 clip — 겹치지 않는 쌍은 _tri_rect_area가 정확히
          0을 반환하므로 생략해도 **결과 비트 동일**(각 삼각형 합은 rect 순서대로
          누적, +0 생략은 부동소수 값 불변). 손실·효율·shading 수식 무변경.
+v28.40: [perf] calc_iv MPP/Voc refinement 재작성 — 느린 이분법·황금분할을 동일
+         수렴 허용오차의 secant(Illinois)·포물선보간으로 교체해 refinement solve를
+         대폭 축소(엔진 물리·수식 무변경, 샘플링 방식만 변경 = B등급).
+         · Voc coarse 브래킷: _bisect_root(≈10 solve) → _root_illinois(브래킷 끝값
+           재사용, ≈4 solve). VOC_ROOT_XTOL=1e-6 V(기존 5e-5보다 엄격), FTOL=1e-8.
+         · Voc refinement(터미널): 8-step 이분(≈8) → _root_illinois(≈4).
+         · Vmpp: 황금분할 24 iter(≈26) → _maximize_parabolic(3점 캐시 시드,
+           ≈5). MPP_XTOL=1e-7 V(기존과 동일).
+         · Vsc(내부 단락점, Rs_vert>1e-6): 이분 maxiter=48(≈35) → 고정점
+           V=J(V)·1e-3·Rs 반복(강한 수축, ≈4, 이분 폴백 유지). VSC_FP_XTOL=1e-10.
+         결과 불변 검증: 작은 mono(tandem)에서 new-vs-old Voc/Eff/FF 차이 <1e-4
+         %abs·V(실측 ~1e-5), Jsc는 V=0 해라 불변. M10 8BB 핀은 B등급(1e-4)로 재핀.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -208,8 +220,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.39",
-    "date": "2026-07-24",
+    "version": "v28.40",
+    "date": "2026-07-28",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -6069,9 +6081,12 @@ class FESTSolver:
             return np.asarray(V_internal) - (np.asarray(J_mA_cm2) * 1e-3) * Rs_vert_total
 
         eval_cache = {}
+        # eval_cache 중복 판정 자리수: 전압 스케일(Voc~2V)에서 1e-10 V 미만 차이는
+        # 리파인먼트 jitter로 간주해 동일 solve 재사용(v28.40, 기존 12 → 10).
+        _CKEY_DIGITS = 10
 
         def _eval_internal(V_internal):
-            key = round(float(V_internal), 12)
+            key = round(float(V_internal), _CKEY_DIGITS)
             cached = eval_cache.get(key)
             if cached is not None:
                 return cached
@@ -6091,7 +6106,7 @@ class FESTSolver:
             # Keep the high-to-low continuation order for nonlinear convergence.
             for vb in vals[::-1]:
                 _eval_internal(float(vb))
-            Js_eval = np.array([eval_cache[round(float(vb), 12)][0] for vb in vals])
+            Js_eval = np.array([eval_cache[round(float(vb), _CKEY_DIGITS)][0] for vb in vals])
             return vals, Js_eval
 
         def _bisect_root(func, lo, hi, *, xtol=5e-5, maxiter=24):
@@ -6134,6 +6149,105 @@ class FESTSolver:
             idx = int(np.argmin(np.abs(x - x0)))
             return float(y[idx])
 
+        # --- v28.40 STEP 3: fast MPP/Voc refinement --------------------------
+        # 결과 불변이 최우선. bisection/황금분할과 '동일 수렴 허용오차'에 훨씬
+        # 적은 solve로 도달하도록 secant(Illinois)·포물선보간으로 교체한다.
+        # 명시 수렴 허용오차(변경 시 changelog 갱신 필수):
+        VOC_ROOT_XTOL = 1e-6    # V      : Voc 근 전압 허용오차(기존 bisect 5e-5보다 엄격)
+        VOC_ROOT_FTOL = 1e-8    # mA/cm² : Voc에서 |J| 허용오차
+        VOC_ROOT_MAXIT = 20
+        MPP_XTOL = 1e-6         # V      : Vmpp 브래킷 허용오차(평평한 피크엔 충분)
+        MPP_PTOL_REL = 1e-9     # -      : P(V) 상대개선 조기종료(평평 피크 과도정제 방지)
+        MPP_MAXEVAL = 12        # P(V) 신규 평가 상한
+        VSC_FP_XTOL = 1e-10     # V      : Vsc 고정점 허용오차(기존 bisect 1e-10과 동일)
+        VSC_FP_MAXIT = 8
+
+        def _root_illinois(func, a, b, fa, fb, *, xtol, ftol, maxiter):
+            """Regula-falsi(Illinois) 근 찾기. fa,fb(브래킷 끝값)를 재사용하므로
+            추가 solve 없이 시작한다. 단조 지수형 J(V)에 이분법보다 훨씬 빠르게
+            같은 허용오차로 수렴한다. 브래킷(fa·fb<0) 실패 시 None."""
+            a = float(a); b = float(b); fa = float(fa); fb = float(fb)
+            if not (np.isfinite(fa) and np.isfinite(fb)):
+                return None
+            if abs(fa) < ftol:
+                return a
+            if abs(fb) < ftol:
+                return b
+            if fa * fb > 0:
+                return None
+            c = 0.5 * (a + b)
+            for _ in range(maxiter):
+                if fb != fa:
+                    c = b - fb * (b - a) / (fb - fa)   # secant/regula-falsi
+                else:
+                    c = 0.5 * (a + b)
+                if not (min(a, b) < c < max(a, b)):     # 브래킷 밖이면 이분
+                    c = 0.5 * (a + b)
+                fc = float(func(c))
+                if not np.isfinite(fc):
+                    return None
+                if abs(fc) < ftol or abs(b - a) < xtol:
+                    return c
+                if fa * fc < 0:
+                    b, fb = c, fc
+                    fa *= 0.5                            # Illinois: 정체측 가중 감소
+                else:
+                    a, fa = c, fc
+                    fb *= 0.5
+            return c
+
+        def _maximize_parabolic(pfunc, xl, xm, xh, fl, fm, fh, *, xtol, maxeval,
+                                ptol_rel=0.0):
+            """단봉 P(x)를 포물선 보간(Brent-lite)으로 최대화. 3점(xl<xm<xh)과
+            그 함수값을 시드로 받아(이미 평가된 점 재사용) 정점으로 점프하며
+            황금분할로 폴백한다. 반환 (x_best, f_best). 평평한 피크에서 P 상대
+            개선이 ptol_rel 미만인 평가가 2회 연속이면 조기종료(과도정제 방지)."""
+            xl, xm, xh = float(xl), float(xm), float(xh)
+            fl, fm, fh = float(fl), float(fm), float(fh)
+            best_x, best_f = xm, fm
+            for vv, fv in ((xl, fl), (xh, fh)):
+                if fv > best_f:
+                    best_x, best_f = vv, fv
+            phi = (np.sqrt(5.0) - 1.0) / 2.0
+            evals = 0
+            stall = 0
+            while evals < maxeval and (xh - xl) > xtol:
+                denom = (xm - xl) * (fm - fh) - (xm - xh) * (fm - fl)
+                if abs(denom) > 1e-30:
+                    xnew = xm - 0.5 * ((xm - xl) ** 2 * (fm - fh)
+                                       - (xm - xh) ** 2 * (fm - fl)) / denom
+                else:
+                    xnew = None
+                if (xnew is None or not (xl < xnew < xh)
+                        or abs(xnew - xm) < xtol * 0.5):
+                    if (xh - xm) > (xm - xl):            # 황금분할 폴백
+                        xnew = xm + (1.0 - phi) * (xh - xm)
+                    else:
+                        xnew = xm - (1.0 - phi) * (xm - xl)
+                fnew = float(pfunc(xnew))
+                evals += 1
+                improve = fnew - best_f
+                if fnew > best_f:
+                    best_x, best_f = xnew, fnew
+                # 평평 피크: P 상대개선이 미미한 평가가 연속되면 종료
+                if improve <= ptol_rel * max(1.0, abs(best_f)):
+                    stall += 1
+                    if stall >= 2:
+                        break
+                else:
+                    stall = 0
+                if xnew > xm:
+                    if fnew > fm:
+                        xl, fl, xm, fm = xm, fm, xnew, fnew
+                    else:
+                        xh, fh = xnew, fnew
+                else:
+                    if fnew > fm:
+                        xh, fh, xm, fm = xm, fm, xnew, fnew
+                    else:
+                        xl, fl = xnew, fnew
+            return best_x, best_f
+
         # Phase 1: Coarse sweep
         # CONTINUATION STRATEGY: sweep from HIGH V → LOW V so each solve can
         # warm-start from the previous converged state. Initial guess for the
@@ -6158,10 +6272,12 @@ class FESTSolver:
         Voc_internal = None
         for k in range(len(Js_coarse) - 1):
             if Js_coarse[k] >= 0 and Js_coarse[k + 1] <= 0:
-                Voc_internal = _bisect_root(
+                Voc_internal = _root_illinois(
                     lambda v: _eval_internal(v)[0],
-                    Vs_coarse[k],
-                    Vs_coarse[k + 1],
+                    Vs_coarse[k], Vs_coarse[k + 1],
+                    Js_coarse[k], Js_coarse[k + 1],
+                    xtol=VOC_ROOT_XTOL, ftol=VOC_ROOT_FTOL,
+                    maxiter=VOC_ROOT_MAXIT,
                 )
                 break
         if Voc_internal is None:
@@ -6198,15 +6314,26 @@ class FESTSolver:
             f0 = _terminal_at_internal(0.0)
             fvoc = _terminal_at_internal(Voc_internal)
             if f0 < 0.0 and fvoc >= 0.0:
-                root = _bisect_root(
-                    _terminal_at_internal,
-                    0.0,
-                    Voc_internal,
-                    xtol=1e-10,
-                    maxiter=48,
-                )
-                if root is not None:
-                    Vsc_internal = root
+                # Vsc: V - J(V)·1e-3·Rs = 0  →  고정점 V = J(V)·1e-3·Rs.
+                # |dJ/dV|·1e-3·Rs << 1 이라 강한 수축, ~4회에 1e-10 수렴.
+                v = _eval_internal(0.0)[0] * 1e-3 * Rs_vert_total
+                converged = False
+                for _ in range(VSC_FP_MAXIT):
+                    v_new = _eval_internal(v)[0] * 1e-3 * Rs_vert_total
+                    if abs(v_new - v) < VSC_FP_XTOL:
+                        v = v_new
+                        converged = True
+                        break
+                    v = v_new
+                if converged and 0.0 <= v <= Voc_internal:
+                    Vsc_internal = v
+                else:                                   # 안전 폴백(이분법)
+                    root = _bisect_root(
+                        _terminal_at_internal, 0.0, Voc_internal,
+                        xtol=1e-10, maxiter=48,
+                    )
+                    if root is not None:
+                        Vsc_internal = root
 
             V_pos_lo = max(0.0, min(Vsc_internal, Voc_internal))
             V_pos_hi = max(V_pos_lo, Voc_internal)
@@ -6293,22 +6420,13 @@ class FESTSolver:
                         break
                     V_int = V_int_new
                 return J
-            a, b = V_lo, V_hi
-            fa, fb = J_lo, J_hi
-            for _ in range(8):
-                m = 0.5 * (a + b)
-                fm = _J_at_Vterm(m)
-                if fm > 0:
-                    a, fa = m, fm
-                else:
-                    b, fb = m, fm
-                if b - a < 5e-5:  # 0.05 mV tolerance
-                    break
-            # Final linear interp on refined bracket
-            if fa != fb:
-                Voc = a + fa * (b - a) / (fa - fb)
-            else:
-                Voc = 0.5 * (a + b)
+            root = _root_illinois(
+                _J_at_Vterm, V_lo, V_hi, J_lo, J_hi,
+                xtol=VOC_ROOT_XTOL, ftol=VOC_ROOT_FTOL,
+                maxiter=VOC_ROOT_MAXIT,
+            )
+            if root is not None:
+                Voc = float(root)
         # === END v28.1 FIX ===
 
         P = Vs * Js
@@ -6337,33 +6455,22 @@ class FESTSolver:
             right_i = min(len(Vs_internal_for_terminal) - 1, im + 1)
             if left_i < im < right_i:
                 lo = float(Vs_internal_for_terminal[left_i])
+                xm = float(Vs_internal_for_terminal[im])
                 hi = float(Vs_internal_for_terminal[right_i])
-                if hi > lo:
-                    phi = (np.sqrt(5.0) - 1.0) / 2.0
-                    x1 = hi - phi * (hi - lo)
-                    x2 = lo + phi * (hi - lo)
-                    f1 = _power_at_internal(x1)[0]
-                    f2 = _power_at_internal(x2)[0]
-                    for _ in range(24):
-                        if hi - lo < 1e-7:
-                            break
-                        if f1 < f2:
-                            lo = x1
-                            x1 = x2
-                            f1 = f2
-                            x2 = lo + phi * (hi - lo)
-                            f2 = _power_at_internal(x2)[0]
-                        else:
-                            hi = x2
-                            x2 = x1
-                            f2 = f1
-                            x1 = hi - phi * (hi - lo)
-                            f1 = _power_at_internal(x1)[0]
-                    candidates = [float(Vmpp_internal), x1, x2, 0.5 * (lo + hi)]
-                    best = max((_power_at_internal(v)[0], v) for v in candidates)
-                    P_refined, V_refined, J_refined = _power_at_internal(best[1])
+                if lo < xm < hi:
+                    # 3점 모두 이미 solve됨(eval_cache 히트) → 시드에 solve 0회.
+                    f_lo = _power_at_internal(lo)[0]
+                    f_xm = _power_at_internal(xm)[0]
+                    f_hi = _power_at_internal(hi)[0]
+                    v_best, _ = _maximize_parabolic(
+                        lambda v: _power_at_internal(v)[0],
+                        lo, xm, hi, f_lo, f_xm, f_hi,
+                        xtol=MPP_XTOL, maxeval=MPP_MAXEVAL,
+                        ptol_rel=MPP_PTOL_REL,
+                    )
+                    P_refined, V_refined, J_refined = _power_at_internal(v_best)
                     if P_refined >= Pmpp:
-                        Vmpp_internal = float(best[1])
+                        Vmpp_internal = float(v_best)
                         Pmpp = float(P_refined)
                         Vmpp = float(V_refined)
                         Jmpp = float(J_refined)
