@@ -17,6 +17,59 @@ from . import optimizer as _opt
 from . import presets as _presets
 
 
+def render_preview_plots(fig, grid, plot_state):
+    """optimizer preview 결과를 fig에 그린다(GUI canvas/txt와 분리한 순수 함수).
+
+    grid: {(pitch_mm, n_busbar): result_dict} — optimize_fingers 결과 모음.
+    plot_state: {"cbar": ...} — colorbar 핸들 보관용(향후 update_normal 재사용).
+
+    (3-1) colorbar 누적 방지: ax.clear()는 colorbar가 만든 별도 axes를 남기므로
+          fig.clf()로 전부 제거 후 subplot을 재생성한다.
+    (3-2) heatmap busbar축은 이산 tick 명시. (3-3) 격자<2면 안내.
+    (3-5) 축은 efficiency로 통일 — total_loss는 pitch↑ 경계 runaway(핑거 저항↓·
+          차광↓)로 단조 감소해 내부 최적점이 사라져 최적점 판단에 부적합하고,
+          efficiency만 interior optimum(생성·저항·차광 trade-off 균형점)을 보인다.
+    """
+    import numpy as np
+    fig.clf()
+    plot_state["cbar"] = None
+    ax1 = fig.add_subplot(1, 2, 1)
+    ax2 = fig.add_subplot(1, 2, 2)
+    ps = sorted(set(p for (p, nb) in grid))
+    nbs = sorted(set(nb for (p, nb) in grid))
+
+    # 그래프 1: pitch vs efficiency (첫 busbar 계열)
+    nb0 = nbs[0]
+    xs = sorted(p for (p, nb) in grid if nb == nb0)
+    ys = [grid[(p, nb0)]["results"]["efficiency"] for p in xs]
+    ax1.plot(xs, ys, "o-", color="#00695C")
+    ax1.set_xlabel("finger pitch [mm]"); ax1.set_ylabel("efficiency [%]")
+    ax1.set_title(f"efficiency vs pitch ({nb0}BB)")
+
+    # 그래프 2: pitch × busbar heatmap (efficiency)
+    if len(ps) < 2 or len(nbs) < 2:
+        ax2.axis("off")
+        ax2.text(0.5, 0.5,
+                 "격자 부족\n\nheatmap을 그리려면 pitch·busbar\n각각 2개 이상 필요합니다.\n"
+                 f"(현재 pitch {len(ps)}개 × busbar {len(nbs)}개)",
+                 ha="center", va="center", fontsize=10, color="#555555")
+    else:
+        Z = np.full((len(nbs), len(ps)), np.nan)
+        for (p, nb), r in grid.items():
+            Z[nbs.index(nb), ps.index(p)] = r["results"]["efficiency"]
+        # busbar(y)는 이산값 → index 격자 + 실제값 tick. pitch(x)는 extent 매핑 후 값 tick.
+        im = ax2.imshow(Z, aspect="auto", origin="lower", interpolation="nearest",
+                        extent=[min(ps), max(ps), -0.5, len(nbs) - 0.5])
+        ax2.set_yticks(range(len(nbs)))
+        ax2.set_yticklabels([str(nb) for nb in nbs])
+        ax2.set_xticks(ps)
+        ax2.set_xticklabels([f"{p:.2f}" for p in ps], rotation=45, fontsize=8)
+        ax2.set_xlabel("finger pitch [mm]"); ax2.set_ylabel("busbar number")
+        ax2.set_title("efficiency heatmap [%]")
+        plot_state["cbar"] = fig.colorbar(im, ax=ax2)   # (3-1) 핸들 보관
+    return fig
+
+
 def open_optimizer_window(fest, parent):
     """Optimize Electrode 창을 연다. fest=엔진 모듈, parent=메인 앱(CTk)."""
     import customtkinter as ctk
@@ -57,7 +110,10 @@ def open_optimizer_window(fest, parent):
     e_pmin = _row(left, "Pitch min [mm]", 1.2)
     e_pmax = _row(left, "Pitch max [mm]", 2.4)
     e_pn = _row(left, "Pitch steps", 4)
-    e_nbb = _row(left, "Busbar numbers", "2,3,4")
+    e_nbb = _row(left, "Busbar numbers", "6,8,10,12")
+    # (3-6) busbar 입력 형식 안내 — 쉼표 구분 정수 리스트.
+    ctk.CTkLabel(left, text="형식: 쉼표 구분 정수 (예: 6,8,10,12,16,20)",
+                 font=ctk.CTkFont(size=9), text_color="gray", anchor="w").pack(fill="x")
     e_wbb = _row(left, "Busbar width [mm]", 0.2)
 
     rec_var = ctk.BooleanVar(value=False)
@@ -66,7 +122,7 @@ def open_optimizer_window(fest, parent):
     ctk.CTkLabel(left, text="※ Adjustable KIST project assumption (보편 물성값 아님)",
                  font=ctk.CTkFont(size=9), text_color="#c0392b").pack(fill="x")
 
-    ctk.CTkLabel(left, text="목적함수 = efficiency. 그래프는 total loss.\n"
+    ctk.CTkLabel(left, text="목적함수 = efficiency (그래프도 efficiency).\n"
                             "정밀 M10 최적화는 CLI: scripts/optimize_m10.py",
                  font=ctk.CTkFont(size=9), text_color="gray", justify="left").pack(fill="x", pady=(6, 2))
 
@@ -78,11 +134,14 @@ def open_optimizer_window(fest, parent):
     # 결과 영역: 텍스트 + 그래프 2개
     txt = ctk.CTkTextbox(right, height=150)
     txt.pack(fill="x", padx=4, pady=4)
-    fig = Figure(figsize=(8.5, 3.2))
-    ax1 = fig.add_subplot(1, 2, 1)
-    ax2 = fig.add_subplot(1, 2, 2)
+    # (3-4) constrained_layout: colorbar 포함 subplot spacing을 자동 정리.
+    # 축은 setup에서 만들지 않고 _draw에서 fig.clf() 후 매번 재생성한다
+    # (3-1: ax.clear()만으로는 colorbar가 만든 별도 axes가 남아 누적되므로).
+    fig = Figure(figsize=(8.6, 3.4), constrained_layout=True)
     canvas = FigureCanvasTkAgg(fig, master=right)
     canvas.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
+    # colorbar 핸들 보관소 — 향후 update_normal() 재사용 전환용(3-1: 구조만 열어둠).
+    _plot_state = {"cbar": None}
 
     def _set_prog(msg):
         parent.after(0, lambda: prog.configure(text=msg))
@@ -101,6 +160,8 @@ def open_optimizer_window(fest, parent):
             # pitch × busbar 스윕 (작은 셀, 빠른 미리보기). efficiency 최대 = best.
             grid = {}  # (pitch, nbb) -> result
             total = len(pitches) * len(nbbs)
+            # (3-6) 총 조합수를 시작 시 명확히 표시(pitch steps × busbar 개수).
+            _set_prog(f"총 {total}조합 (pitch {len(pitches)} × busbar {len(nbbs)}) 계산 시작...")
             k = 0
             for nb in nbbs:
                 opt = _opt.optimize_fingers(
@@ -136,27 +197,9 @@ def open_optimizer_window(fest, parent):
                                       f"{p['busbar_number']}  {p['busbar_width_mm']:.2f}  "
                                       f"{rr['optical_loss']:.3f}  {rr['electrical_loss']:.3f}  "
                                       f"{rr['total_loss']:.3f}  {rr['efficiency']:.3f}\n")
-                # 그래프 1: pitch vs total loss (첫 busbar)
-                ax1.clear(); ax2.clear()
-                nb0 = nbbs[0]
-                xs = sorted(p for (p, nb) in grid if nb == nb0)
-                ys = [grid[(p, nb0)]["results"]["total_loss"] for p in xs]
-                ax1.plot(xs, ys, "o-")
-                ax1.set_xlabel("finger pitch [mm]"); ax1.set_ylabel("total loss [mW/cm²]")
-                ax1.set_title(f"total loss vs pitch ({nb0}BB)")
-                # 그래프 2: pitch × busbar heatmap (total loss)
-                import numpy as np
-                ps = sorted(set(p for (p, nb) in grid))
-                nbs = sorted(set(nb for (p, nb) in grid))
-                Z = np.full((len(nbs), len(ps)), np.nan)
-                for (p, nb), r in grid.items():
-                    Z[nbs.index(nb), ps.index(p)] = r["results"]["total_loss"]
-                im = ax2.imshow(Z, aspect="auto", origin="lower",
-                                extent=[min(ps), max(ps), min(nbs), max(nbs)])
-                ax2.set_xlabel("finger pitch [mm]"); ax2.set_ylabel("busbar number")
-                ax2.set_title("total loss heatmap")
-                fig.colorbar(im, ax=ax2)
-                fig.tight_layout()
+                # 그래프: colorbar 누적 방지·efficiency 축·이산 tick·격자<2 안내는
+                # render_preview_plots(모듈 함수)에 위임(headless 렌더 검증 가능).
+                render_preview_plots(fig, grid, _plot_state)
                 canvas.draw()
                 prog.configure(text=f"완료 ({total}조합, 미리보기 {cell:.0f}mm)")
                 run_btn.configure(state="normal")

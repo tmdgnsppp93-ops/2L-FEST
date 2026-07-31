@@ -93,8 +93,12 @@ def test_recovery_applied(fest, monkeypatch):
 
 
 def test_recovery_scope(fest, monkeypatch):
-    """recovery factor를 바꿔도 finger shading/전기손실/효율/엔진손실 불변 —
-    busbar 관련 필드만 변한다."""
+    """recovery factor를 바꿔도 finger shading/전기손실/엔진 원본값 불변 —
+    busbar 관련 필드와 (회수 반영된) efficiency만 변한다.
+
+    v28.41: recovery는 이제 efficiency에도 double-entry로 반영된다
+    (efficiency = iv['Eff'] + recovered_power). 따라서 efficiency는 더 이상
+    회수에 불변이 아니며, engine_raw['Eff'](순수 엔진값)만 불변이다."""
     monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
     a = evaluate_existing_simulation(fest, GRID, busbar_recovery_factor=0.0,
                                      axis_segments_override=AX, npts=TEST_NPTS)
@@ -103,9 +107,22 @@ def test_recovery_scope(fest, monkeypatch):
     # 범위 밖 값: 완전히 동일해야 함
     assert a["results"]["finger_shading_loss"] == b["results"]["finger_shading_loss"]
     assert a["results"]["electrical_loss"] == b["results"]["electrical_loss"]
-    assert a["results"]["efficiency"] == b["results"]["efficiency"]
+    # engine_raw는 순수 엔진값 → recovery와 무관하게 완전 동일(Eff 포함).
     for k in ("Pe", "Pf_finger", "Pf_busbar", "Pc", "P_shade", "Eff"):
         assert a["engine_raw"][k] == b["engine_raw"][k], f"{k}가 recovery로 변함(범위 위반)"
+    # f=0인 a는 efficiency == 순수 엔진값.
+    assert a["results"]["efficiency"] == a["engine_raw"]["Eff"]
+    # recovery ON인 b는 efficiency가 Δeff = recovered_power/Pin×100 만큼 증가.
+    # Pin은 엔진 출력에서 역산(Eff=Pmpp/Pin×100 → Pin=Pmpp/Eff×100), adapter와 동일.
+    rec_power_b = (b["results"]["recovered_busbar_light"]
+                   * b["engine_raw"]["Jmpp"] * b["engine_raw"]["Vmpp"])
+    pin_b = b["engine_raw"]["Pmpp"] / b["engine_raw"]["Eff"] * 100.0
+    exp_deff_b = rec_power_b / pin_b * 100.0     # Pin=100이면 == rec_power_b
+    assert b["results"]["efficiency"] > a["results"]["efficiency"]
+    assert abs((b["results"]["efficiency"] - a["results"]["efficiency"]) - exp_deff_b) < 1e-9
+    # (efficiency + total_loss)는 회수에 불변 → 이중계산 없음.
+    assert abs((a["results"]["efficiency"] + a["results"]["total_loss"])
+               - (b["results"]["efficiency"] + b["results"]["total_loss"])) < 1e-9
     # busbar 관련만 변함
     assert b["results"]["recovered_busbar_light"] > a["results"]["recovered_busbar_light"]
     assert b["results"]["effective_busbar_shading"] < a["results"]["effective_busbar_shading"]

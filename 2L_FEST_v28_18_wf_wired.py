@@ -122,6 +122,16 @@ v28.40: [perf] calc_iv MPP/Voc refinement 재작성 — 느린 이분법·황금
            V=J(V)·1e-3·Rs 반복(강한 수축, ≈4, 이분 폴백 유지). VSC_FP_XTOL=1e-10.
          결과 불변 검증: 작은 mono(tandem)에서 new-vs-old Voc/Eff/FF 차이 <1e-4
          %abs·V(실측 ~1e-5), Jsc는 V=0 해라 불변. M10 8BB 핀은 B등급(1e-4)로 재핀.
+v28.41: [fix/ui] 전면전극 최적화(front_electrode) 회계·플로팅 정정 — 엔진 물리 무변경.
+         · [adapter] busbar 반사광 회수를 efficiency에도 double-entry로 반영
+           (efficiency = iv.Eff + recovered_power/Pin×100). Pin은 엔진 출력에서
+           역산(Pin=Pmpp/Eff×100, 하드코딩 금지). f=0이면 비트동일, engine_raw.Eff
+           순수 보존. 근사는 회수 전류 I²R 무시라 효율을 미세 과대평가(상한).
+         · [ui] colorbar 누적 버그 수정(fig.clf() 후 subplot 재생성), heatmap
+           busbar 이산 tick 명시, 격자<2 안내, constrained_layout, 축을 efficiency로
+           통일(total_loss는 pitch 경계 runaway로 최적점 판단 부적합), 입력 형식·총
+           조합수 안내.
+         · GUI 시작 시 모듈 버전을 사이드바 하단에도 표시(stale 프로세스 즉시 식별).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -220,8 +230,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.40",
-    "date": "2026-07-28",
+    "version": "v28.41",
+    "date": "2026-07-31",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -7705,6 +7715,13 @@ class FESTProApp(ctk.CTk):
 
     def _build_sidebar(self, parent):
         """v28.10: Griddler-style wizard (4 steps) - 사용자 요청 2026.05.21."""
+        # v28.41: 로드된 모듈 버전을 사이드바 하단에 상시 표시(타이틀바에 더해).
+        # 구버전이 메모리에 남아 도는 stale 프로세스를 즉시 식별하기 위함.
+        # side="bottom"을 먼저 pack해 스크롤 영역(inner)이 그 위를 채우게 한다.
+        ver_lbl = ctk.CTkLabel(parent, text=_build_label(),
+                               font=ctk.CTkFont(size=8), text_color="#64748B",
+                               anchor="w", justify="left", wraplength=250)
+        ver_lbl.pack(side="bottom", fill="x", padx=6, pady=(2, 4))
         # Scroll frame for sidebar content
         inner = ctk.CTkScrollableFrame(parent, fg_color=CLR_SIDEBAR, width=260)
         inner.pack(fill="both", expand=True, padx=4, pady=4)

@@ -25,9 +25,26 @@ busbar가 가린 빛의 일부는 반사되어 셀로 재입사한다. 이를 **
 Phase 0 분석 결과 shading은 (a) 사후 line-item(P_shade)과 (b) 생성전류
 스케일(_gen_s) 두 경로로 엔진에 들어간다. 회수는 **(a) line-item 경로에만**
 적용한다 — (b)에 넣으면 case/design 비율에서 상쇄되거나 FEM 재작성이
-필요하기 때문. 따라서 **회수광은 FEM 전류 재계산에 피드백되지 않는 근사**이며
-효율(iv['Eff'])은 엔진 값 그대로다(새 효율식 금지). 회수는 total_loss(목적함수)
-에만 반영된다.
+필요하기 때문. 따라서 **회수광은 FEM 전류 재계산에 피드백되지 않는 근사**다
+(엔진 무수정, FEM 재풀이 없음).
+
+회수의 회계(double-entry, 대칭):
+  · 손실 원장:  optical_loss = P_shade − recovered_power           [mW/cm²]
+  · 전력 원장:  efficiency   = iv['Eff'] + recovered_power/Pin×100 [%]
+  회수광은 MPP에서 recovered_power[mW/cm²]만큼 delivered power를 늘리므로
+  (1차 근사 ΔPmpp ≈ recovered·Jmpp·Vmpp) efficiency에도 반영하는 것이 옳다.
+  두 원장은 회수량 기준으로 대칭이라 (efficiency + total_loss/Pin×100)은 회수에
+  불변 → 이중계산이 없다. f=0이면 recovered_power=0 → efficiency == iv['Eff']
+  (비트 동일). engine_raw['Eff']는 **순수 엔진값**으로 보존한다(핀/회귀 기준값).
+
+  단위 주의: efficiency[%]와 total_loss[mW/cm²]의 수치가 같아지는 것은
+  **Pin=100 mW/cm²(1-sun AM1.5G)에서만** 성립한다. 그래서 efficiency에는
+  Pin 정규화(recovered_power/Pin×100)를 명시한다. Pin은 하드코딩하지 않고
+  엔진 출력에서 역산한다: 엔진 Eff=Pmpp/Pin×100 → Pin=Pmpp/Eff×100.
+
+  근사 한계(2-fix-c): recovered_power는 회수 전류의 추가 저항 손실(I²R)을
+  무시한 무손실 delivered power다 → efficiency를 항상 미세하게 **과대평가**
+  (상한)하는 방향이다.
 """
 
 DEFAULT_BUSBAR_RECOVERY_FACTOR = 0.25  # KIST 프로젝트 조정 가능 가정값 (보편 물성 아님)
@@ -175,6 +192,31 @@ def evaluate_existing_simulation(
     electrical_loss = L["Pe"] + L["Pf_finger"] + L["Pf_busbar"] + L["Pc"]
     total_loss = optical_loss + electrical_loss
 
+    # busbar 반사광 회수를 efficiency에도 반영(double-entry).
+    # 회수광은 MPP에서 recovered_power[mW/cm²]만큼 delivered power를 늘린다.
+    # 1차 근사로 ΔPmpp ≈ recovered·Jmpp·Vmpp = recovered_power 이므로
+    # "유효 Jsc↑ → efficiency↑"를 FEM 재풀이 없이 line-item으로 구현한다.
+    # 손실 원장(optical_loss −= recovered_power)과 전력 원장(efficiency += Δeff)이
+    # 대칭이라 (efficiency + total_loss)는 회수에 불변 → 이중계산 없음.
+    # f=0 → recovered_power=0 → efficiency == iv["Eff"] (비트 동일, 회귀 안전).
+    # engine_raw["Eff"]는 순수 엔진값으로 보존(핀/회귀 기준).
+    #
+    # [2-fix-a] 단위 정규화: efficiency[%]와 recovered_power[mW/cm²]를 직접 더하지
+    # 않는다. Δeff[%] = recovered_power[mW/cm²] / Pin[mW/cm²] × 100. Pin은
+    # 하드코딩하지 않고 엔진 출력에서 역산한다 — 엔진 Eff=Pmpp/Pin×100 이므로
+    # Pin = Pmpp/Eff×100 (엔진이 Pin을 바꾸면 자동 추종; 현재 Pin=100 mW/cm² AM1.5G).
+    # Pin=100에서는 Δeff가 recovered_power와 수치가 같다(검증값 재현).
+    #
+    # [2-fix-c] 근사 한계: recovered_power는 회수 전류가 유발하는 추가 저항 손실
+    # (I²R)을 무시한 무손실 delivered power다. 따라서 실제보다 항상 크며,
+    # efficiency를 미세하게 **과대평가(overestimate)**하는 방향의 상한 근사다.
+    #
+    # [2-fix-d] 랭킹 영향: recovery는 busbar의 유효 광학 비용을 (1−f)배로 줄이므로
+    # 최적 busbar 수를 **위로** 밀어올린다(경계 runaway 심화). Phase 3 sweep의
+    # nbb 범위를 6,8,10,12,16,20으로 확장해 interior optimum이 잡히는지 확인할 것.
+    pin_mw_cm2 = (iv["Pmpp"] / iv["Eff"] * 100.0) if iv.get("Eff") else 100.0
+    efficiency = iv["Eff"] + recovered_power / pin_mw_cm2 * 100.0
+
     actual_pitch = geo.front.get_finger_pitch_mm(geo.W, geo.H)
 
     return {
@@ -198,7 +240,7 @@ def evaluate_existing_simulation(
             "optical_loss": optical_loss,                      # mW/cm² (회수 반영)
             "electrical_loss": electrical_loss,                # mW/cm²
             "total_loss": total_loss,                          # mW/cm²
-            "efficiency": iv["Eff"],                           # % — 엔진 값(회수 미반영)
+            "efficiency": efficiency,                          # % — 회수 반영(=iv["Eff"]+recovered_power; f=0이면 iv["Eff"])
         },
         # 회귀/round-trip 검증용 원본 엔진 값(무보정)
         "engine_raw": {
