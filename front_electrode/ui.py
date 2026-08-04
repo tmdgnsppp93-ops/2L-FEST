@@ -15,6 +15,7 @@ import threading
 
 from . import optimizer as _opt
 from . import presets as _presets
+from . import adapter as _adapter
 
 
 def render_preview_plots(fig, grid, plot_state):
@@ -116,13 +117,28 @@ def open_optimizer_window(fest, parent):
                  font=ctk.CTkFont(size=9), text_color="gray", anchor="w").pack(fill="x")
     e_wbb = _row(left, "Busbar width [mm]", 0.2)
 
-    rec_var = ctk.BooleanVar(value=False)
-    ctk.CTkCheckBox(left, text="Enable busbar optical recovery", variable=rec_var).pack(fill="x", pady=(6, 0))
-    e_rec = _row(left, "Recovery factor", _opt.SCENARIO_MEASURED and 0.25)
+    # busbar 광학 회수 f — 슬라이더(라이브) + 수치칸(양방향 동기).
+    # recovery는 Route 2(adapter.RECOVERY_IS_POST_PROCESS)에서 순수 post-process라
+    # 슬라이더 이동 시 FEM 재계산 없이 efficiency/loss만 즉시 재산출한다
+    # (adapter.apply_recovery — 직접 호출과 비트동일).
+    ctk.CTkLabel(left, text="Busbar optical recovery  f", anchor="w",
+                 font=ctk.CTkFont(size=11, weight="bold")).pack(fill="x", pady=(6, 0))
+    rec_row = ctk.CTkFrame(left, fg_color="transparent")
+    rec_row.pack(fill="x")
+    rec_slider = ctk.CTkSlider(rec_row, from_=0.0, to=0.60, number_of_steps=60)
+    rec_slider.set(0.25)
+    rec_slider.pack(side="left", fill="x", expand=True, padx=(0, 6))
+    e_rec = ctk.CTkEntry(rec_row, width=56)
+    e_rec.insert(0, "0.25")
+    e_rec.pack(side="left")
+    rec_note_lbl = ctk.CTkLabel(left, text="", anchor="w", justify="left",
+                                font=ctk.CTkFont(size=9))
+    rec_note_lbl.pack(fill="x")
     ctk.CTkLabel(left, text="※ Adjustable KIST project assumption (보편 물성값 아님)",
                  font=ctk.CTkFont(size=9), text_color="#c0392b").pack(fill="x")
 
     ctk.CTkLabel(left, text="목적함수 = efficiency (그래프도 efficiency).\n"
+                            "슬라이더로 recovery를 바꾸면 FEM 재계산 없이 즉시 갱신.\n"
                             "정밀 M10 최적화는 CLI: scripts/optimize_m10.py",
                  font=ctk.CTkFont(size=9), text_color="gray", justify="left").pack(fill="x", pady=(6, 2))
 
@@ -134,17 +150,103 @@ def open_optimizer_window(fest, parent):
     # 결과 영역: 텍스트 + 그래프 2개
     txt = ctk.CTkTextbox(right, height=150)
     txt.pack(fill="x", padx=4, pady=4)
-    # (3-4) constrained_layout: colorbar 포함 subplot spacing을 자동 정리.
-    # 축은 setup에서 만들지 않고 _draw에서 fig.clf() 후 매번 재생성한다
-    # (3-1: ax.clear()만으로는 colorbar가 만든 별도 axes가 남아 누적되므로).
     fig = Figure(figsize=(8.6, 3.4), constrained_layout=True)
     canvas = FigureCanvasTkAgg(fig, master=right)
     canvas.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
-    # colorbar 핸들 보관소 — 향후 update_normal() 재사용 전환용(3-1: 구조만 열어둠).
     _plot_state = {"cbar": None}
+
+    # 스윕 결과 보관(슬라이더 라이브 재산출용). grid는 base(FEM) 결과 — recovery 무관.
+    _sweep = {"grid": None, "cell": None, "total": None}
+    _syncing = {"on": False}   # 슬라이더↔수치칸 순환 갱신 방지
 
     def _set_prog(msg):
         parent.after(0, lambda: prog.configure(text=msg))
+
+    def _recovery_note(f):
+        # f_rec = R_m·η_TIR·τ² 의 물리적 해석대(帶).
+        if f < 0.06:
+            return "f=%.2f — 평면 경면 (전반사 없음)" % f, "#555555"
+        if f < 0.31:
+            return "f=%.2f — 인쇄 Ag 램버시안, 전형" % f, "#00695C"
+        if f < 0.43:
+            return "f=%.2f — 인쇄 Ag 램버시안, 평활" % f, "#00695C"
+        return "f=%.2f — 원형 와이어 영역: 본 구조에 해당하지 않음" % f, "#c0392b"
+
+    def _render_results(f):
+        """저장된 grid에 recovery f를 반영해 텍스트·그래프를 갱신(FEM 재계산 없음).
+        최적점(BEST)이 f에 따라 바뀌면 그래프·Top-10·BEST 라인이 즉시 갱신된다."""
+        grid = _sweep["grid"]
+        if not grid:
+            return
+        note, col = _recovery_note(f)
+        rec_note_lbl.configure(text=note, text_color=col)
+        if _adapter.RECOVERY_IS_POST_PROCESS:
+            for r in grid.values():
+                r["results"].update(_adapter.apply_recovery(r, f))
+                r["parameters"]["busbar_recovery_factor"] = f
+        results = list(grid.values())
+        best = max(results, key=lambda r: r["results"]["efficiency"])
+        b = best["parameters"]; br = best["results"]
+        txt.delete("1.0", "end")
+        txt.insert("end", f"BEST (efficiency @ f={f:.2f}): wf={b['finger_width_um']:.0f}µm "
+                          f"pitch={b['finger_pitch_mm']:.2f}mm nbb={b['busbar_number']} "
+                          f"wbb={b['busbar_width_mm']:.2f}mm\n")
+        txt.insert("end", f"  efficiency={br['efficiency']:.3f}%  total_loss={br['total_loss']:.4f}  "
+                          f"raw_bb={br['raw_busbar_shading']*100:.3f}% "
+                          f"recovered={br['recovered_busbar_light']*100:.3f}% "
+                          f"effective_bb={br['effective_busbar_shading']*100:.3f}%\n\n")
+        txt.insert("end", "Top-10 (by efficiency):  rank  wf  pitch  nbb  wbb  optical  electrical  total  eff\n")
+        for i, r in enumerate(sorted(results, key=lambda r: -r["results"]["efficiency"])[:10], 1):
+            p = r["parameters"]; rr = r["results"]
+            txt.insert("end", f"  {i:>2}  {p['finger_width_um']:.0f}  {p['finger_pitch_mm']:.2f}  "
+                              f"{p['busbar_number']}  {p['busbar_width_mm']:.2f}  "
+                              f"{rr['optical_loss']:.3f}  {rr['electrical_loss']:.3f}  "
+                              f"{rr['total_loss']:.3f}  {rr['efficiency']:.3f}\n")
+        render_preview_plots(fig, grid, _plot_state)
+        canvas.draw()
+        prog.configure(text=f"완료 ({_sweep['total']}조합, {_sweep['cell']:.0f}mm, f={f:.2f})")
+
+    _debounce = {"id": None}
+
+    def _on_slider(val):
+        if _syncing["on"]:
+            return
+        f = float(val)
+        _syncing["on"] = True
+        e_rec.delete(0, "end"); e_rec.insert(0, f"{f:.2f}")
+        _syncing["on"] = False
+        # 디바운스: 드래그 중 연속 이벤트(최대 60틱)를 모아 마지막만 렌더 →
+        # matplotlib 재그리기 폭주로 인한 버벅임 방지(50ms idle 후 1회 렌더).
+        if _debounce["id"] is not None:
+            try:
+                win.after_cancel(_debounce["id"])
+            except Exception:
+                pass
+        _debounce["id"] = win.after(50, lambda: _render_results(f))
+
+    def _on_rec_entry(event=None):
+        if _syncing["on"]:
+            return
+        try:
+            f = max(0.0, min(0.60, float(e_rec.get())))
+        except (ValueError, TypeError):
+            return
+        _syncing["on"] = True
+        rec_slider.set(f)
+        _syncing["on"] = False
+        _render_results(f)
+
+    rec_slider.configure(command=_on_slider)
+    e_rec.bind("<Return>", _on_rec_entry)
+    e_rec.bind("<FocusOut>", _on_rec_entry)
+    # 가드(필수): recovery가 post-process가 아니면(Route 1) 즉시 재산출은 무효 →
+    # 슬라이더 비활성 + "재계산 필요" 안내. RECOVERY_IS_POST_PROCESS로 판정.
+    if not _adapter.RECOVERY_IS_POST_PROCESS:
+        rec_slider.configure(state="disabled")
+        e_rec.configure(state="disabled")
+        rec_note_lbl.configure(
+            text="recovery가 FEM에 반영되는 모델(Route 1) — 슬라이더 비활성, 재계산 필요",
+            text_color="#c0392b")
 
     def _do_run():
         try:
@@ -155,56 +257,33 @@ def open_optimizer_window(fest, parent):
             pitches = [pmin + (pmax - pmin) * i / (pn - 1) for i in range(pn)]
             nbbs = [int(x) for x in str(e_nbb.get()).split(",") if x.strip()]
             wbb = float(e_wbb.get())
-            rec = float(e_rec.get()) if rec_var.get() else 0.0
 
-            # pitch × busbar 스윕 (작은 셀, 빠른 미리보기). efficiency 최대 = best.
+            # base 스윕: recovery는 슬라이더로 사후 반영하므로 f=0으로 FEM 실행한다
+            # (engine_raw/raw_bb는 recovery 무관 → 슬라이더가 즉시 재산출).
             grid = {}  # (pitch, nbb) -> result
             total = len(pitches) * len(nbbs)
-            # (3-6) 총 조합수를 시작 시 명확히 표시(pitch steps × busbar 개수).
             _set_prog(f"총 {total}조합 (pitch {len(pitches)} × busbar {len(nbbs)}) 계산 시작...")
             k = 0
             for nb in nbbs:
                 opt = _opt.optimize_fingers(
                     fest, cell_mm=cell, finger_widths_um=[wf],
                     finger_pitches_mm=pitches, busbar_number=nb, busbar_width_mm=wbb,
-                    scenario=_opt.SCENARIO_MEASURED, recovery_factor=rec,
+                    scenario=_opt.SCENARIO_MEASURED, recovery_factor=0.0,
                     objective="efficiency", axis_segments_override=40, npts=6,
                     progress=lambda i, n, o: (_set_prog(f"계산 중... {k + i}/{total}")))
                 for r in opt["results"]:
                     grid[(round(r["parameters"]["finger_pitch_mm"], 4), nb)] = r
                 k += len(pitches)
 
-            results = list(grid.values())
-            best = max(results, key=lambda r: r["results"]["efficiency"])
-
-            def _draw():
-                # 텍스트: best + top-10 (efficiency)
-                txt.delete("1.0", "end")
-                b = best["parameters"]
-                br = best["results"]
-                txt.insert("end", f"BEST (efficiency): wf={b['finger_width_um']:.0f}µm "
-                                  f"pitch={b['finger_pitch_mm']:.2f}mm nbb={b['busbar_number']} "
-                                  f"wbb={b['busbar_width_mm']:.2f}mm\n")
-                txt.insert("end", f"  efficiency={br['efficiency']:.3f}%  total_loss={br['total_loss']:.4f}  "
-                                  f"raw_bb={br['raw_busbar_shading']*100:.3f}% "
-                                  f"recovered={br['recovered_busbar_light']*100:.3f}% "
-                                  f"effective_bb={br['effective_busbar_shading']*100:.3f}%\n\n")
-                txt.insert("end", "Top-10 (by efficiency):  rank  wf  pitch  nbb  wbb  optical  electrical  total  eff\n")
-                top = sorted(results, key=lambda r: -r["results"]["efficiency"])[:10]
-                for i, r in enumerate(top, 1):
-                    p = r["parameters"]; rr = r["results"]
-                    txt.insert("end", f"  {i:>2}  {p['finger_width_um']:.0f}  {p['finger_pitch_mm']:.2f}  "
-                                      f"{p['busbar_number']}  {p['busbar_width_mm']:.2f}  "
-                                      f"{rr['optical_loss']:.3f}  {rr['electrical_loss']:.3f}  "
-                                      f"{rr['total_loss']:.3f}  {rr['efficiency']:.3f}\n")
-                # 그래프: colorbar 누적 방지·efficiency 축·이산 tick·격자<2 안내는
-                # render_preview_plots(모듈 함수)에 위임(headless 렌더 검증 가능).
-                render_preview_plots(fig, grid, _plot_state)
-                canvas.draw()
-                prog.configure(text=f"완료 ({total}조합, 미리보기 {cell:.0f}mm)")
-                run_btn.configure(state="normal")
-
-            parent.after(0, _draw)
+            _sweep["grid"] = grid
+            _sweep["cell"] = cell
+            _sweep["total"] = total
+            try:
+                f0 = max(0.0, min(0.60, float(e_rec.get())))
+            except (ValueError, TypeError):
+                f0 = 0.25
+            parent.after(0, lambda: (_render_results(f0),
+                                     run_btn.configure(state="normal")))
         except Exception as e:  # GUI가 죽지 않도록
             parent.after(0, lambda: (prog.configure(text=f"오류: {e}"),
                                      run_btn.configure(state="normal")))

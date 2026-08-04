@@ -49,6 +49,44 @@ Phase 0 분석 결과 shading은 (a) 사후 line-item(P_shade)과 (b) 생성전�
 
 DEFAULT_BUSBAR_RECOVERY_FACTOR = 0.25  # KIST 프로젝트 조정 가능 가정값 (보편 물성 아님)
 
+# ── recovery 모델 플래그 (GUI 슬라이더 가드) ──────────────────────────
+# True  = 현재 모델(Route 2): recovery는 순수 사후 post-process다. FEM 해(iv)는
+#         recovery와 완전히 무관하므로, 저장된 result에서 apply_recovery()로 f만
+#         바꿔 efficiency/loss를 FEM 재계산 없이 즉시 재산출할 수 있다. GUI 슬라이더는
+#         이 플래그가 True일 때만 활성화한다(비트동일 재현: recovery 대조군 |Δ|=0.0).
+# False = 향후 recovery를 Jsc 보정(Route 1)으로 바꾸면 recovery가 FEM 광생성에
+#         피드백되므로 이 즉시 재산출은 무효다. 그때 이 값을 False로 두면 슬라이더는
+#         비활성화되고 UI가 "재계산 필요"를 안내해야 한다.
+RECOVERY_IS_POST_PROCESS = True
+
+
+def apply_recovery(result, recovery_factor):
+    """저장된 result에서 recovery_factor만 바꿔 f-의존 필드를 FEM 재계산 없이 재산출.
+
+    Route 2(RECOVERY_IS_POST_PROCESS=True) 전용. evaluate_existing_simulation과 **동일
+    공식**을 engine_raw(모두 recovery 무관: Eff/Pmpp/Jmpp/Vmpp/P_shade/Pe/Pf_*/Pc)와
+    raw_busbar_shading으로부터 재현한다 → 직접 호출과 비트동일.
+
+    반환: {efficiency, optical_loss, total_loss, recovered_busbar_light,
+           effective_busbar_shading} (results에 merge해 쓰면 됨).
+    """
+    if not RECOVERY_IS_POST_PROCESS:
+        raise RuntimeError(
+            "recovery가 post-process가 아님(Route 1) — FEM 재계산이 필요하다.")
+    er = result["engine_raw"]
+    raw_bb = result["results"]["raw_busbar_shading"]
+    f = float(recovery_factor)
+    recovered = raw_bb * f
+    effective_bb = raw_bb * (1.0 - f)
+    recovered_power = recovered * er["Jmpp"] * er["Vmpp"]        # [mW/cm²]
+    optical_loss = er["P_shade"] - recovered_power
+    electrical = er["Pe"] + er["Pf_finger"] + er["Pf_busbar"] + er["Pc"]
+    total_loss = optical_loss + electrical
+    pin = (er["Pmpp"] / er["Eff"] * 100.0) if er.get("Eff") else 100.0
+    efficiency = er["Eff"] + recovered_power / pin * 100.0
+    return dict(efficiency=efficiency, optical_loss=optical_loss, total_loss=total_loss,
+                recovered_busbar_light=recovered, effective_busbar_shading=effective_bb)
+
 
 # ── 단위 변환 헬퍼 (사용자 친화 단위 → 엔진 내부 단위 cm) ──────────
 def _mm_to_cm(x):

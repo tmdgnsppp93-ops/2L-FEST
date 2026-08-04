@@ -11,6 +11,8 @@
 """
 from .adapter import (
     DEFAULT_BUSBAR_RECOVERY_FACTOR,
+    RECOVERY_IS_POST_PROCESS,
+    apply_recovery,
     busbar_shading_breakdown,
     evaluate_existing_simulation,
 )
@@ -26,6 +28,8 @@ from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 
 __all__ = [
     "DEFAULT_BUSBAR_RECOVERY_FACTOR",
+    "RECOVERY_IS_POST_PROCESS",
+    "apply_recovery",
     "busbar_shading_breakdown",
     "evaluate_existing_simulation",
     "SCENARIO_MEASURED",

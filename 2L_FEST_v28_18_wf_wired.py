@@ -132,6 +132,16 @@ v28.41: [fix/ui] 전면전극 최적화(front_electrode) 회계·플로팅 정�
            통일(total_loss는 pitch 경계 runaway로 최적점 판단 부적합), 입력 형식·총
            조합수 안내.
          · GUI 시작 시 모듈 버전을 사이드바 하단에도 표시(stale 프로세스 즉시 식별).
+v28.42: [ui/adapter] recovery 인터랙티브 슬라이더 — 엔진 무변경.
+         · [adapter] apply_recovery(result, f): 저장된 result에서 recovery만 바꿔
+           efficiency/loss를 FEM 재계산 없이 재산출(Route 2 전용, 직접 호출과 비트동일
+           |Δ|<1e-9 검증). 가드 플래그 RECOVERY_IS_POST_PROCESS(True). 향후 Jsc
+           보정(Route 1)으로 바꾸면 False로 두어 즉시 재산출을 막고 재계산을 강제.
+         · [ui] recovery 슬라이더(0.00~0.60) + 수치칸 양방향 동기. 이동 시 FEM 없이
+           efficiency·Top-10·BEST·그래프 즉시 갱신(최적 nbb 이동을 실시간 확인).
+           물리 해석대 표시(경면/램버시안 전형·평활/와이어 영역 경고). 플래그 False면
+           슬라이더 비활성 + "재계산 필요" 안내. base 스윕은 f=0으로 실행.
+         · recovery 민감도(0.00/0.25/0.37) 대조: 최적 nbb=8 전 범위 강건, 평탄대역 유지.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -230,8 +240,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.41",
-    "date": "2026-07-31",
+    "version": "v28.42",
+    "date": "2026-08-03",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
