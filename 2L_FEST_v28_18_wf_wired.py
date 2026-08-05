@@ -154,6 +154,15 @@ v28.43: [fix] GUI preview '에러 없이 틀린 값' 버그 — n_probe_points=0
          GUI는 자동 상향 사실을 결과·진행표시줄에 명시(0→10). 대형 preview cell
          시간 안내 추가. 검증: GUI 경로 cell182/pitch2.2/nbb8/f0.25 = 31.32%
          (CLI 31.398%와 0.075%p 차 = 메쉬밀도 45k vs 81k). 소셀 n_busbars=1은 무영향.
+v28.44: [ui] preview 좌측 그래프 개선(render_preview_plots) — 엔진 무변경.
+         이전엔 nbs[0](최소 busbar) 계열 하나만 그려 실제 최적(예 8BB)이 안 보였다.
+         · busbar 전 계열을 efficiency vs pitch로 겹쳐 그림(viridis 단조색 + 범례),
+           제목은 busbar 미특정("efficiency vs pitch").
+         · 전역 BEST를 별표 + offset 주석("8BB, 2.20mm, 31.4%")으로 강조.
+         · 계열>8이면 범례/2차 colorbar 대신 BEST/min/max만 강조·나머지 옅은 회색
+           (우측 히트맵 colorbar와 의미 혼선 방지, 가독성 우선).
+         · pitch 1점이면 라인 대신 마커만. y축은 실제 스케일 유지(margins만, 과장 없음).
+         colorbar 누적 없음 재확인(연속 2회 axes 3→3). 헤드리스 PNG 렌더 검증.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -252,8 +261,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.43",
-    "date": "2026-08-04",
+    "version": "v28.44",
+    "date": "2026-08-05",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None

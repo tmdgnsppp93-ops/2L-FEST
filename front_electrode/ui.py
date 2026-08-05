@@ -32,6 +32,7 @@ def render_preview_plots(fig, grid, plot_state):
           efficiency만 interior optimum(생성·저항·차광 trade-off 균형점)을 보인다.
     """
     import numpy as np
+    from matplotlib import colormaps
     fig.clf()
     plot_state["cbar"] = None
     ax1 = fig.add_subplot(1, 2, 1)
@@ -39,13 +40,44 @@ def render_preview_plots(fig, grid, plot_state):
     ps = sorted(set(p for (p, nb) in grid))
     nbs = sorted(set(nb for (p, nb) in grid))
 
-    # 그래프 1: pitch vs efficiency (첫 busbar 계열)
-    nb0 = nbs[0]
-    xs = sorted(p for (p, nb) in grid if nb == nb0)
-    ys = [grid[(p, nb0)]["results"]["efficiency"] for p in xs]
-    ax1.plot(xs, ys, "o-", color="#00695C")
+    # 전역 BEST(최적 디자인) — 좌측 그래프에서 강조.
+    best_key = max(grid, key=lambda k: grid[k]["results"]["efficiency"])
+    best_pitch, best_nb = best_key
+    best_eff = grid[best_key]["results"]["efficiency"]
+
+    # === 좌: busbar 계열별 efficiency vs pitch (viridis 단조색) ===
+    # 우측 히트맵이 2D를 보이므로 좌측은 'busbar 비교축'으로 쓴다(전 계열 겹쳐 그림).
+    # 계열 多(>8): 범례 대신 BEST/min/max만 강조하고 나머지는 옅은 회색 —
+    #   좌측에 2번째 colorbar를 두면 우측 히트맵 colorbar와 의미가 섞여 읽기 나쁘므로
+    #   grey-highlight를 채택(가독성 우선). ≤8이면 viridis 색 + 범례.
+    single_pitch = len(ps) < 2   # (5) pitch 1점이면 라인 대신 마커만
+    many = len(nbs) > 8
+    cmap = colormaps["viridis"]
+    denom = max(1, len(nbs) - 1)
+    for i, nb in enumerate(nbs):
+        xs = sorted(p for (p, x) in grid if x == nb)
+        ys = [grid[(p, nb)]["results"]["efficiency"] for p in xs]
+        color = cmap(i / denom)
+        if many and nb not in (nbs[0], nbs[-1], best_nb):
+            ax1.plot(xs, ys, "o" if single_pitch else "-",
+                     color="#cfcfcf", lw=1.0, markersize=3, zorder=1)
+        else:
+            ax1.plot(xs, ys, "o" if single_pitch else "o-",
+                     color=color, lw=1.8, markersize=4, label=f"{nb} BB", zorder=3)
+    # (2) 최적점 강조: 별표 + offset 주석
+    ax1.plot([best_pitch], [best_eff], marker="*", markersize=15,
+             color="#d81b60", markeredgecolor="black", markeredgewidth=0.7, zorder=6)
+    _mid = (min(ps) + max(ps)) / 2 if len(ps) > 1 else best_pitch
+    _dx = -10 if best_pitch > _mid else 10
+    ax1.annotate(f"{best_nb}BB, {best_pitch:.2f}mm, {best_eff:.3f}%",
+                 xy=(best_pitch, best_eff), textcoords="offset points",
+                 xytext=(_dx, 12), ha=("right" if _dx < 0 else "left"),
+                 fontsize=8, color="#d81b60",
+                 arrowprops=dict(arrowstyle="->", color="#d81b60", lw=0.7))
     ax1.set_xlabel("finger pitch [mm]"); ax1.set_ylabel("efficiency [%]")
-    ax1.set_title(f"efficiency vs pitch ({nb0}BB)")
+    ax1.set_title("efficiency vs pitch")
+    ax1.margins(y=0.18)   # (4) 실제 스케일 유지, 여백만 확보(차이 과장 아님)
+    ax1.legend(loc="best", fontsize=8, framealpha=0.7)
 
     # 그래프 2: pitch × busbar heatmap (efficiency)
     if len(ps) < 2 or len(nbs) < 2:
