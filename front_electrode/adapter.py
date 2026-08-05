@@ -185,6 +185,19 @@ def evaluate_existing_simulation(
 
     Returns: results dict (parameters / results / engine_raw / meta).
     """
+    # ── n_probe 가드(v28.43, 초크포인트) — 모든 front_electrode 경로 보호 ──
+    # 다중 busbar를 n_probe_points=0(엔진 legacy 단일-busbar n_terminals 수집)으로
+    # 풀면 대부분 busbar에서 전류가 수집되지 않아 직렬저항 폭증·FF 붕괴 →
+    # **에러 없이 그럴듯한 틀린 값**(M10 preview eff 8.85% vs 정상 31.3%; 실측
+    # 확인: n_probe 0→10에서 FF 30.9→84.2). 메쉬 해상도 문제가 아니라 전류추출
+    # 모델 문제다(43k·81k 노드 모두 8.85%). busbar_number>1인데 n_probe==0이면
+    # Griddler식 수집(=10, CLI Stage-2/핀과 동일)으로 자동 상향하고 meta에 기록한다.
+    _n_bb = int(grid_params.get("n_busbars", 1) or 1)
+    _n_probe_in = int(grid_params.get("n_probe_points", 0) or 0)
+    _n_probe_auto = (_n_bb > 1 and _n_probe_in == 0)
+    if _n_probe_auto:
+        grid_params = dict(grid_params, n_probe_points=10)
+
     geo = _build_geometry(fest, grid_params)
 
     # 메시
@@ -296,5 +309,7 @@ def evaluate_existing_simulation(
             "rho_bulk_uohm_cm": rm * 1e6,
             "finger_h_um": hf * 1e4,
             "shape_cf": cf,
+            "n_probe_points": int(grid_params.get("n_probe_points", 0)),
+            "n_probe_auto_bumped": _n_probe_auto,
         },
     }

@@ -142,6 +142,18 @@ v28.42: [ui/adapter] recovery 인터랙티브 슬라이더 — 엔진 무변경.
            물리 해석대 표시(경면/램버시안 전형·평활/와이어 영역 경고). 플래그 False면
            슬라이더 비활성 + "재계산 필요" 안내. base 스윕은 f=0으로 실행.
          · recovery 민감도(0.00/0.25/0.37) 대조: 최적 nbb=8 전 범위 강건, 평탄대역 유지.
+v28.43: [fix] GUI preview '에러 없이 틀린 값' 버그 — n_probe_points=0 (엔진 무변경).
+         증상: GUI preview(cell 182)가 eff 8.85%·FF 30.9·경계최적을 냄(정상 31.3%).
+         진단(실측): 메쉬 아님 — axis=40(43k노드)와 target_nodes=82000(81k노드)이 모두
+         8.85%로 동일. 실제 원인은 optimize_fingers 기본 n_probe_points=0(엔진 legacy
+         단일-busbar n_terminals 수집)이라 다중 busbar에서 전류가 대부분 미수집 →
+         FF 붕괴. n_probe 0→10에서 FF 30.9→84.2, eff 8.85→31.32(실측).
+         수정: 초크포인트인 adapter.evaluate_existing_simulation에 가드 — busbar>1인데
+         n_probe==0이면 Griddler식 수집(=10, CLI/핀과 동일)으로 자동 상향하고 meta에
+         기록. 모든 front_electrode 경로(optimize_fingers/busbars/direct) 일괄 보호.
+         GUI는 자동 상향 사실을 결과·진행표시줄에 명시(0→10). 대형 preview cell
+         시간 안내 추가. 검증: GUI 경로 cell182/pitch2.2/nbb8/f0.25 = 31.32%
+         (CLI 31.398%와 0.075%p 차 = 메쉬밀도 45k vs 81k). 소셀 n_busbars=1은 무영향.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -240,8 +252,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.42",
-    "date": "2026-08-03",
+    "version": "v28.43",
+    "date": "2026-08-04",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None

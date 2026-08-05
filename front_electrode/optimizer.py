@@ -75,7 +75,13 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
                      scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
                      axis_segments_override=None, target_nodes=None,
                      objective="total_loss", progress=None):
-    """Stage 1 — 소셀에서 finger width × pitch 스윕 (버스바 대표값 고정)."""
+    """Stage 1 — 소셀에서 finger width × pitch 스윕 (버스바 대표값 고정).
+
+    n_probe 가드(v28.43): 다중 busbar를 n_probe_points=0(legacy 단일-busbar 수집)으로
+    풀면 전류 미수집으로 FF가 붕괴해 **에러 없이 그럴듯한 틀린 값**을 낸다(preview
+    8.85% 버그, 메쉬 아님). 가드는 모든 호출 경로를 덮도록 **초크포인트인
+    adapter.evaluate_existing_simulation**에 있다(여기선 실제 사용된 값을 결과 meta
+    에서 취합해 노출만 한다)."""
     grid_list = []
     for wf_um, pitch_mm in itertools.product(finger_widths_um, finger_pitches_mm):
         grid_list.append(dict(
@@ -83,10 +89,14 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
             finger_spacing_mm=pitch_mm, w_finger_um=wf_um,
             n_busbars=busbar_number, w_busbar_mm=busbar_width_mm,
             n_probe_points=n_probe_points))
-    return _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
-                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
-                  target_nodes=target_nodes, objective=objective, progress=progress,
-                  stage="fingers")
+    out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
+                 mode=mode, npts=npts, axis_segments_override=axis_segments_override,
+                 target_nodes=target_nodes, objective=objective, progress=progress,
+                 stage="fingers")
+    metas = [r["meta"] for r in out["results"] if r]
+    out["n_probe_points"] = metas[0].get("n_probe_points", n_probe_points) if metas else n_probe_points
+    out["n_probe_auto_bumped"] = any(m.get("n_probe_auto_bumped") for m in metas)
+    return out
 
 
 def optimize_busbars(fest, *, cell_mm=182.0, finger_width_um, finger_pitch_mm,

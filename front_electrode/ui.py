@@ -188,6 +188,10 @@ def open_optimizer_window(fest, parent):
         best = max(results, key=lambda r: r["results"]["efficiency"])
         b = best["parameters"]; br = best["results"]
         txt.delete("1.0", "end")
+        m0 = _sweep.get("model")
+        if m0 and m0[1]:   # n_probe_auto_bumped → 사용자에게 모델 변경 명시
+            txt.insert("end", f"⚠ n_probe_points 자동 상향 (0 → {m0[0]}, 다중 busbar 수집 모델)\n"
+                              f"   미상향 시 전류 미수집으로 FF 붕괴 = 틀린 저효율(약 8.85%)\n\n")
         txt.insert("end", f"BEST (efficiency @ f={f:.2f}): wf={b['finger_width_um']:.0f}µm "
                           f"pitch={b['finger_pitch_mm']:.2f}mm nbb={b['busbar_number']} "
                           f"wbb={b['busbar_width_mm']:.2f}mm\n")
@@ -204,7 +208,15 @@ def open_optimizer_window(fest, parent):
                               f"{rr['total_loss']:.3f}  {rr['efficiency']:.3f}\n")
         render_preview_plots(fig, grid, _plot_state)
         canvas.draw()
-        prog.configure(text=f"완료 ({_sweep['total']}조합, {_sweep['cell']:.0f}mm, f={f:.2f})")
+        m = _sweep.get("model")
+        if m:
+            npv, bumped, nmin, nmax = m
+            model_txt = (f" | n_probe {'자동상향 0→' if bumped else '='}{npv}, "
+                         f"nodes {nmin // 1000}~{nmax // 1000}k")
+        else:
+            model_txt = ""
+        prog.configure(text=f"완료 ({_sweep['total']}조합, {_sweep['cell']:.0f}mm, "
+                            f"f={f:.2f}){model_txt}")
 
     _debounce = {"id": None}
 
@@ -258,12 +270,19 @@ def open_optimizer_window(fest, parent):
             nbbs = [int(x) for x in str(e_nbb.get()).split(",") if x.strip()]
             wbb = float(e_wbb.get())
 
-            # base 스윕: recovery는 슬라이더로 사후 반영하므로 f=0으로 FEM 실행한다
-            # (engine_raw/raw_bb는 recovery 무관 → 슬라이더가 즉시 재산출).
+            # base 스윕: recovery는 슬라이더로 사후 반영하므로 f=0으로 FEM 실행한다.
+            # n_probe_points는 넘기지 않아(=0) optimize_fingers 가드가 다중 busbar에서
+            # 자동 10으로 상향한다(전류추출 모델 정합) — 아래에서 사용자에게 표시.
             grid = {}  # (pitch, nbb) -> result
             total = len(pitches) * len(nbbs)
-            _set_prog(f"총 {total}조합 (pitch {len(pitches)} × busbar {len(nbbs)}) 계산 시작...")
+            # (시간 안내) preview cell이 크면 조합당 '풀셀 FEM'이라 느리다.
+            if cell >= 80.0:
+                _set_prog(f"⚠ preview cell {cell:.0f}mm = 풀셀 FEM(조합당 수만 노드, "
+                          f"수십초~수분). 빠른 탐색은 20~40mm 권장. {total}조합 시작...")
+            else:
+                _set_prog(f"총 {total}조합 (pitch {len(pitches)} × busbar {len(nbbs)}) 계산 시작...")
             k = 0
+            n_probe_eff, n_probe_bumped, node_list = 0, False, []
             for nb in nbbs:
                 opt = _opt.optimize_fingers(
                     fest, cell_mm=cell, finger_widths_um=[wf],
@@ -271,13 +290,19 @@ def open_optimizer_window(fest, parent):
                     scenario=_opt.SCENARIO_MEASURED, recovery_factor=0.0,
                     objective="efficiency", axis_segments_override=40, npts=6,
                     progress=lambda i, n, o: (_set_prog(f"계산 중... {k + i}/{total}")))
+                n_probe_eff = opt.get("n_probe_points", 0)
+                n_probe_bumped = n_probe_bumped or bool(opt.get("n_probe_auto_bumped"))
                 for r in opt["results"]:
                     grid[(round(r["parameters"]["finger_pitch_mm"], 4), nb)] = r
+                    node_list.append(r["meta"]["nodes"])
                 k += len(pitches)
 
             _sweep["grid"] = grid
             _sweep["cell"] = cell
             _sweep["total"] = total
+            _sweep["model"] = (n_probe_eff, n_probe_bumped,
+                               min(node_list) if node_list else 0,
+                               max(node_list) if node_list else 0)
             try:
                 f0 = max(0.0, min(0.60, float(e_rec.get())))
             except (ValueError, TypeError):
