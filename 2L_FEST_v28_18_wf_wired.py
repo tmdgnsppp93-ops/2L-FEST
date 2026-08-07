@@ -163,6 +163,19 @@ v28.44: [ui] preview 좌측 그래프 개선(render_preview_plots) — 엔진 �
            (우측 히트맵 colorbar와 의미 혼선 방지, 가독성 우선).
          · pitch 1점이면 라인 대신 마커만. y축은 실제 스케일 유지(margins만, 과장 없음).
          colorbar 누적 없음 재확인(연속 2회 axes 3→3). 헤드리스 PNG 렌더 검증.
+v28.45: [feat] front_electrode edge margin + 파라미터 스윕 확장 (2026.08.06 랩미팅
+         박사님 지시). 엔진 물리 무변경 — adapter/optimizer/ui만 확장.
+         · [Phase 1 edge] 웨이퍼 엣지 실버-프리 마진(Griddler Edge Gap 동일 개념).
+           엔진 edge_gap(핑거 x-트림)에 busbar_length_frac(버스바 y-트림)을 더해
+           금속을 엣지에서 뗀다. 엣지는 활성 유지(광생성·TCO 횡전도), 효율 분모
+           W×H 고정. adapter 초크포인트 주입(전 경로 동일). GUI 필드 기본 1.0mm.
+           edge_margin=0 비트동일 확인. 실측(M10): 0→1.5mm에서 Eff 31.32→30.78%
+           (FF↓, 짧은 금속 → 엣지 전류 TCO 경로↑; Jsc는 차광↓로 미세↑).
+         · [Phase 2 sweep] finger width/busbar width를 min·max·steps, rho_bulk(ρL)/
+           rho_contact(ρc)를 다중값으로 스윕(optimize_grid). 물성은 grid로 넘겨
+           adapter가 조합별 적용. 기본값=현재값 → 비트동일. 조합수 폭발 경고,
+           Top-10·CSV 전 축 컬럼, 히트맵은 BEST의 pitch×busbar 단면(고정축 부제 명시).
+           ρL 13.22(as-printed) vs 4.22(measured) 비교 실행·Δeff 표시 지원.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -261,8 +274,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.44",
-    "date": "2026-08-05",
+    "version": "v28.45",
+    "date": "2026-08-07",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None

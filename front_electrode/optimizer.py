@@ -99,6 +99,44 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
     return out
 
 
+def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
+                  n_busbars_list, busbar_widths_mm, rho_bulk_list=(None,),
+                  rho_contact_list=(None,), edge_margin_mm=0.0, n_probe_points=0,
+                  scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
+                  axis_segments_override=None, target_nodes=None,
+                  objective="efficiency", progress=None):
+    """전 축 Cartesian 스윕 (v28.45, 2026.08.06 랩미팅).
+
+    축: finger_width × finger_pitch × busbar_number × busbar_width ×
+        rho_bulk × rho_contact. 각 축은 리스트. rho_bulk_list/rho_contact_list의
+        None 항목은 override 없음(scenario/엔진 기본값) → 기본 상태 비트 동일.
+    물성(rho_bulk/rho_contact)과 edge_margin은 grid dict로 넘겨 adapter 초크포인트가
+    조합별로 적용한다. 반환은 _sweep과 동일 구조 + n_combos.
+    """
+    grid_list = []
+    for wf, pitch, nbb, wbb, rho_l, rho_c in itertools.product(
+            finger_widths_um, finger_pitches_mm, n_busbars_list,
+            busbar_widths_mm, rho_bulk_list, rho_contact_list):
+        d = dict(cell_w_mm=cell_mm, cell_h_mm=cell_mm,
+                 finger_spacing_mm=pitch, w_finger_um=wf,
+                 n_busbars=nbb, w_busbar_mm=wbb,
+                 n_probe_points=n_probe_points, edge_margin_mm=edge_margin_mm)
+        if rho_l is not None:
+            d["rho_bulk_uohm_cm"] = rho_l
+        if rho_c is not None:
+            d["rho_contact_mohm_cm2"] = rho_c
+        grid_list.append(d)
+    out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
+                 mode=mode, npts=npts, axis_segments_override=axis_segments_override,
+                 target_nodes=target_nodes, objective=objective, progress=progress,
+                 stage="grid")
+    metas = [r["meta"] for r in out["results"] if r]
+    out["n_probe_points"] = metas[0].get("n_probe_points", n_probe_points) if metas else n_probe_points
+    out["n_probe_auto_bumped"] = any(m.get("n_probe_auto_bumped") for m in metas)
+    out["n_combos"] = len(grid_list)
+    return out
+
+
 def optimize_busbars(fest, *, cell_mm=182.0, finger_width_um, finger_pitch_mm,
                      n_busbars_list, busbar_widths_mm, n_probe_points=10,
                      scenario=None, recovery_factor=0.0, mode="tandem", npts=14,

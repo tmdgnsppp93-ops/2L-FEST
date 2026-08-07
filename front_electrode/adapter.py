@@ -130,9 +130,22 @@ def busbar_shading_breakdown(geo, w_f_cm, w_b_cm):
 
 
 def _build_geometry(fest, grid_params):
-    """grid_params(사용자 단위) → CellGeometry (monofacial, full_area)."""
+    """grid_params(사용자 단위) → CellGeometry (monofacial, full_area).
+
+    edge_margin(v28.45, 2026.08.06 랩미팅): 웨이퍼 엣지의 실버-프리 마진.
+    엔진의 edge_gap(핑거 x-길이 트림)에 더해 busbar_length_frac로 버스바 y-길이도
+    함께 축소해 **금속(핑거·버스바)이 엣지에 닿지 않도록** 한다. 엣지 영역은
+    활성으로 유지(광생성·TCO 횡전도 그대로), 효율 분모 면적은 W×H 고정(불변).
+    edge_margin=0이면 edge_gap=0·busbar_length_frac=1.0 → 기존과 비트 동일.
+    """
     gp = grid_params
     n_probe = int(gp.get("n_probe_points", 0))
+    edge_margin_cm = _mm_to_cm(gp.get("edge_margin_mm", 0.0) or 0.0)
+    cell_h_cm = _mm_to_cm(gp["cell_h_mm"])
+    # 버스바 y-길이 축소분(핑거 x는 edge_gap이 담당). margin=0이면 1.0(불변).
+    bb_frac = 1.0
+    if edge_margin_cm > 0.0 and cell_h_cm > 0.0:
+        bb_frac = max(0.0, (cell_h_cm - 2.0 * edge_margin_cm) / cell_h_cm)
     if gp.get("finger_spacing_mm") is not None:
         front = fest.GridDesign(
             input_mode="finger_spacing",
@@ -141,6 +154,7 @@ def _build_geometry(fest, grid_params):
             w_finger=_um_to_cm(gp["w_finger_um"]),
             w_busbar=_mm_to_cm(gp["w_busbar_mm"]),
             n_probe_points=n_probe,
+            edge_gap=edge_margin_cm, busbar_length_frac=bb_frac,
         )
     else:
         front = fest.GridDesign(
@@ -150,10 +164,11 @@ def _build_geometry(fest, grid_params):
             w_finger=_um_to_cm(gp["w_finger_um"]),
             w_busbar=_mm_to_cm(gp["w_busbar_mm"]),
             n_probe_points=n_probe,
+            edge_gap=edge_margin_cm, busbar_length_frac=bb_frac,
         )
     geo = fest.CellGeometry(
         cell_w=_mm_to_cm(gp["cell_w_mm"]),
-        cell_h=_mm_to_cm(gp["cell_h_mm"]),
+        cell_h=cell_h_cm,
         front=front,
     )  # rear=None → full_area (monofacial)
     return geo
@@ -210,15 +225,25 @@ def evaluate_existing_simulation(
     isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
     S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
 
-    # 물성(전극) — scenario override 또는 엔진 기본값
+    # 물성(전극) — 우선순위: grid_params(per-combo 스윕) > scenario > 엔진 기본값.
+    # (v28.45 Phase 2) rho_bulk/rho_contact를 조합별로 스윕할 수 있게 grid_params에서
+    # 직접 받는다. 값이 없으면 기존 경로(scenario/엔진 기본값) → 비트 동일.
     g = geo.front
     sc = scenario or {}
-    rm = (_uohm_cm_to_ohm_cm(sc["rho_bulk_uohm_cm"])
-          if sc.get("rho_bulk_uohm_cm") is not None else g.rho_bulk)
+    gp = grid_params
+    if gp.get("rho_bulk_uohm_cm") is not None:
+        rm = _uohm_cm_to_ohm_cm(gp["rho_bulk_uohm_cm"])
+    elif sc.get("rho_bulk_uohm_cm") is not None:
+        rm = _uohm_cm_to_ohm_cm(sc["rho_bulk_uohm_cm"])
+    else:
+        rm = g.rho_bulk
     hf = (_um_to_cm(sc["finger_h_um"]) if sc.get("finger_h_um") is not None else g.finger_h)
     cf = float(sc["shape_cf"]) if sc.get("shape_cf") is not None else g.shape_cf
     wf = g.w_f
-    rc = g.rho_contact     # 전기 물성은 엔진 기본값 유지
+    if gp.get("rho_contact_mohm_cm2") is not None:
+        rc = float(gp["rho_contact_mohm_cm2"]) * 1e-3   # mΩ·cm² → Ω·cm²
+    else:
+        rc = g.rho_contact     # 엔진 기본값(10 mΩ·cm²)
     Rs = g.Rs_sheet
 
     dp = fest.DiodeParams()
@@ -282,6 +307,8 @@ def evaluate_existing_simulation(
             "n_probe_points": int(grid_params.get("n_probe_points", 0)),
             "busbar_recovery_factor": f,
             "rho_bulk_uohm_cm": rm * 1e6,
+            "rho_contact_mohm_cm2": rc * 1e3,
+            "edge_margin_mm": float(grid_params.get("edge_margin_mm", 0.0) or 0.0),
         },
         "results": {
             "finger_shading_loss": bd["finger_shading"],       # fraction

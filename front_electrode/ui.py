@@ -18,11 +18,12 @@ from . import presets as _presets
 from . import adapter as _adapter
 
 
-def render_preview_plots(fig, grid, plot_state):
+def render_preview_plots(fig, grid, plot_state, subtitle=None):
     """optimizer preview 결과를 fig에 그린다(GUI canvas/txt와 분리한 순수 함수).
 
-    grid: {(pitch_mm, n_busbar): result_dict} — optimize_fingers 결과 모음.
-    plot_state: {"cbar": ...} — colorbar 핸들 보관용(향후 update_normal 재사용).
+    grid: {(pitch_mm, n_busbar): result_dict} — BEST의 비-(pitch,nbb) 축을 고정한
+          slice(다축 스윕 시). plot_state: colorbar 핸들 보관.
+    subtitle: 고정 축 값 표시(다축 스윕 시 pitch×busbar 단면임을 명시).
 
     (3-1) colorbar 누적 방지: ax.clear()는 colorbar가 만든 별도 axes를 남기므로
           fig.clf()로 전부 제거 후 subplot을 재생성한다.
@@ -78,6 +79,8 @@ def render_preview_plots(fig, grid, plot_state):
     ax1.set_title("efficiency vs pitch")
     ax1.margins(y=0.18)   # (4) 실제 스케일 유지, 여백만 확보(차이 과장 아님)
     ax1.legend(loc="best", fontsize=8, framealpha=0.7)
+    if subtitle:   # 다축 스윕: pitch×busbar 단면이고 나머지 축은 BEST값 고정임을 명시
+        fig.suptitle(subtitle, fontsize=8, color="#555555")
 
     # 그래프 2: pitch × busbar heatmap (efficiency)
     if len(ps) < 2 or len(nbs) < 2:
@@ -127,6 +130,16 @@ def open_optimizer_window(fest, parent):
         e.pack(side="left")
         return e
 
+    def _range_row(parent_, label, dmin, dmax, dn):
+        # (Phase 2) min / max / steps 3칸을 한 줄에. 기본 steps=1이면 단일값.
+        fr = ctk.CTkFrame(parent_, fg_color="transparent")
+        fr.pack(fill="x", pady=2)
+        ctk.CTkLabel(fr, text=label, width=120, anchor="w").pack(side="left")
+        emin = ctk.CTkEntry(fr, width=44); emin.insert(0, str(dmin)); emin.pack(side="left", padx=1)
+        emax = ctk.CTkEntry(fr, width=44); emax.insert(0, str(dmax)); emax.pack(side="left", padx=1)
+        en = ctk.CTkEntry(fr, width=34); en.insert(0, str(dn)); en.pack(side="left", padx=1)
+        return emin, emax, en
+
     ctk.CTkLabel(left, text="Front Electrode Optimization",
                  font=ctk.CTkFont(size=13, weight="bold")).pack(pady=(4, 6))
 
@@ -139,15 +152,21 @@ def open_optimizer_window(fest, parent):
                  font=ctk.CTkFont(size=9), text_color="gray").pack(fill="x")
 
     e_cell = _row(left, "Preview cell [mm]", 20.0)
-    e_wf = _row(left, "Finger width [µm]", 20.0)
-    e_pmin = _row(left, "Pitch min [mm]", 1.2)
-    e_pmax = _row(left, "Pitch max [mm]", 2.4)
-    e_pn = _row(left, "Pitch steps", 4)
+    ctk.CTkLabel(left, text="아래 range 필드: min / max / steps (steps=1이면 단일값)",
+                 font=ctk.CTkFont(size=9), text_color="gray", anchor="w").pack(fill="x")
+    e_wfmin, e_wfmax, e_wfn = _range_row(left, "Finger width [µm]", 20, 20, 1)
+    e_pmin, e_pmax, e_pn = _range_row(left, "Finger pitch [mm]", 1.2, 2.4, 4)
     e_nbb = _row(left, "Busbar numbers", "6,8,10,12")
-    # (3-6) busbar 입력 형식 안내 — 쉼표 구분 정수 리스트.
     ctk.CTkLabel(left, text="형식: 쉼표 구분 정수 (예: 6,8,10,12,16,20)",
                  font=ctk.CTkFont(size=9), text_color="gray", anchor="w").pack(fill="x")
-    e_wbb = _row(left, "Busbar width [mm]", 0.2)
+    e_wbmin, e_wbmax, e_wbn = _range_row(left, "Busbar width [mm]", 0.2, 0.2, 1)
+    # (Phase 2) 물성 스윕 — 쉼표 구분 다중값. 기본=현재값 → 비트 동일.
+    e_rhol = _row(left, "ρ_L bulk [µΩ·cm]", "4.22")
+    ctk.CTkLabel(left, text="as-printed 13.22 / measured 4.22 비교: 13.22,4.22",
+                 font=ctk.CTkFont(size=9), text_color="gray", anchor="w").pack(fill="x")
+    e_rhoc = _row(left, "ρ_c contact [mΩ·cm²]", "10")
+    # (Phase 1) 엣지 실버-프리 마진 (Griddler "Edge Gap" 동일 개념). 기본 1.0 mm.
+    e_edge = _row(left, "Edge margin [mm] (=Edge Gap)", 1.0)
 
     # busbar 광학 회수 f — 슬라이더(라이브) + 수치칸(양방향 동기).
     # recovery는 Route 2(adapter.RECOVERY_IS_POST_PROCESS)에서 순수 post-process라
@@ -178,6 +197,9 @@ def open_optimizer_window(fest, parent):
     prog.pack(fill="x", pady=2)
     run_btn = ctk.CTkButton(left, text="Run optimization")
     run_btn.pack(fill="x", pady=4)
+    save_btn = ctk.CTkButton(left, text="Save CSV", fg_color="#2E7D32",
+                             hover_color="#1B5E20")
+    save_btn.pack(fill="x", pady=(0, 4))
 
     # 결과 영역: 텍스트 + 그래프 2개
     txt = ctk.CTkTextbox(right, height=150)
@@ -187,12 +209,21 @@ def open_optimizer_window(fest, parent):
     canvas.get_tk_widget().pack(fill="both", expand=True, padx=4, pady=4)
     _plot_state = {"cbar": None}
 
-    # 스윕 결과 보관(슬라이더 라이브 재산출용). grid는 base(FEM) 결과 — recovery 무관.
-    _sweep = {"grid": None, "cell": None, "total": None}
+    # 스윕 결과 보관(슬라이더 라이브 재산출용). results는 base(FEM) 결과 리스트.
+    _sweep = {"results": None, "cell": None, "total": None}
     _syncing = {"on": False}   # 슬라이더↔수치칸 순환 갱신 방지
 
     def _set_prog(msg):
         parent.after(0, lambda: prog.configure(text=msg))
+
+    def _range_vals(emin, emax, en):
+        lo = float(emin.get()); hi = float(emax.get()); n = max(1, int(float(en.get())))
+        if n <= 1 or hi == lo:
+            return [lo]
+        return [lo + (hi - lo) * i / (n - 1) for i in range(n)]
+
+    def _list_vals(entry):
+        return [float(x) for x in str(entry.get()).split(",") if x.strip()]
 
     def _recovery_note(f):
         # f_rec = R_m·η_TIR·τ² 의 물리적 해석대(帶).
@@ -205,48 +236,76 @@ def open_optimizer_window(fest, parent):
         return "f=%.2f — 원형 와이어 영역: 본 구조에 해당하지 않음" % f, "#c0392b"
 
     def _render_results(f):
-        """저장된 grid에 recovery f를 반영해 텍스트·그래프를 갱신(FEM 재계산 없음).
-        최적점(BEST)이 f에 따라 바뀌면 그래프·Top-10·BEST 라인이 즉시 갱신된다."""
-        grid = _sweep["grid"]
-        if not grid:
+        """저장된 결과에 recovery f를 반영해 텍스트·그래프를 갱신(FEM 재계산 없음).
+        다축 스윕: BEST의 비-(pitch,nbb) 축을 고정한 단면을 그래프에 그린다."""
+        results = _sweep.get("results")
+        if not results:
             return
         note, col = _recovery_note(f)
         rec_note_lbl.configure(text=note, text_color=col)
         if _adapter.RECOVERY_IS_POST_PROCESS:
-            for r in grid.values():
+            for r in results:
                 r["results"].update(_adapter.apply_recovery(r, f))
                 r["parameters"]["busbar_recovery_factor"] = f
-        results = list(grid.values())
         best = max(results, key=lambda r: r["results"]["efficiency"])
         b = best["parameters"]; br = best["results"]
+
+        # BEST의 비-(pitch,nbb) 축(wf/wbb/ρL/ρc)을 고정한 pitch×busbar 단면.
+        def _fix(p):
+            return (abs(p["finger_width_um"] - b["finger_width_um"]) < 1e-6
+                    and abs(p["busbar_width_mm"] - b["busbar_width_mm"]) < 1e-9
+                    and abs(p["rho_bulk_uohm_cm"] - b["rho_bulk_uohm_cm"]) < 1e-6
+                    and abs(p["rho_contact_mohm_cm2"] - b["rho_contact_mohm_cm2"]) < 1e-6)
+        slice_grid = {}
+        for r in results:
+            p = r["parameters"]
+            if _fix(p):
+                slice_grid[(round(p["finger_pitch_mm"], 4), p["busbar_number"])] = r
+
         txt.delete("1.0", "end")
         m0 = _sweep.get("model")
-        if m0 and m0[1]:   # n_probe_auto_bumped → 사용자에게 모델 변경 명시
-            txt.insert("end", f"⚠ n_probe_points 자동 상향 (0 → {m0[0]}, 다중 busbar 수집 모델)\n"
-                              f"   미상향 시 전류 미수집으로 FF 붕괴 = 틀린 저효율(약 8.85%)\n\n")
-        txt.insert("end", f"BEST (efficiency @ f={f:.2f}): wf={b['finger_width_um']:.0f}µm "
-                          f"pitch={b['finger_pitch_mm']:.2f}mm nbb={b['busbar_number']} "
-                          f"wbb={b['busbar_width_mm']:.2f}mm\n")
-        txt.insert("end", f"  efficiency={br['efficiency']:.3f}%  total_loss={br['total_loss']:.4f}  "
-                          f"raw_bb={br['raw_busbar_shading']*100:.3f}% "
-                          f"recovered={br['recovered_busbar_light']*100:.3f}% "
-                          f"effective_bb={br['effective_busbar_shading']*100:.3f}%\n\n")
-        txt.insert("end", "Top-10 (by efficiency):  rank  wf  pitch  nbb  wbb  optical  electrical  total  eff\n")
+        if m0 and m0[1]:
+            txt.insert("end", f"⚠ n_probe_points 자동 상향 (0 → {m0[0]}, 다중 busbar 수집 모델)\n")
+        edge = _sweep.get("edge", 0.0)
+        txt.insert("end", f"BEST (eff @ f={f:.2f}, edge {edge:.1f}mm): "
+                          f"wf={b['finger_width_um']:.0f}µm pitch={b['finger_pitch_mm']:.2f}mm "
+                          f"nbb={b['busbar_number']} wbb={b['busbar_width_mm']:.2f}mm "
+                          f"ρL={b['rho_bulk_uohm_cm']:.2f} ρc={b['rho_contact_mohm_cm2']:.1f}\n")
+        txt.insert("end", f"  efficiency={br['efficiency']:.3f}%  total_loss={br['total_loss']:.4f}\n\n")
+        txt.insert("end", "Top-10:  rk  wf pitch nbb  wbb   ρL    ρc  edge   eff\n")
         for i, r in enumerate(sorted(results, key=lambda r: -r["results"]["efficiency"])[:10], 1):
             p = r["parameters"]; rr = r["results"]
-            txt.insert("end", f"  {i:>2}  {p['finger_width_um']:.0f}  {p['finger_pitch_mm']:.2f}  "
-                              f"{p['busbar_number']}  {p['busbar_width_mm']:.2f}  "
-                              f"{rr['optical_loss']:.3f}  {rr['electrical_loss']:.3f}  "
-                              f"{rr['total_loss']:.3f}  {rr['efficiency']:.3f}\n")
-        render_preview_plots(fig, grid, _plot_state)
+            txt.insert("end", f"  {i:>2} {p['finger_width_um']:>3.0f} {p['finger_pitch_mm']:>4.2f} "
+                              f"{p['busbar_number']:>3} {p['busbar_width_mm']:>4.2f} "
+                              f"{p['rho_bulk_uohm_cm']:>5.2f} {p['rho_contact_mohm_cm2']:>4.1f} "
+                              f"{p.get('edge_margin_mm', 0.0):>4.1f} {rr['efficiency']:>6.3f}\n")
+        # ρ_L 비교(예: 13.22 as-printed vs 4.22 measured) — 각 ρL의 최고 eff 차이(%p).
+        rho_ls = sorted(set(round(r["parameters"]["rho_bulk_uohm_cm"], 3) for r in results))
+        if len(rho_ls) >= 2:
+            txt.insert("end", "\nρ_L 비교 (각 ρL의 최고 efficiency):\n")
+            bestper = {}
+            for r in results:
+                rl = round(r["parameters"]["rho_bulk_uohm_cm"], 3)
+                e = r["results"]["efficiency"]
+                if rl not in bestper or e > bestper[rl]:
+                    bestper[rl] = e
+            hi_rl = max(rho_ls); lo_rl = min(rho_ls)
+            for rl in rho_ls:
+                txt.insert("end", f"  ρL={rl:.2f} µΩ·cm → {bestper[rl]:.3f}%\n")
+            txt.insert("end", f"  개선(Δeff, {hi_rl:.2f}→{lo_rl:.2f}) = "
+                              f"{bestper[lo_rl] - bestper[hi_rl]:+.3f} %p\n")
+
+        sub = (f"pitch×busbar 단면 | 고정: wf={b['finger_width_um']:.0f}µm "
+               f"wbb={b['busbar_width_mm']:.2f}mm ρL={b['rho_bulk_uohm_cm']:.2f} "
+               f"ρc={b['rho_contact_mohm_cm2']:.1f} edge={edge:.1f}mm")
+        render_preview_plots(fig, slice_grid, _plot_state, subtitle=sub)
         canvas.draw()
         m = _sweep.get("model")
+        model_txt = ""
         if m:
             npv, bumped, nmin, nmax = m
-            model_txt = (f" | n_probe {'자동상향 0→' if bumped else '='}{npv}, "
+            model_txt = (f" | n_probe {'자동상향0→' if bumped else '='}{npv}, "
                          f"nodes {nmin // 1000}~{nmax // 1000}k")
-        else:
-            model_txt = ""
         prog.configure(text=f"완료 ({_sweep['total']}조합, {_sweep['cell']:.0f}mm, "
                             f"f={f:.2f}){model_txt}")
 
@@ -295,46 +354,49 @@ def open_optimizer_window(fest, parent):
     def _do_run():
         try:
             cell = float(e_cell.get())
-            wf = float(e_wf.get())
-            pmin, pmax = float(e_pmin.get()), float(e_pmax.get())
-            pn = max(2, int(float(e_pn.get())))
-            pitches = [pmin + (pmax - pmin) * i / (pn - 1) for i in range(pn)]
+            wfs = _range_vals(e_wfmin, e_wfmax, e_wfn)
+            pitches = _range_vals(e_pmin, e_pmax, e_pn)
+            if len(pitches) < 2:
+                pitches = pitches * 1   # 단일 pitch 허용(그래프는 마커만)
             nbbs = [int(x) for x in str(e_nbb.get()).split(",") if x.strip()]
-            wbb = float(e_wbb.get())
+            wbbs = _range_vals(e_wbmin, e_wbmax, e_wbn)
+            rho_l = _list_vals(e_rhol)
+            rho_c = _list_vals(e_rhoc)
+            edge = float(e_edge.get())
 
-            # base 스윕: recovery는 슬라이더로 사후 반영하므로 f=0으로 FEM 실행한다.
-            # n_probe_points는 넘기지 않아(=0) optimize_fingers 가드가 다중 busbar에서
-            # 자동 10으로 상향한다(전류추출 모델 정합) — 아래에서 사용자에게 표시.
-            grid = {}  # (pitch, nbb) -> result
-            total = len(pitches) * len(nbbs)
-            # (시간 안내) preview cell이 크면 조합당 '풀셀 FEM'이라 느리다.
-            if cell >= 80.0:
-                _set_prog(f"⚠ preview cell {cell:.0f}mm = 풀셀 FEM(조합당 수만 노드, "
-                          f"수십초~수분). 빠른 탐색은 20~40mm 권장. {total}조합 시작...")
+            # 조합수 = 각 축의 곱. 폭발 경고(풀셀은 조합당 수십초~수분).
+            total = (len(wfs) * len(pitches) * len(nbbs) * len(wbbs)
+                     * max(1, len(rho_l)) * max(1, len(rho_c)))
+            big = (cell >= 80.0 and total > 12) or total > 300
+            if big:
+                per = "풀셀 FEM 수십초~수분" if cell >= 80.0 else "소셀 수초"
+                _set_prog(f"⚠ {total}조합 (조합당 {per}). 큰 스윕/풀 M10은 CLI 권장. 시작...")
             else:
-                _set_prog(f"총 {total}조합 (pitch {len(pitches)} × busbar {len(nbbs)}) 계산 시작...")
-            k = 0
-            n_probe_eff, n_probe_bumped, node_list = 0, False, []
-            for nb in nbbs:
-                opt = _opt.optimize_fingers(
-                    fest, cell_mm=cell, finger_widths_um=[wf],
-                    finger_pitches_mm=pitches, busbar_number=nb, busbar_width_mm=wbb,
-                    scenario=_opt.SCENARIO_MEASURED, recovery_factor=0.0,
-                    objective="efficiency", axis_segments_override=40, npts=6,
-                    progress=lambda i, n, o: (_set_prog(f"계산 중... {k + i}/{total}")))
-                n_probe_eff = opt.get("n_probe_points", 0)
-                n_probe_bumped = n_probe_bumped or bool(opt.get("n_probe_auto_bumped"))
-                for r in opt["results"]:
-                    grid[(round(r["parameters"]["finger_pitch_mm"], 4), nb)] = r
-                    node_list.append(r["meta"]["nodes"])
-                k += len(pitches)
+                _set_prog(f"총 {total}조합 계산 시작...")
 
-            _sweep["grid"] = grid
+            done = {"n": 0}
+
+            def _prog(i, n, o):
+                done["n"] += 1
+                _set_prog(f"계산 중... {done['n']}/{total}")
+
+            # recovery는 슬라이더로 사후 반영 → f=0으로 FEM 실행. n_probe는 미지정(=0)이라
+            # adapter 가드가 다중 busbar에서 자동 10 상향. edge_margin·물성은 grid로 전달.
+            opt = _opt.optimize_grid(
+                fest, cell_mm=cell, finger_widths_um=wfs, finger_pitches_mm=pitches,
+                n_busbars_list=nbbs, busbar_widths_mm=wbbs,
+                rho_bulk_list=(rho_l or [None]), rho_contact_list=(rho_c or [None]),
+                edge_margin_mm=edge, scenario=_opt.SCENARIO_MEASURED, recovery_factor=0.0,
+                objective="efficiency", axis_segments_override=40, npts=6, progress=_prog)
+            results = [r for r in opt["results"] if r]
+            nodes = [r["meta"]["nodes"] for r in results]
+            _sweep["results"] = results
             _sweep["cell"] = cell
             _sweep["total"] = total
-            _sweep["model"] = (n_probe_eff, n_probe_bumped,
-                               min(node_list) if node_list else 0,
-                               max(node_list) if node_list else 0)
+            _sweep["edge"] = edge
+            _sweep["model"] = (opt.get("n_probe_points", 0),
+                               bool(opt.get("n_probe_auto_bumped")),
+                               min(nodes) if nodes else 0, max(nodes) if nodes else 0)
             try:
                 f0 = max(0.0, min(0.60, float(e_rec.get())))
             except (ValueError, TypeError):
@@ -350,5 +412,28 @@ def open_optimizer_window(fest, parent):
         prog.configure(text="계산 중...")
         threading.Thread(target=_do_run, daemon=True).start()
 
+    def _save_csv():
+        """스윕 전 조합을 모든 축 컬럼과 함께 CSV로 저장(cwd)."""
+        import csv as _csv
+        import os as _os
+        results = _sweep.get("results")
+        if not results:
+            prog.configure(text="저장할 결과 없음 — 먼저 Run 하세요.")
+            return
+        cols = ["finger_width_um", "finger_pitch_mm", "n_fingers", "busbar_number",
+                "busbar_width_mm", "rho_bulk_uohm_cm", "rho_contact_mohm_cm2",
+                "edge_margin_mm", "busbar_recovery_factor"]
+        rcols = ["efficiency", "total_loss", "optical_loss", "electrical_loss"]
+        path = _os.path.join(_os.getcwd(), "front_electrode_sweep.csv")
+        with open(path, "w", newline="", encoding="utf-8-sig") as fh:
+            w = _csv.writer(fh)
+            w.writerow(cols + rcols + ["nodes"])
+            for r in sorted(results, key=lambda x: -x["results"]["efficiency"]):
+                p = r["parameters"]; rr = r["results"]
+                w.writerow([p.get(c, "") for c in cols] + [rr.get(c, "") for c in rcols]
+                           + [r["meta"]["nodes"]])
+        prog.configure(text=f"CSV 저장: {path} ({len(results)}행)")
+
     run_btn.configure(command=_on_run)
+    save_btn.configure(command=_save_csv)
     return win
