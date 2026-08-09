@@ -216,6 +216,33 @@ v28.46: [fix/feat/infra] front_electrode 최적화 도구 정비 — 엔진 물�
            BLAS 차이만으로 상대 ~1e-6 벌어져 **항상 실패**했다 → 진짜 물리 회귀와
            환경 차이가 구분되지 않는다. conftest.PINNED_STACK 불일치 시 이유를
            명시한 xfail로 낮춘다(핀 스택에서는 strict fail 유지). 값은 무변경.
+v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 물리 무변경.
+         외국인 연구원 사용 + 프로그램 저작권 등록 준비.
+         · [중앙화] 새 모듈 front_electrode/i18n.py에 표시 문자열 전량 수집
+           (KO/EN 각 57키 — 26개는 기술 용어라 양 언어 동일값, 31개가 실제 번역).
+           UI는 T("key")로만 참조 → 새 문자열은 이 파일만 수정.
+           키는 의미 기반(input./note./warn./prog./result./plot./rec./engine.).
+         · [전환] 사이드바 최상단 세그먼트 버튼(English/한국어). 재시작 불필요 —
+           (위젯,키) 레지스트리로 텍스트만 다시 입혀 **위젯을 새로 만들지 않는다**
+           (입력값·결과 유지). 결과가 있으면 결과 텍스트·그래프까지 재렌더
+           (FEM 재계산 없음 → 수치 비트 동일). 선택은 ~/.2l-fest/settings.json에
+           저장돼 다음 실행에 유지. 저장 실패는 조용히 무시(읽기 전용 FS 대비).
+         · [기본값] English — 외국인 사용자가 처음 열었을 때 읽을 수 있어야 하므로.
+           저장된 설정이 있으면 그쪽 우선.
+         · [번역 원칙] 기술 용어(busbar/pitch/finger/recovery/edge margin/FEM/
+           efficiency)와 기호·단위(ρ_L, mΩ·cm², %p)는 번역하지 않는다 — 한국어
+           모드에서도 영문 병기 관례 유지. 그래서 입력 라벨 다수는 양 언어 동일값
+           (중복이 아니라 의도). 물리 경고문(n_probe 자동 상향, recovery 해석대,
+           조합수 폭발)은 잘못된 결과 사용을 막는 안전장치라 의미 보존 우선.
+         · [엔진] _open_electrode_optimizer 상태바 문구도 i18n 경유(창과 언어 일치).
+         · [검증] tests/test_i18n.py(12) — KO/EN 키 집합 동일, 포맷 자리표시자 일치,
+           EN에 한글 잔존 없음, ui.py 하드코딩 한글 없음(AST 검사), 설정 왕복.
+           tests/test_i18n_ui.py(10) — 가짜 위젯으로 창을 조립해 **표시된 모든
+           문자열**이 선택 언어인지 전수 대조(결과 렌더 상태 포함), 전환 시 위젯
+           재사용·재렌더, 결과 언어 무관 비트 동일.
+           _gui_i18n_check.py — 실제 customtkinter로 띄워 확인(위젯 45개 양 언어
+           전수 일치, 사이드바 330px 넘침 0, 즉시 전환 동작). 사이드바 폭은 영문이
+           길어 300→330px, 창 980→1010px로 넓히고 안내문에 wraplength 적용.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -314,8 +341,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.46",
-    "date": "2026-08-09",
+    "version": "v28.47",
+    "date": "2026-08-10",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None
@@ -12651,14 +12678,22 @@ class FESTProApp(ctk.CTk):
 
     def _open_electrode_optimizer(self):
         """전면전극 최적화 창 열기 — UI 로직은 front_electrode.ui(별도 모듈)에 있고
-        여기서는 엔진 모듈 자신을 넘겨 연결만 한다(최소 침습)."""
+        여기서는 엔진 모듈 자신을 넘겨 연결만 한다(최소 침습).
+
+        상태바 문구도 front_electrode.i18n을 따른다(v28.47) — 최적화 창의 언어
+        선택과 어긋나지 않게 하기 위함."""
         try:
             import sys as _sys
             from front_electrode import ui as _fe_ui
+            from front_electrode.i18n import T as _T
             _fe_ui.open_optimizer_window(_sys.modules[__name__], self)
-            self._status("Front Electrode Optimization 창을 열었습니다.")
+            self._status(_T("engine.window_opened"))
         except Exception as e:
-            self._status(f"Optimize 창 오류: {e}")
+            try:
+                from front_electrode.i18n import T as _T
+                self._status(_T("engine.window_error", msg=e))
+            except Exception:
+                self._status(f"Optimize window error: {e}")
 
 
 # =============================================================

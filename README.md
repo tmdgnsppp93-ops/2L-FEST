@@ -3,7 +3,7 @@
 태양전지 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
 유한요소법(FEM) 기반으로 시뮬레이션하는 데스크톱 도구입니다.
 
-- **버전**: v28.19 (`wf_wired`)
+- **버전**: v28.47 (`wf_wired`)
 - **개발**: Seunghoon Lee — KIST, Dr. Inho Kim's Solar Cell Research Team
 - **언어/UI**: Python 3.10+ / CustomTkinter (다크·라이트 테마)
 
@@ -55,6 +55,27 @@ python 2L_FEST_v28_18_wf_wired.py
 해석을 실행하면 I-V 곡선, 전위/전류 분포, 효율 지표와 PDF 리포트를 얻을 수 있습니다.
 
 > macOS: `run.command` 를 더블클릭하면 항상 이 폴더의 최신 빌드를 Python 3.10+로 실행합니다.
+
+### 전면전극 최적화 창 — 한/영 (Front electrode optimizer — KO/EN)
+
+결과 화면 우측 상단의 **⚙ Optimize** 버튼이 전면전극 최적화 창을 엽니다.
+이 창은 **한국어 / English** 전환을 지원합니다 (v28.47~).
+
+- 사이드바 최상단의 **Language / 언어** 버튼으로 즉시 전환 — 재시작 불필요.
+  이미 계산된 결과가 있으면 결과 텍스트·그래프도 함께 다시 그려집니다.
+- 선택한 언어는 `~/.2l-fest/settings.json`에 저장되어 다음 실행에 유지됩니다.
+- **기본값은 English.** 저장된 설정이 있으면 그 설정을 따릅니다.
+- 언어는 표시 문자열에만 영향을 주며 **계산 결과는 완전히 동일**합니다.
+- busbar / pitch / finger / recovery factor / edge margin / FEM / efficiency 같은
+  기술 용어와 기호·단위(ρ_L, mΩ·cm²)는 한국어 모드에서도 영문 그대로 둡니다.
+
+> The optimizer window is bilingual. Use the **Language** selector at the top of the
+> sidebar to switch between English and Korean; the change applies immediately and
+> is remembered for the next run. English is the default. Switching the language
+> never changes the computed numbers — only the displayed text.
+
+문자열을 추가·수정하려면 `front_electrode/i18n.py` **한 파일만** 고치면 됩니다
+(KO/EN 양쪽에 같은 키를 넣을 것 — 누락은 `pytest tests/test_i18n.py`가 잡습니다).
 
 ---
 
@@ -121,10 +142,12 @@ build_app.bat           # Windows -> dist\"2L-FEST PRO"\"2L-FEST PRO.exe"
 | `_audit.py` | 31개 계산 경로 헤드리스 스모크 테스트 (전 모드·지오메트리·SpatialMap·리포트·DXF) |
 | `_gui_test.py` | 실제 GUI 구동 스모크 테스트 (탭 렌더·CSV/PNG 저장·DXF/실측 CSV 로드) |
 | `_diag_bifacial.py` | bifacial 후면조도 진단 (top/bottom 전류정합 분석) |
+| `_gui_i18n_check.py` | 실제 GUI로 한/영 번역 전수 확인 + 사이드바 레이아웃 넘침 검사 |
 
 ```bash
 python _validate_tandem.py
 python _validate_griddler.py
+python -m pytest -m "not slow"     # 단위·회귀 테스트 (tests/)
 ```
 
 ---
@@ -143,6 +166,16 @@ python _validate_griddler.py
 | `FESTSolver` | FEM 분포 회로 솔버(핵심 해석 엔진) |
 | `DxfGrid` | DXF 그리드 도면 입출력 |
 | `FESTProApp` | CustomTkinter 메인 GUI 애플리케이션 |
+
+부가 패키지 `front_electrode/` — 엔진을 **수정하지 않고** 감싸는 전면전극 최적화 모듈:
+
+| 모듈 | 역할 |
+|--------|------|
+| `adapter.py` | 엔진 호출 래퍼 + busbar 반사광 회수(recovery) 사후 보정 |
+| `optimizer.py` | grid search (finger / busbar / 결합 스윕) |
+| `presets.py` | ITRPV 기반 탐색범위 preset |
+| `ui.py` | 최적화 창 (CustomTkinter + matplotlib) |
+| `i18n.py` | **표시 문자열 중앙 저장소 (한국어 / English)** |
 
 ---
 
