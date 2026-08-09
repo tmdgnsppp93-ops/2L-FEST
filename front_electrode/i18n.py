@@ -59,7 +59,7 @@ STRINGS = {
         "input.busbar_width": "Busbar width [mm]",
         "input.rho_l": "ρ_L bulk [µΩ·cm]",
         "input.rho_c": "ρ_c contact [mΩ·cm²]",
-        "input.edge_margin": "Edge margin [mm] (=Edge Gap)",
+        "input.edge_margin": "Edge margin [mm]",
         "input.recovery": "Busbar optical recovery  f",
 
         # --- field notes -----------------------------------------------------
@@ -71,6 +71,8 @@ STRINGS = {
                                       "(e.g. 6,8,10,12,16,20)",
         "note.rho_l_compare": "To compare as-printed 13.22 vs measured 4.22, "
                               "enter: 13.22,4.22",
+        "note.edge_margin": "Silver-free margin at the wafer edge "
+                            "(= Griddler \"Edge Gap\"). GUI default 1.0 mm.",
         "note.recovery_assumption": "※ Adjustable KIST project assumption "
                                     "(not a universal material constant)",
         "note.objective": "Objective = efficiency (plots show efficiency too).\n"
@@ -133,9 +135,11 @@ STRINGS = {
         "plot.grid_insufficient": "Not enough grid points\n\n"
                                   "A heatmap needs at least 2 values each\n"
                                   "for pitch and busbar number.\n"
-                                  "(currently {n_pitch} pitch × {n_bb} busbar)",
-        "plot.subtitle_fixed": "pitch×busbar slice | fixed: wf={wf:.0f}µm "
-                               "wbb={wbb:.2f}mm ρL={rho_l:.2f} ρc={rho_c:.1f} "
+                                  "(currently {n_pitch} pitch x {n_bb} busbar)",
+        # matplotlib 텍스트는 ASCII 유지(v28.31 관례) — AppleGothic에 µ(U+00B5)가
+        # 없어 두부(□)로 깨지고 ρ는 폰트 폴백으로 자간이 틀어진다. um/rhoL/rhoc로 쓴다.
+        "plot.subtitle_fixed": "pitch x busbar slice | fixed: wf={wf:.0f}um "
+                               "wbb={wbb:.2f}mm rhoL={rho_l:.2f} rhoc={rho_c:.1f} "
                                "edge={edge:.1f}mm",
 
         # --- engine-side entry point ----------------------------------------
@@ -158,7 +162,7 @@ STRINGS = {
         "input.busbar_width": "Busbar width [mm]",
         "input.rho_l": "ρ_L bulk [µΩ·cm]",
         "input.rho_c": "ρ_c contact [mΩ·cm²]",
-        "input.edge_margin": "Edge margin [mm] (=Edge Gap)",
+        "input.edge_margin": "Edge margin [mm]",
         "input.recovery": "Busbar optical recovery  f",
 
         # --- field notes -----------------------------------------------------
@@ -166,6 +170,8 @@ STRINGS = {
         "note.range_fields": "아래 range 필드: min / max / steps (steps=1이면 단일값)",
         "note.busbar_numbers_format": "형식: 쉼표 구분 정수 (예: 6,8,10,12,16,20)",
         "note.rho_l_compare": "as-printed 13.22 / measured 4.22 비교: 13.22,4.22",
+        "note.edge_margin": "웨이퍼 엣지 실버-프리 마진 "
+                            "(= Griddler \"Edge Gap\"). GUI 기본 1.0 mm.",
         "note.recovery_assumption": "※ Adjustable KIST project assumption (보편 물성값 아님)",
         "note.objective": "목적함수 = efficiency (그래프도 efficiency).\n"
                           "슬라이더로 recovery를 바꾸면 FEM 재계산 없이 즉시 갱신.\n"
@@ -225,11 +231,12 @@ STRINGS = {
         "plot.legend_bb": "{nb} BB",
         "plot.annot_best": "{nb}BB, {pitch:.2f}mm, {eff:.3f}%",
         "plot.grid_insufficient": "격자 부족\n\n"
-                                  "heatmap을 그리려면 pitch·busbar\n"
+                                  "heatmap을 그리려면 pitch / busbar\n"
                                   "각각 2개 이상 필요합니다.\n"
-                                  "(현재 pitch {n_pitch}개 × busbar {n_bb}개)",
-        "plot.subtitle_fixed": "pitch×busbar 단면 | 고정: wf={wf:.0f}µm "
-                               "wbb={wbb:.2f}mm ρL={rho_l:.2f} ρc={rho_c:.1f} "
+                                  "(현재 pitch {n_pitch}개 x busbar {n_bb}개)",
+        # 기호는 ASCII 유지(EN과 동일 이유) — 설명어만 한국어.
+        "plot.subtitle_fixed": "pitch x busbar 단면 | 고정: wf={wf:.0f}um "
+                               "wbb={wbb:.2f}mm rhoL={rho_l:.2f} rhoc={rho_c:.1f} "
                                "edge={edge:.1f}mm",
 
         # --- engine-side entry point ----------------------------------------

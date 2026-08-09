@@ -90,6 +90,12 @@ class _FakeWidget:
     def geometry(self, *a, **k):
         return None
 
+    def minsize(self, *a, **k):
+        return None
+
+    def maxsize(self, *a, **k):
+        return None
+
     def after(self, delay, fn=None, *a):
         # 창 조립 중에는 지연 콜백을 실행하지 않는다(테스트가 결정적이도록).
         self._rec["after"].append(fn)
@@ -118,8 +124,9 @@ def _make_fake_ctk(rec):
             return w
         return _ctor
 
-    for name in ("CTkToplevel", "CTkFrame", "CTkLabel", "CTkEntry", "CTkButton",
-                 "CTkOptionMenu", "CTkSlider", "CTkTextbox", "CTkSegmentedButton"):
+    for name in ("CTkToplevel", "CTkFrame", "CTkScrollableFrame", "CTkLabel",
+                 "CTkEntry", "CTkButton", "CTkOptionMenu", "CTkSlider",
+                 "CTkTextbox", "CTkSegmentedButton"):
         setattr(mod, name, _factory(name))
 
     class _CTk:
@@ -221,9 +228,13 @@ def test_no_strings_from_the_other_language(fake_gui, rec, lang, other):
     # 화면에 올린 뒤 검사한다 — 조건부 문구가 번역 누락의 단골이다.
     st = win._fe_internals
     st["sweep"].update({
-        "results": [_fake_result(p, nb, eff) for p, nb, eff in
-                    ((1.8, 6, 21.0), (1.8, 8, 21.2), (2.2, 6, 21.1), (2.2, 8, 21.3))],
-        "cell": 20.0, "total": 4, "edge": 1.0, "model": (10, True, 40000, 42000),
+        # ρL 2종을 넣어야 "ρ_L 비교" 블록까지 렌더돼 언어 검사 대상이 된다.
+        "results": [_fake_result(p, nb, eff, rl)
+                    for p, nb, eff, rl in
+                    ((1.8, 6, 21.0, 4.22), (1.8, 8, 21.2, 4.22),
+                     (2.2, 6, 21.1, 4.22), (2.2, 8, 21.3, 4.22),
+                     (1.8, 6, 20.5, 13.22), (2.2, 8, 20.8, 13.22))],
+        "cell": 20.0, "total": 6, "edge": 1.0, "model": (10, True, 40000, 42000),
     })
     st["render_results"](0.25)
 
@@ -259,7 +270,7 @@ def test_language_choice_persists(fake_gui, rec, tmp_path):
     assert i18n.load_settings().get("language") == "ko"
 
 
-def _fake_result(pitch, nbb, eff):
+def _fake_result(pitch, nbb, eff, rho_l=4.22):
     """_render_results가 요구하는 최소 결과 dict (표시 검증용, 물리값 아님)."""
     return {
         "parameters": {
@@ -267,7 +278,7 @@ def _fake_result(pitch, nbb, eff):
             "finger_width_um": 20.0, "finger_pitch_mm": pitch,
             "busbar_number": nbb, "busbar_width_mm": 0.2,
             "n_probe_points": 10, "busbar_recovery_factor": 0.0,
-            "rho_bulk_uohm_cm": 4.22, "rho_contact_mohm_cm2": 10.0,
+            "rho_bulk_uohm_cm": rho_l, "rho_contact_mohm_cm2": 10.0,
             "edge_margin_mm": 1.0,
         },
         "results": {
@@ -290,15 +301,22 @@ def test_switch_rerenders_existing_results(fake_gui, rec):
     win = _build(fake_gui, "en", rec)
     st = win._fe_internals
     st["sweep"].update({
-        "results": [_fake_result(p, nb, eff) for p, nb, eff in
-                    ((1.8, 6, 21.0), (1.8, 8, 21.2), (2.2, 6, 21.1), (2.2, 8, 21.3))],
-        "cell": 20.0, "total": 4, "edge": 1.0, "model": (10, True, 40000, 42000),
+        # ρL 2종을 넣어야 "ρ_L 비교" 블록까지 렌더돼 언어 검사 대상이 된다.
+        "results": [_fake_result(p, nb, eff, rl)
+                    for p, nb, eff, rl in
+                    ((1.8, 6, 21.0, 4.22), (1.8, 8, 21.2, 4.22),
+                     (2.2, 6, 21.1, 4.22), (2.2, 8, 21.3, 4.22),
+                     (1.8, 6, 20.5, 13.22), (2.2, 8, 20.8, 13.22))],
+        "cell": 20.0, "total": 6, "edge": 1.0, "model": (10, True, 40000, 42000),
     })
     st["render_results"](0.25)               # EN으로 결과 렌더
 
     en_texts = list(rec["texts"])
     assert any(i18n.STRINGS["en"]["result.top10_header"] in t for t in en_texts), \
         "EN 결과 헤더가 렌더되지 않았다"
+    assert any("BEST (eff @" in t for t in en_texts), "EN BEST 라인이 없다"
+    assert any("comparison (best efficiency" in t for t in en_texts), \
+        "EN ρ_L 비교 블록이 렌더되지 않았다"
     # n_probe 자동 상향 경고(조건부, 화면에서 놓치기 쉬운 항목)도 EN으로 나와야 한다
     assert any("raised automatically" in t for t in en_texts), \
         "EN n_probe 경고가 렌더되지 않았다"
@@ -312,9 +330,18 @@ def test_switch_rerenders_existing_results(fake_gui, rec):
     assert any("자동 상향" in t for t in ko_texts), "KO n_probe 경고가 렌더되지 않았다"
     assert any(i18n.STRINGS["ko"]["prog.done"].split("{")[0] in t for t in ko_texts), \
         "KO 진행 문구(완료)가 렌더되지 않았다"
+    assert any("비교 (각 ρL" in t for t in ko_texts), "KO ρ_L 비교 블록이 안 바뀌었다"
     # EN 고유 문구가 남아 있으면 안 된다
-    assert not any("raised automatically" in t for t in ko_texts), \
-        "전환 후에도 EN 경고가 남아 있다"
+    for en_only in ("raised automatically", "comparison (best efficiency"):
+        assert not any(en_only in t for t in ko_texts), \
+            f"전환 후에도 EN 문구가 남아 있다: {en_only!r}"
+
+    # 두 번째 전환(KO → EN)도 확인 — 왕복이 안정적인지.
+    rec["texts"].clear()
+    st["switch_language"](i18n.label_for("en"))
+    back = list(rec["texts"])
+    assert any("comparison (best efficiency" in t for t in back), "EN 복귀 실패"
+    assert not any("자동 상향" in t for t in back), "EN 복귀 후 KO 문구 잔존"
 
 
 @pytest.mark.parametrize("lang", ["en", "ko"])

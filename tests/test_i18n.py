@@ -111,6 +111,33 @@ def test_settings_failure_is_silent(monkeypatch, tmp_path):
     assert i18n.load_settings() == {}
 
 
+def test_plot_strings_are_ascii_safe():
+    """matplotlib으로 가는 문자열은 폰트에 없는 기호를 쓰지 않는다.
+
+    실화(v28.47): subtitle에 µ(U+00B5)와 ρ를 넣었더니 AppleGothic에 µ 글리프가 없어
+    그래프에 두부(□)로 찍혔다. 저장소 관례(v28.31 "matplotlib/DXF/CSV는 ASCII 유지")를
+    어긴 것이라 여기서 기계적으로 막는다. 한글은 허용(엔진이 한글 폰트를 설정하며
+    실제 렌더 확인됨) — 금지 대상은 폰트에 없는 기호류다.
+    """
+    banned = {
+        "µ": "MICRO SIGN (µ) — AppleGothic 미포함, 'um'으로 쓸 것",
+        "μ": "GREEK SMALL MU (μ) — 위와 동일",
+        "ρ": "GREEK SMALL RHO (ρ) — 폰트 폴백으로 자간 깨짐, 'rho'로 쓸 것",
+        "×": "MULTIPLICATION SIGN (×) — 'x'로 쓸 것",
+        "·": "MIDDLE DOT (·) — '/'나 공백으로 쓸 것",
+        "Ω": "OHM SIGN (Ω)",
+    }
+    bad = []
+    for lang, table in i18n.STRINGS.items():
+        for key, text in table.items():
+            if not key.startswith("plot."):
+                continue
+            for ch, why in banned.items():
+                if ch in text:
+                    bad.append(f"{lang}/{key}: {why}")
+    assert not bad, "matplotlib 문자열에 깨질 수 있는 기호: " + "; ".join(bad)
+
+
 def test_no_korean_left_in_english_table():
     """EN 테이블에 한글이 남아 있으면 번역 누락이다."""
     hangul = re.compile(r"[가-힣]")

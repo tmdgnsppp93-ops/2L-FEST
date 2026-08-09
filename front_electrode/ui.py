@@ -23,6 +23,12 @@ from . import presets as _presets
 from . import adapter as _adapter
 from .i18n import T, set_language, get_language, LANGUAGES, label_for
 
+# 사이드바 폭 [px]. 영문 안내가 한글보다 길어 v28.47에서 300 → 340으로 넓혔다.
+# 라벨 폭/wraplength가 여기서 파생되므로 한 곳에서만 바꾼다.
+SIDEBAR_W = 340
+_LABEL_W = 150          # 입력 라벨 고정 폭 — 모든 행의 입력칸 x 위치를 맞춘다
+_WRAP = SIDEBAR_W - 46  # 안내 문구 줄바꿈 폭(스크롤바·패딩 제외)
+
 
 def render_preview_plots(fig, grid, plot_state, subtitle=None):
     """optimizer preview 결과를 fig에 그린다(GUI canvas/txt와 분리한 순수 함수).
@@ -123,14 +129,29 @@ def open_optimizer_window(fest, parent):
 
     win = ctk.CTkToplevel(parent)
     win.title(T("window.title"))
-    win.geometry("1010x620")   # i18n: 영문 문구가 한글보다 길어 사이드바를 넓혔다
+    # i18n: 영문 문구가 한글보다 길어 2줄로 늘어나므로 가로·세로 모두 여유를 준다.
+    # 세로 660은 1440x900 노트북에서도 잘리지 않는 범위(메뉴바·독 제외 ~800 가용).
+    win.geometry("1010x660")
+    win.minsize(760, 420)      # 이보다 줄여도 Run/Save는 하단 고정이라 계속 보인다
 
-    # 사이드바 폭도 함께 확대(영문 라벨/안내가 한글보다 길다).
-    left = ctk.CTkFrame(win, width=330)
+    left = ctk.CTkFrame(win, width=SIDEBAR_W)
     left.pack(side="left", fill="y", padx=6, pady=6)
     left.pack_propagate(False)   # 자식 요구폭에 눌려 좁아지지 않도록 폭 고정
     right = ctk.CTkFrame(win)
     right.pack(side="left", fill="both", expand=True, padx=6, pady=6)
+
+    # ── 사이드바 구조: 하단 고정 액션 영역 + 스크롤 가능한 입력 영역 ────────
+    # 지시(레이아웃 수정): 어떤 언어·어떤 창 크기에서도 Run/Save가 보여야 한다.
+    #   · actions를 **먼저** side="bottom"으로 pack → Tk가 남은 공간을 body에 주므로
+    #     입력이 아무리 길어져도 버튼이 밀려나지 않는다(항상 최하단 고정).
+    #   · body는 CTkScrollableFrame → 창을 세로로 줄이면 입력부만 스크롤된다.
+    # 둘을 함께 쓴 이유: 하단 고정만으로는 창이 아주 작을 때 입력 필드에 접근할 수
+    # 없고, 스크롤만으로는 버튼이 스크롤 안쪽에 숨는다.
+    actions = ctk.CTkFrame(left, fg_color="transparent")
+    actions.pack(side="bottom", fill="x", padx=6, pady=(2, 6))
+    body = ctk.CTkScrollableFrame(left, fg_color="transparent",
+                                  width=SIDEBAR_W - 34)
+    body.pack(side="top", fill="both", expand=True, padx=2, pady=(4, 0))
 
     # ── i18n 재번역 레지스트리 ──────────────────────────────────────────
     # (위젯, 키) 쌍을 모아두고 언어 변경 시 한 번에 다시 입힌다. 위젯을 새로 만들지
@@ -143,10 +164,13 @@ def open_optimizer_window(fest, parent):
         widget.configure(text=T(key))
         return widget
 
+    # 라벨은 전 행 같은 고정 폭(_LABEL_W)을 쓴다 — 입력칸 x 위치가 어긋나지 않도록.
+    # 라벨 문구가 그 폭을 넘으면 입력칸이 밀리므로, 긴 설명은 라벨이 아니라 _note로
+    # 내린다(예: edge margin의 "= Griddler Edge Gap").
     def _row(parent_, key, default):
         fr = ctk.CTkFrame(parent_, fg_color="transparent")
         fr.pack(fill="x", pady=2)
-        lbl = ctk.CTkLabel(fr, width=168, anchor="w")
+        lbl = ctk.CTkLabel(fr, width=_LABEL_W, anchor="w")
         _reg(lbl, key)
         lbl.pack(side="left")
         e = ctk.CTkEntry(fr, width=110)
@@ -158,68 +182,70 @@ def open_optimizer_window(fest, parent):
         # (Phase 2) min / max / steps 3칸을 한 줄에. 기본 steps=1이면 단일값.
         fr = ctk.CTkFrame(parent_, fg_color="transparent")
         fr.pack(fill="x", pady=2)
-        lbl = ctk.CTkLabel(fr, width=138, anchor="w")
+        lbl = ctk.CTkLabel(fr, width=_LABEL_W, anchor="w")
         _reg(lbl, key)
         lbl.pack(side="left")
-        emin = ctk.CTkEntry(fr, width=44); emin.insert(0, str(dmin)); emin.pack(side="left", padx=1)
-        emax = ctk.CTkEntry(fr, width=44); emax.insert(0, str(dmax)); emax.pack(side="left", padx=1)
-        en = ctk.CTkEntry(fr, width=34); en.insert(0, str(dn)); en.pack(side="left", padx=1)
+        emin = ctk.CTkEntry(fr, width=36); emin.insert(0, str(dmin)); emin.pack(side="left", padx=1)
+        emax = ctk.CTkEntry(fr, width=36); emax.insert(0, str(dmax)); emax.pack(side="left", padx=1)
+        en = ctk.CTkEntry(fr, width=28); en.insert(0, str(dn)); en.pack(side="left", padx=1)
         return emin, emax, en
 
     def _note(parent_, key):
         lbl = ctk.CTkLabel(parent_, font=ctk.CTkFont(size=9), text_color="gray",
-                           anchor="w", justify="left", wraplength=316)
+                           anchor="w", justify="left", wraplength=_WRAP)
         _reg(lbl, key)
         lbl.pack(fill="x")
         return lbl
 
     # ── 언어 선택 (사이드바 최상단) ─────────────────────────────────────
-    lang_row = ctk.CTkFrame(left, fg_color="transparent")
-    lang_row.pack(fill="x", pady=(4, 2))
-    lang_lbl = ctk.CTkLabel(lang_row, width=60, anchor="w",
-                            font=ctk.CTkFont(size=11))
+    # 라벨을 세그먼트 버튼 **위쪽 줄**로 올린다 — 같은 줄에 두면 영문("Language")
+    # 폭 때문에 버튼이 오른쪽 경계에 붙어 잘렸다. 좌우 패딩도 함께 준다.
+    lang_lbl = ctk.CTkLabel(body, anchor="w", font=ctk.CTkFont(size=11))
     _reg(lang_lbl, "ui.language")
-    lang_lbl.pack(side="left")
+    lang_lbl.pack(fill="x", padx=6, pady=(2, 0))
+    lang_row = ctk.CTkFrame(body, fg_color="transparent")
+    lang_row.pack(fill="x", padx=6, pady=(0, 4))
     lang_var = ctk.StringVar(value=label_for(get_language()))
     _label_to_code = {label_for(c): c for c in LANGUAGES}
 
-    ctk.CTkLabel(left, text="", height=2).pack()   # 얇은 간격
-
-    title_lbl = ctk.CTkLabel(left, font=ctk.CTkFont(size=13, weight="bold"))
+    title_lbl = ctk.CTkLabel(body, font=ctk.CTkFont(size=13, weight="bold"))
     _reg(title_lbl, "header.title")
     title_lbl.pack(pady=(2, 6))
 
     # preset (mainstream만 드롭다운; 0BB는 별도 안내)
-    preset_lbl = ctk.CTkLabel(left, anchor="w")
+    preset_lbl = ctk.CTkLabel(body, anchor="w")
     _reg(preset_lbl, "input.preset")
     preset_lbl.pack(fill="x")
     preset_var = ctk.StringVar(value="M10_SMBB_2025")
-    ctk.CTkOptionMenu(left, variable=preset_var,
+    ctk.CTkOptionMenu(body, variable=preset_var,
                       values=list(_presets.MAINSTREAM_PRESETS)).pack(fill="x", pady=2)
-    _note(left, "note.preset_0bb")
+    _note(body, "note.preset_0bb")
 
-    e_cell = _row(left, "input.preview_cell", 20.0)
-    _note(left, "note.range_fields")
-    e_wfmin, e_wfmax, e_wfn = _range_row(left, "input.finger_width", 20, 20, 1)
-    e_pmin, e_pmax, e_pn = _range_row(left, "input.finger_pitch", 1.2, 2.4, 4)
-    e_nbb = _row(left, "input.busbar_numbers", "6,8,10,12")
-    _note(left, "note.busbar_numbers_format")
-    e_wbmin, e_wbmax, e_wbn = _range_row(left, "input.busbar_width", 0.2, 0.2, 1)
+    e_cell = _row(body, "input.preview_cell", 20.0)
+    _note(body, "note.range_fields")
+    e_wfmin, e_wfmax, e_wfn = _range_row(body, "input.finger_width", 20, 20, 1)
+    e_pmin, e_pmax, e_pn = _range_row(body, "input.finger_pitch", 1.2, 2.4, 4)
+    e_nbb = _row(body, "input.busbar_numbers", "6,8,10,12")
+    _note(body, "note.busbar_numbers_format")
+    e_wbmin, e_wbmax, e_wbn = _range_row(body, "input.busbar_width", 0.2, 0.2, 1)
     # (Phase 2) 물성 스윕 — 쉼표 구분 다중값. 기본=현재값 → 비트 동일.
-    e_rhol = _row(left, "input.rho_l", "4.22")
-    _note(left, "note.rho_l_compare")
-    e_rhoc = _row(left, "input.rho_c", "10")
+    e_rhol = _row(body, "input.rho_l", "4.22")
+    _note(body, "note.rho_l_compare")
+    e_rhoc = _row(body, "input.rho_c", "10")
     # (Phase 1) 엣지 실버-프리 마진 (Griddler "Edge Gap" 동일 개념). 기본 1.0 mm.
-    e_edge = _row(left, "input.edge_margin", 1.0)
+    # 라벨은 짧게 두고 "= Griddler Edge Gap" 설명은 아래 note로 내렸다 — 라벨이
+    # _LABEL_W를 넘으면 입력칸이 밀려 다른 행과 정렬이 어긋나기 때문.
+    e_edge = _row(body, "input.edge_margin", 1.0)
+    _note(body, "note.edge_margin")
 
     # busbar 광학 회수 f — 슬라이더(라이브) + 수치칸(양방향 동기).
     # recovery는 Route 2(adapter.RECOVERY_IS_POST_PROCESS)에서 순수 post-process라
     # 슬라이더 이동 시 FEM 재계산 없이 efficiency/loss만 즉시 재산출한다
     # (adapter.apply_recovery — 직접 호출과 비트동일).
-    rec_lbl = ctk.CTkLabel(left, anchor="w", font=ctk.CTkFont(size=11, weight="bold"))
+    rec_lbl = ctk.CTkLabel(body, anchor="w", font=ctk.CTkFont(size=11, weight="bold"))
     _reg(rec_lbl, "input.recovery")
     rec_lbl.pack(fill="x", pady=(6, 0))
-    rec_row = ctk.CTkFrame(left, fg_color="transparent")
+    rec_row = ctk.CTkFrame(body, fg_color="transparent")
     rec_row.pack(fill="x")
     rec_slider = ctk.CTkSlider(rec_row, from_=0.0, to=0.60, number_of_steps=60)
     rec_slider.set(0.25)
@@ -228,27 +254,31 @@ def open_optimizer_window(fest, parent):
     e_rec.insert(0, "0.25")
     e_rec.pack(side="left")
     # recovery 해석대 안내 — 값에 따라 문구가 바뀌므로 레지스트리 대신 재렌더로 갱신.
-    rec_note_lbl = ctk.CTkLabel(left, text="", anchor="w", justify="left",
-                                wraplength=316, font=ctk.CTkFont(size=9))
+    rec_note_lbl = ctk.CTkLabel(body, text="", anchor="w", justify="left",
+                                wraplength=_WRAP, font=ctk.CTkFont(size=9))
     rec_note_lbl.pack(fill="x")
-    rec_assum_lbl = ctk.CTkLabel(left, font=ctk.CTkFont(size=9), text_color="#c0392b",
-                                 anchor="w", justify="left", wraplength=316)
+    rec_assum_lbl = ctk.CTkLabel(body, font=ctk.CTkFont(size=9), text_color="#c0392b",
+                                 anchor="w", justify="left", wraplength=_WRAP)
     _reg(rec_assum_lbl, "note.recovery_assumption")
     rec_assum_lbl.pack(fill="x")
 
-    obj_lbl = ctk.CTkLabel(left, font=ctk.CTkFont(size=9), text_color="gray",
-                           justify="left", anchor="w", wraplength=316)
+    obj_lbl = ctk.CTkLabel(body, font=ctk.CTkFont(size=9), text_color="gray",
+                           justify="left", anchor="w", wraplength=_WRAP)
     _reg(obj_lbl, "note.objective")
     obj_lbl.pack(fill="x", pady=(6, 2))
 
-    prog = ctk.CTkLabel(left, text="", anchor="w", justify="left", wraplength=316)
-    prog.pack(fill="x", pady=2)
-    run_btn = ctk.CTkButton(left)
+    # ── 하단 고정 액션 영역 (스크롤 밖) ──────────────────────────────────
+    # Run/Save는 여기 들어가므로 입력이 아무리 길어져도, 창을 세로로 줄여도
+    # 항상 보인다. 진행 표시줄도 함께 둔다(계산 중 상태가 스크롤에 숨으면 안 됨).
+    prog = ctk.CTkLabel(actions, text="", anchor="w", justify="left",
+                        wraplength=_WRAP, font=ctk.CTkFont(size=10))
+    prog.pack(fill="x", pady=(2, 2))
+    run_btn = ctk.CTkButton(actions)
     _reg(run_btn, "btn.run")
-    run_btn.pack(fill="x", pady=4)
-    save_btn = ctk.CTkButton(left, fg_color="#2E7D32", hover_color="#1B5E20")
+    run_btn.pack(fill="x", pady=2)
+    save_btn = ctk.CTkButton(actions, fg_color="#2E7D32", hover_color="#1B5E20")
     _reg(save_btn, "btn.save_csv")
-    save_btn.pack(fill="x", pady=(0, 4))
+    save_btn.pack(fill="x", pady=(0, 2))
 
     # 결과 영역: 텍스트 + 그래프 2개
     txt = ctk.CTkTextbox(right, height=150)
@@ -374,6 +404,10 @@ def open_optimizer_window(fest, parent):
         if code == get_language():
             return
         set_language(code)                       # 설정 파일에 저장(다음 실행 유지)
+        # 세그먼트 버튼의 선택 표시를 실제 언어와 동기화한다. 사용자가 버튼을 누른
+        # 경우엔 위젯이 알아서 갱신하지만, 프로그램에서 호출하면(설정 복원·테스트)
+        # 표시만 이전 언어에 남아 "KO인데 English가 눌린" 상태가 된다.
+        lang_var.set(label_for(code))
         win.title(T("window.title"))
         for widget, key in _i18n_widgets:
             widget.configure(text=T(key))
@@ -389,7 +423,7 @@ def open_optimizer_window(fest, parent):
     lang_seg = ctk.CTkSegmentedButton(
         lang_row, values=[label_for(c) for c in LANGUAGES],
         variable=lang_var, command=_on_language)
-    lang_seg.pack(side="left", fill="x", expand=True)
+    lang_seg.pack(fill="x", expand=True)   # 자체 줄을 차지 → 오른쪽 경계 잘림 없음
 
     def _retranslate_route1_guard():
         # Route 1 가드 문구는 조건부라 레지스트리에 넣지 않고 별도로 갱신한다.

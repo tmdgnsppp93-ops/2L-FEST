@@ -15,7 +15,13 @@ pytest 스위트(tests/test_i18n_ui.py)는 가짜 위젯으로 같은 내용을 
 import importlib.util
 import sys
 
-SIDEBAR_W = 330      # ui.open_optimizer_window의 left 프레임 폭과 맞출 것
+
+SIDEBAR_W = None     # main()에서 front_electrode.ui.SIDEBAR_W로 채운다(단일 출처)
+
+# 이 도구가 v28.47 최초판에서 **가로 폭만 검사하고 세로 넘침을 안 봐서** 영문 모드
+# 사이드바 하단(Run/Save 버튼 포함)이 창 밖으로 밀린 것을 놓쳤다. 아래 _clipped()가
+# 그 구멍을 메운다 — 필수 버튼이 실제로 창 안에 들어오는지 좌표로 확인한다.
+CRITICAL_KEYS = ("btn.run", "btn.save_csv")
 
 
 def _load_engine():
@@ -75,10 +81,44 @@ def _overflow(win):
     return bad
 
 
+def _clipped(win, texts_wanted):
+    """창 밖으로 밀린(=화면에서 잘린) 필수 위젯 목록.
+
+    winfo_ismapped()만으로는 부족하다 — pack된 위젯도 부모 높이를 넘으면 좌표가
+    창 밖으로 나가면서 그려지지 않는다. 그래서 실제 루트 좌표로 함께 판정한다.
+
+    주의: 창이 withdraw 상태면 자식은 전부 ismapped=False라 전원 오탐이 된다.
+    호출 측에서 deiconify한 뒤 부를 것.
+    """
+    win.update_idletasks()
+    wy, wh = win.winfo_rooty(), win.winfo_height()
+    wx, ww = win.winfo_rootx(), win.winfo_width()
+    bad = []
+    for w in _walk(win):
+        try:
+            t = w.cget("text")
+        except Exception:
+            continue
+        if t not in texts_wanted:
+            continue
+        top = w.winfo_rooty() - wy
+        bottom = top + w.winfo_height()
+        leftx = w.winfo_rootx() - wx
+        rightx = leftx + w.winfo_width()
+        if not w.winfo_ismapped() or bottom > wh or top < 0 or rightx > ww or leftx < 0:
+            bad.append((t, f"y={top}..{bottom} (창높이 {wh}), "
+                           f"x={leftx}..{rightx} (창폭 {ww}), "
+                           f"mapped={bool(w.winfo_ismapped())}"))
+    return bad
+
+
 def main():
     from front_electrode import i18n
     from front_electrode import ui as fe_ui
     import customtkinter as ctk
+
+    global SIDEBAR_W
+    SIDEBAR_W = fe_ui.SIDEBAR_W
 
     fest = _load_engine()
     root = ctk.CTk()
@@ -113,6 +153,26 @@ def main():
         print(f"[{lang}] 사이드바({SIDEBAR_W}px) 초과 위젯: {len(over)}")
         for t, req in over:
             print(f"    ! {req}px  {t!r}")
+        if over:
+            failures.append(f"{lang}: 가로 넘침 {len(over)}건")
+
+        # 필수 버튼(Run/Save)이 기본 크기 + 작게 줄인 창 양쪽에서 보이는지.
+        # ismapped를 보려면 창이 실제로 떠 있어야 한다(withdraw 상태면 전부 False).
+        wanted = {i18n.T(k) for k in CRITICAL_KEYS}
+        win.deiconify()
+        for geo in ("1010x660", "820x430"):
+            win.geometry(geo)
+            win.update_idletasks()
+            win.update()
+            clip = _clipped(win, wanted)
+            state = "OK" if not clip else "CLIPPED"
+            print(f"[{lang}] {geo} Run/Save 가시성: {state}")
+            for t, why in clip:
+                print(f"    ! {t!r} — {why}")
+            if clip:
+                failures.append(f"{lang}@{geo}: 필수 버튼 잘림")
+        win.geometry("1010x660")
+        win.withdraw()
 
         win.destroy()
 

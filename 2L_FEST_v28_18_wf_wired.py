@@ -240,9 +240,27 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
            tests/test_i18n_ui.py(10) — 가짜 위젯으로 창을 조립해 **표시된 모든
            문자열**이 선택 언어인지 전수 대조(결과 렌더 상태 포함), 전환 시 위젯
            재사용·재렌더, 결과 언어 무관 비트 동일.
-           _gui_i18n_check.py — 실제 customtkinter로 띄워 확인(위젯 45개 양 언어
-           전수 일치, 사이드바 330px 넘침 0, 즉시 전환 동작). 사이드바 폭은 영문이
-           길어 300→330px, 창 980→1010px로 넓히고 안내문에 wraplength 적용.
+           _gui_i18n_check.py — 실제 customtkinter로 띄워 확인(위젯 47개 양 언어
+           전수 일치, 사이드바 340px 넘침 0, 즉시 전환 동작).
+         · [레이아웃 수정] 첫 판에서 영문 안내가 2줄로 늘어나며 사이드바 하단이
+           창 밖으로 밀려 **Run/Save 버튼이 안 보였다**(툴 사용 불가). 원인은
+           _gui_i18n_check가 가로 폭만 보고 세로 넘침을 검사하지 않은 것.
+           · 액션 영역(진행표시줄+Run+Save)을 side="bottom"으로 **먼저** pack →
+             입력이 아무리 길어도 항상 최하단 고정. 입력부는 CTkScrollableFrame로
+             감싸 창을 줄이면 그쪽만 스크롤. 둘을 함께 쓴 이유: 하단 고정만으로는
+             창이 작을 때 입력에 접근 못 하고, 스크롤만으로는 버튼이 숨는다.
+           · 창 980→1010x660, minsize(760,420). 사이드바 300→340px(SIDEBAR_W 단일
+             출처), 라벨 폭 _LABEL_W로 통일해 입력칸 x 정렬 일치.
+           · 언어 라벨을 세그먼트 버튼 위쪽 줄로 올림(같은 줄이면 오른쪽 잘림).
+           · "Edge margin [mm] (=Edge Gap)" → 라벨은 "Edge margin [mm]"로 줄이고
+             Griddler Edge Gap 설명은 note.edge_margin으로 분리(정렬 깨짐 해소).
+           · _on_language가 lang_var를 동기화 — 프로그램 호출 시 세그먼트 표시가
+             이전 언어에 남던 문제.
+           · matplotlib 문자열에서 µ/ρ/×/· 제거(ASCII 유지, v28.31 관례 복귀) —
+             AppleGothic에 µ(U+00B5) 글리프가 없어 그래프 subtitle에 두부(□)로
+             찍혔다. um/rhoL/rhoc 표기. test_plot_strings_are_ascii_safe로 회귀 차단.
+           · _gui_i18n_check에 _clipped() 추가 — 필수 버튼이 창 좌표 안에 실제로
+             들어오는지 1010x660과 820x430 두 크기에서 검사(세로 검사 구멍 메움).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """

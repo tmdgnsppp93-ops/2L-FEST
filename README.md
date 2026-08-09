@@ -66,6 +66,8 @@ python 2L_FEST_v28_18_wf_wired.py
 - 선택한 언어는 `~/.2l-fest/settings.json`에 저장되어 다음 실행에 유지됩니다.
 - **기본값은 English.** 저장된 설정이 있으면 그 설정을 따릅니다.
 - 언어는 표시 문자열에만 영향을 주며 **계산 결과는 완전히 동일**합니다.
+- **Run optimization / Save CSV 버튼은 사이드바 하단에 고정**되어 있어 창을 줄여도
+  항상 보입니다. 입력 필드가 많아 잘릴 때는 사이드바가 스크롤됩니다.
 - busbar / pitch / finger / recovery factor / edge margin / FEM / efficiency 같은
   기술 용어와 기호·단위(ρ_L, mΩ·cm²)는 한국어 모드에서도 영문 그대로 둡니다.
 
