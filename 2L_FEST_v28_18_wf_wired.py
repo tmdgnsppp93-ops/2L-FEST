@@ -176,6 +176,41 @@ v28.45: [feat] front_electrode edge margin + 파라미터 스윕 확장 (2026.08
            adapter가 조합별 적용. 기본값=현재값 → 비트동일. 조합수 폭발 경고,
            Top-10·CSV 전 축 컬럼, 히트맵은 BEST의 pitch×busbar 단면(고정축 부제 명시).
            ρL 13.22(as-printed) vs 4.22(measured) 비교 실행·Δeff 표시 지원.
+v28.46: [fix/feat/infra] front_electrode 최적화 도구 정비 — 엔진 물리 무변경.
+         · [fix] roundtrip_check가 v28.45에서 새로 생긴 스윕 축(edge_margin,
+           rho_bulk, rho_contact)을 재입력하지 않아 **다른 설계**(마진 없음·엔진
+           기본 물성)로 재평가 → 멀쩡한 최적해를 "round-trip FAIL"로 오보고했다.
+           adapter가 meta['grid_overrides']에 **원본 입력 그대로** 보존하고
+           roundtrip_check가 그걸 복원한다(parameters의 역환산 값을 쓰면 ρ 왕복
+           부동소수 오차로 비트 동일 판정이 깨진다). override 없으면 비트 동일.
+         · [feat] edge_margin을 optimize_fingers/optimize_busbars와 헤드리스
+           드라이버(--edge-margin)까지 연결. 기존엔 optimize_grid(GUI)에만 있어
+           CLI로는 랩미팅 지시 조건을 재현할 수 없었다. 마진>0이면 CSV 파일명에
+           태그를 붙여 --resume이 마진 다른 실행을 완료로 착각하지 않게 한다.
+         · [feat] scripts/optimize_m10.py --stage grid — 풀 M10에서 finger
+           pitch/width × busbar를 **결합 스윕**(docs §5 커플링 한계 확인용).
+           resume 키는 입력값 문자열 sweep_key(CSV의 pitch는 정수 핑거 반올림 후
+           재계산된 실현값이라 입력 매칭 불가).
+         · [infra] pytest.ini 추가(testpaths=tests). 루트에서 인자 없이 pytest를
+           돌리면 dist/(PyInstaller 번들)까지 재귀 수집해 수십 분을 태우다
+           Fatal Python error로 죽었다. 같은 트리를 0.03초에 수집한다.
+         · [결과 1] 엣지 마진 1.0mm에서 **최적 버스바가 8BB → 10BB로 이동**
+           (measured, wf20/pitch1.767, wbb0.20: 8BB 30.985 < 10BB 31.033 >
+           12BB 30.919). 마진이 접촉 면적을 줄여 Pc가 커지는데 버스바 추가가
+           이를 회복시키고, 동시에 버스바당 shading 비용은 줄기 때문. 14·16BB
+           까지 확장해도 30.850·30.857로 10BB 미회복 → 상한 runaway 없음.
+           recovery 25%에서도 10BB가 total_loss 최소(1.1930) → 순위 강건. docs §7.
+         · [결과 2] 결합 스윕(pitch 1.40/1.77/2.20/2.60 × 8/10/12BB, edge 1.0mm)
+           으로 docs §5 커플링 한계를 닫았다. pitch 1.77이 전 버스바 수에서 우세
+           하고 1.40<1.77>2.20으로 브래킷 → **최종해 pitch1.767/10BB/0.20mm는
+           pitch·버스바 두 축 모두 내부 최적**. 단 최적 버스바 수가 pitch에
+           의존함(성긴 pitch에서는 12BB까지 단조 증가)은 확인됨 — 2단계 분리가
+           놓치는 결합은 실재하나 넓은 pitch 자체가 손해라 답은 불변. docs §8.
+         · [test] 비트 핀(test_default_pin/test_legacy_pin, RTOL=1e-8)이 캡처
+           스택(Python 3.14.3/numpy 2.4.3/scipy 1.17.1)과 다른 환경에서 SuperLU·
+           BLAS 차이만으로 상대 ~1e-6 벌어져 **항상 실패**했다 → 진짜 물리 회귀와
+           환경 차이가 구분되지 않는다. conftest.PINNED_STACK 불일치 시 이유를
+           명시한 xfail로 낮춘다(핀 스택에서는 strict fail 유지). 값은 무변경.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -274,8 +309,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.45",
-    "date": "2026-08-07",
+    "version": "v28.46",
+    "date": "2026-08-09",
     "name": "wf_wired",
 }
 _BUILD_SHA_CACHE = None

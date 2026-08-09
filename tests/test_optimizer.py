@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from front_electrode import (  # noqa: E402
     optimize_fingers,
+    optimize_grid,
     roundtrip_check,
     export_csv,
     SCENARIO_MEASURED,
@@ -52,6 +53,61 @@ def test_roundtrip(fest, monkeypatch):
     assert ok, "round-trip 재입력 결과가 최적 조합과 불일치"
     assert re["results"]["total_loss"] == best["results"]["total_loss"]
     assert re["results"]["efficiency"] == best["results"]["efficiency"]
+
+
+def test_roundtrip_restores_grid_overrides(fest, monkeypatch):
+    """v28.46 회귀 — round-trip이 edge_margin/물성 override까지 재입력하는지.
+
+    v28.45에서 edge_margin·rho_bulk·rho_contact가 조합별 스윕 축이 됐는데
+    roundtrip_check가 이를 복원하지 않아, 최적 조합을 **다른 설계로**(마진 없음·
+    엔진 기본 물성) 재평가하고 'FAIL(불일치)'로 오보고했다 — 엔진이 아니라 검증기
+    쪽 결함이라 진짜 지오메트리 불일치와 구분되지 않는다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    opt = optimize_grid(
+        fest, cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+        n_busbars_list=[2], busbar_widths_mm=[0.2],
+        rho_bulk_list=[3.0], rho_contact_list=[7.0],
+        edge_margin_mm=0.5, n_probe_points=10,
+        scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS)
+    best = opt["best"]
+    # override가 실제로 적용됐는지 먼저 확인(테스트가 무의미해지지 않도록)
+    assert best["parameters"]["edge_margin_mm"] == 0.5
+    assert abs(best["parameters"]["rho_bulk_uohm_cm"] - 3.0) < 1e-9
+    assert abs(best["parameters"]["rho_contact_mohm_cm2"] - 7.0) < 1e-9
+    assert best["meta"]["grid_overrides"] == {
+        "edge_margin_mm": 0.5, "rho_bulk_uohm_cm": 3.0, "rho_contact_mohm_cm2": 7.0}
+
+    ok, re, _ = roundtrip_check(fest, best, scenario=SCENARIO_MEASURED,
+                                axis_segments_override=AX, npts=NPTS)
+    assert ok, "override 조합의 round-trip 재입력이 불일치"
+    assert re["parameters"]["edge_margin_mm"] == 0.5
+    assert re["results"]["efficiency"] == best["results"]["efficiency"]
+
+
+def test_edge_margin_zero_is_bit_identical(fest, monkeypatch):
+    """edge_margin=0 전달이 미전달과 비트 동일 — 기존 결과 불변 보장."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    kw = dict(cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+              busbar_number=2, busbar_width_mm=0.2, scenario=SCENARIO_MEASURED,
+              axis_segments_override=AX, npts=NPTS)
+    legacy = optimize_fingers(fest, **kw)
+    margin0 = optimize_fingers(fest, edge_margin_mm=0.0, **kw)
+    for key in ("total_loss", "efficiency", "optical_loss", "electrical_loss"):
+        assert (legacy["best"]["results"][key]
+                == margin0["best"]["results"][key]), f"{key} 비트동일 실패"
+
+
+def test_edge_margin_shortens_metal(fest, monkeypatch):
+    """edge_margin>0이 실제로 금속을 엣지에서 떼는지 — shading 감소로 확인."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    kw = dict(cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+              busbar_number=2, busbar_width_mm=0.2, scenario=SCENARIO_MEASURED,
+              axis_segments_override=AX, npts=NPTS)
+    m0 = optimize_fingers(fest, edge_margin_mm=0.0, **kw)["best"]
+    m1 = optimize_fingers(fest, edge_margin_mm=1.0, **kw)["best"]
+    assert (m1["engine_raw"]["total_shading"]
+            < m0["engine_raw"]["total_shading"]), "마진을 줬는데 금속 면적이 안 줄었다"
 
 
 def test_export_csv(fest, tmp_path, monkeypatch):

@@ -213,6 +213,13 @@ def evaluate_existing_simulation(
     if _n_probe_auto:
         grid_params = dict(grid_params, n_probe_points=10)
 
+    # 조합별 override 축(v28.45 스윕 확장)의 **원본 입력**을 그대로 보존한다.
+    # roundtrip_check가 최적 조합을 재입력할 때 이걸 되돌린다 — parameters에 기록된
+    # 값(단위 역환산됨)을 쓰면 부동소수 왕복 오차로 비트 동일이 깨질 수 있다.
+    _grid_overrides = {k: grid_params[k] for k in
+                       ("edge_margin_mm", "rho_bulk_uohm_cm", "rho_contact_mohm_cm2")
+                       if grid_params.get(k) is not None}
+
     geo = _build_geometry(fest, grid_params)
 
     # 메시
@@ -338,5 +345,7 @@ def evaluate_existing_simulation(
             "shape_cf": cf,
             "n_probe_points": int(grid_params.get("n_probe_points", 0)),
             "n_probe_auto_bumped": _n_probe_auto,
+            # round-trip 재입력용 원본 override 입력(없으면 빈 dict → 기존과 동일).
+            "grid_overrides": _grid_overrides,
         },
     }

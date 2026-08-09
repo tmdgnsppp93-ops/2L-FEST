@@ -36,6 +36,42 @@ def pytest_configure(config):
     config.addinivalue_line("markers", "bgrade: B등급(샘플링 변경) 허용오차 핀")
 
 
+# --- 비트-핀 스택 게이트 (v28.46) --------------------------------------------
+# RTOL=1e-8짜리 비트 보존 핀(test_default_pin / test_legacy_pin)은 값이 **캡처된
+# 인터프리터·BLAS·희소솔버 조합**에서만 성립한다. 다른 스택에서는 SuperLU/BLAS
+# 차이만으로 상대 ~1e-6이 떠서 항상 빨간불이 되고, 그러면 **진짜 물리 회귀와
+# 환경 차이를 구분할 수 없다** — 이 저장소가 계속 경계해 온 실패 유형이다.
+#
+# 그래서 스택이 다르면 xfail(strict=False)로 낮추되 **이유를 명시**한다.
+# 핀 스택에서는 그대로 strict fail이므로 회귀 감시 능력은 유지된다.
+# 새 스택으로 옮겨 값을 다시 캡처했다면 PINNED_STACK을 갱신할 것.
+PINNED_STACK = {"python": "3.14.3", "numpy": "2.4.3", "scipy": "1.17.1"}
+
+
+def _current_stack():
+    import numpy
+    import scipy
+    return {
+        "python": "%d.%d.%d" % sys.version_info[:3],
+        "numpy": numpy.__version__,
+        "scipy": scipy.__version__,
+    }
+
+
+def stack_mismatch():
+    """핀 캡처 스택과 다르면 '무엇이 다른지' 문자열, 같으면 None."""
+    cur = _current_stack()
+    diff = [f"{k} {PINNED_STACK[k]}→{cur[k]}" for k in PINNED_STACK
+            if cur[k] != PINNED_STACK[k]]
+    return ", ".join(diff) if diff else None
+
+
+@pytest.fixture(scope="session")
+def bit_pin_gate():
+    """비트 핀 테스트가 스택 불일치 시 xfail로 낮추도록 하는 게이트."""
+    return stack_mismatch()
+
+
 # --- 2. mock GUI modules -----------------------------------------------------
 class _DummyCTk:
     """Real, subclassable stand-in for customtkinter.CTk.

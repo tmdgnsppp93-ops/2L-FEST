@@ -4,9 +4,14 @@ Stage 1 (39mm 대표 소셀): finger width × pitch 스윕 → 최적 finger 설
 Stage 2 (풀 M10 182mm): 위 finger 고정 + busbar number × width 스윕.
 물성 시나리오 2종 병행: measured(rho=4.22, KIST 실측) / engine default(13.22).
 
+Stage grid (v28.46): 2단계 분리의 커플링 한계(docs §5)를 닫기 위한 **결합 스윕** —
+풀 M10에서 finger pitch/width와 busbar를 동시에 스윕한다. 조합수 = 곱이라 비싸다.
+
   python scripts/optimize_m10.py --stage fingers            # 빠름(39mm, 수 분)
   python scripts/optimize_m10.py --stage fingers --quick    # 아주 빠름(격자 축소)
   python scripts/optimize_m10.py --stage busbars --wf 25 --pitch 1.6   # 느림(M10, ~시간)
+  python scripts/optimize_m10.py --stage grid --pitch-list 1.77,2.2,2.6 \
+      --nbb 6,8,10 --wbb 0.20 --edge-margin 1.0 --workers 5   # 결합(M10, 매우 느림)
 
 엔진은 conftest 하네스로 headless 로드(mock tkinter + Agg). 새 물리/효율식 없음.
 """
@@ -72,15 +77,17 @@ def _print_best(tag, opt):
           f"(optical={r['optical_loss']:.4f} electrical={r['electrical_loss']:.4f})")
 
 
-def run_fingers(scenario, quick, recovery, ax):
+def run_fingers(scenario, quick, recovery, ax, edge_margin=0.0):
     widths = [20.0, 30.0] if quick else FINGER_WIDTHS_UM
     pitches = [1.4, 2.0] if quick else FINGER_PITCHES_MM
     print(f"\n=== Stage 1 (fingers, 39mm) — {scenario['label']} ===")
-    print(f"    widths={widths}um  pitches={pitches}mm  = {len(widths)*len(pitches)} combos")
+    print(f"    widths={widths}um  pitches={pitches}mm  = {len(widths)*len(pitches)} combos"
+          f"  edge_margin={float(edge_margin or 0.0):g}mm")
     t0 = time.time()
     opt = optimize_fingers(
         fest, cell_mm=39.0, finger_widths_um=widths, finger_pitches_mm=pitches,
         busbar_number=3, busbar_width_mm=0.3, scenario=scenario,
+        edge_margin_mm=edge_margin,
         recovery_factor=recovery, axis_segments_override=ax, npts=8,
         progress=_progress("fingers"))
     print(f"    stage1 total {time.time()-t0:.0f}s")
@@ -88,7 +95,10 @@ def run_fingers(scenario, quick, recovery, ax):
     ok, _, _ = roundtrip_check(fest, opt["best"], scenario=scenario,
                                recovery_factor=recovery, axis_segments_override=ax, npts=8)
     print(f"    round-trip: {'OK (동일)' if ok else 'FAIL (불일치)'}")
-    out_csv = os.path.join(_HERE, f"opt_fingers_{'quick' if quick else 'full'}.csv")
+    suffix = "quick" if quick else "full"
+    if float(edge_margin or 0.0) > 0.0:
+        suffix += f"_edge{float(edge_margin):g}mm"
+    out_csv = os.path.join(_HERE, f"opt_fingers_{suffix}.csv")
     export_csv(opt, out_csv)
     print(f"    CSV: {out_csv}")
     return opt
@@ -105,13 +115,14 @@ def _eval_combo(task):
     가 실행되어 **프로세스마다 독립 엔진**을 로드한다(상태 공유·warm-start 누수 없음).
     한 조합(busbar 개수×폭)을 평가해 CSV 1행 dict를 반환. 엔진/효율식 무수정.
 
-    task: dict(n_bb, w_bb, wf, pitch, scenario, target_nodes, npts)
+    task: dict(n_bb, w_bb, wf, pitch, scenario, target_nodes, npts, edge_margin)
     """
     n_bb = int(task["n_bb"])
     w_bb = float(task["w_bb"])
     grid = dict(cell_w_mm=182.0, cell_h_mm=182.0, finger_spacing_mm=task["pitch"],
                 w_finger_um=task["wf"], n_busbars=n_bb, w_busbar_mm=w_bb,
-                n_probe_points=10)
+                n_probe_points=10,
+                edge_margin_mm=float(task.get("edge_margin", 0.0) or 0.0))
     t0 = time.time()
     out = evaluate_existing_simulation(
         fest, grid, scenario=task["scenario"], busbar_recovery_factor=0.0,
@@ -141,6 +152,12 @@ def _eval_combo(task):
     row["mode"] = out["meta"]["mode"]
     row["elapsed_s"] = round(dt, 1)             # 비결정(워커 스케줄) — 비교 시 제외
     row["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")  # 비결정 — 비교 시 제외
+    # sweep_key: grid stage 전용 재개(resume) 키. **입력값** 그대로를 문자열로 박아
+    # 둔다 — CSV의 finger_pitch_mm은 정수 핑거 반올림 후 재계산된 *실현* pitch라
+    # (입력 1.77 → 실현 1.767) 입력값 매칭에 쓸 수 없기 때문이다.
+    # busbars stage는 이 키를 넣지 않는다(기존 CSV 헤더 불변 → append/resume 호환).
+    if task.get("sweep_key"):
+        row["sweep_key"] = task["sweep_key"]
     return row
 
 
@@ -174,7 +191,7 @@ def _sort_csv(csv_path):
 
 def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
                 nbb_list=None, wbb_list=None, workers=1,
-                target_nodes=82000, npts=14):
+                target_nodes=82000, npts=14, edge_margin=0.0):
     """Stage 2 — 풀 M10 busbar 스윕 (장시간 실행 안전장치 + 병렬 실행).
 
     안전장치(드라이버 전용 — optimizer/adapter는 무수정):
@@ -191,12 +208,18 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
     if csv_path is None:
         # 시나리오별 CSV 분리 — 양 시나리오가 한 파일에 섞이거나 --resume 키가
         # 시나리오를 넘나들며 잘못 skip되는 것을 방지.
+        # edge_margin도 같은 이유로 파일명에 넣는다: resume 키는 (n_bb, w_bb)뿐이라
+        # 마진이 다른 실행이 같은 파일을 쓰면 **다른 설계의 결과를 완료로 착각해
+        # 건너뛴다**(silent-wrong). margin=0은 기존 파일명 유지(하위호환).
         tag = "measured" if "measured" in scenario["label"] else "default"
+        if float(edge_margin or 0.0) > 0.0:
+            tag += f"_edge{float(edge_margin):g}mm"
         csv_path = os.path.join(_HERE, f"opt_busbars_m10_{tag}.csv")
     nbb_list = nbb_list if nbb_list is not None else BUSBAR_NUMBERS
     wbb_list = wbb_list if wbb_list is not None else BUSBAR_WIDTHS_MM
     print(f"\n=== Stage 2 (busbars, M10 182mm) — {scenario['label']} ===")
-    print(f"    finger fixed: w={wf}um pitch={pitch}mm | nbb={nbb_list} wbb={wbb_list}")
+    print(f"    finger fixed: w={wf}um pitch={pitch}mm | nbb={nbb_list} wbb={wbb_list}"
+          f" | edge_margin={float(edge_margin or 0.0):g}mm")
     print("    finger 채택 근거: 효율 최적은 wf15um/pitch1.39mm이나 인쇄 현실성(ITRPV상 "
           "15um는 2035 목표, 현 양산 ~30um대) 고려해 wf20um/pitch1.77mm 채택 — 효율차 ~0.003%abs.")
     print(f"    ⚠ 풀 M10: 1조합 ≈17분. CSV(append): {csv_path}")
@@ -219,7 +242,8 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
             print(f"    skip {n_bb}BB {w_bb}mm (완료됨)", flush=True)
             continue
         pending.append(dict(n_bb=n_bb, w_bb=w_bb, wf=wf, pitch=pitch,
-                            scenario=scenario, target_nodes=target_nodes, npts=npts))
+                            scenario=scenario, target_nodes=target_nodes, npts=npts,
+                            edge_margin=edge_margin))
 
     # CSV 기록은 항상 부모 프로세스에서만 (동시 쓰기 충돌 원천 차단).
     def _append_row(row):
@@ -272,9 +296,100 @@ def run_busbars(scenario, wf, pitch, recovery, resume=False, csv_path=None,
     return csv_path
 
 
+def _grid_sweep_key(wf, pitch, n_bb, w_bb, edge):
+    """grid stage resume 키 — 입력값(반올림 전) 기준 문자열."""
+    return f"wf{float(wf):g}|p{float(pitch):g}|nbb{int(n_bb)}|wbb{float(w_bb):g}|e{float(edge):g}"
+
+
+def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
+             resume=False, csv_path=None, workers=1, target_nodes=82000, npts=14):
+    """결합 스윕 — 풀 M10에서 finger pitch/width와 busbar를 **동시에** 스윕.
+
+    필요성(docs §5): 기존 2단계 분리는 Stage 1(39mm 소셀, 3BB)에서 정한 finger
+    최적(wf20/pitch1.77)을 Stage 2에서 고정했다. 그러나 M10 다중 busbar에서는
+    finger 세그먼트 길이가 W/n_bb로 짧아져 최적 pitch가 넓은 쪽으로 이동할 수
+    있다(v28.43/44 GUI preview에서 pitch~2.2~2.4 관측). 이 드라이버는 그 커플링을
+    풀 M10에서 직접 확인한다.
+
+    run_busbars와 동일한 안전장치(조합별 즉시 append+flush, --resume, 병렬 spawn)를
+    쓰되, resume 키만 sweep_key(입력값 문자열)로 바꾼다 — 축이 늘어 (n_bb,w_bb)로는
+    조합을 구분할 수 없기 때문이다.
+    """
+    if csv_path is None:
+        tag = "measured" if "measured" in scenario["label"] else "default"
+        if float(edge_margin or 0.0) > 0.0:
+            tag += f"_edge{float(edge_margin):g}mm"
+        csv_path = os.path.join(_HERE, f"opt_grid_m10_{tag}.csv")
+    combos = list(itertools.product(wf_list, pitch_list, nbb_list, wbb_list))
+    print(f"\n=== Grid stage (coupled finger×busbar, M10 182mm) — {scenario['label']} ===")
+    print(f"    wf={wf_list}um  pitch={pitch_list}mm  nbb={nbb_list}  wbb={wbb_list}mm"
+          f"  edge_margin={float(edge_margin or 0.0):g}mm")
+    print(f"    조합 {len(combos)}개 × 풀 M10(1조합 ≈17분). CSV(append): {csv_path}")
+
+    done = set()
+    if resume and os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
+        with open(csv_path, encoding="utf-8-sig") as fh:
+            for row in csv.DictReader(fh):
+                if row.get("sweep_key"):
+                    done.add(row["sweep_key"])
+        print(f"    resume: 완료 {len(done)}개 조합 건너뜀")
+
+    header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
+    pending = []
+    for wf, pitch, n_bb, w_bb in combos:
+        key = _grid_sweep_key(wf, pitch, n_bb, w_bb, edge_margin)
+        if key in done:
+            print(f"    skip {key} (완료됨)", flush=True)
+            continue
+        pending.append(dict(n_bb=n_bb, w_bb=w_bb, wf=wf, pitch=pitch,
+                            scenario=scenario, target_nodes=target_nodes, npts=npts,
+                            edge_margin=edge_margin, sweep_key=key))
+
+    def _append_row(row):
+        nonlocal header_written
+        with open(csv_path, "a", newline="", encoding="utf-8-sig") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(row.keys()))
+            if not header_written:
+                w.writeheader()
+                header_written = True
+            w.writerow(row)
+            fh.flush()
+        print(f"    [{row['sweep_key']}] {row['elapsed_s']}s "
+              f"nf={int(float(row['n_fingers']))} pitch_real={float(row['finger_pitch_mm']):.3f} "
+              f"eff={float(row['efficiency']):.4f} "
+              f"| Pf_finger={float(row['Pf_finger']):.4f} Pf_busbar={float(row['Pf_busbar']):.4f} "
+              f"P_shade={float(row['P_shade']):.4f} → CSV append", flush=True)
+
+    n_workers = max(1, int(workers))
+    if n_workers <= 1 or len(pending) <= 1:
+        for task in pending:
+            _append_row(_eval_combo(task))
+    else:
+        n_workers = min(n_workers, len(pending))
+        print(f"    실행: 병렬 spawn 풀 workers={n_workers}, {len(pending)}조합", flush=True)
+        ctx = mp.get_context("spawn")
+        with ctx.Pool(processes=n_workers) as pool:
+            for row in pool.imap_unordered(_eval_combo, pending):
+                _append_row(row)
+
+    best = None
+    with open(csv_path, encoding="utf-8-sig") as fh:
+        for row in csv.DictReader(fh):
+            e = float(row["efficiency"])
+            if best is None or e > best[0]:
+                best = (e, row)
+    if best is not None:
+        r = best[1]
+        print(f"\n>>> BEST [grid, by efficiency] {r.get('sweep_key','')} "
+              f"eff={float(r['efficiency']):.4f}%  "
+              f"(nf={int(float(r['n_fingers']))} pitch_real={float(r['finger_pitch_mm']):.3f}mm)")
+    return csv_path
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--stage", choices=["fingers", "busbars", "both"], default="fingers")
+    ap.add_argument("--stage", choices=["fingers", "busbars", "grid", "both"],
+                    default="fingers")
     ap.add_argument("--quick", action="store_true", help="격자 축소(빠른 데모)")
     ap.add_argument("--recovery", type=float, default=0.0, help="busbar recovery factor")
     ap.add_argument("--ax", type=int, default=110, help="39mm 소셀 axis_segments_override")
@@ -293,6 +408,16 @@ def main():
     ap.add_argument("--target-nodes", dest="target_nodes", type=int, default=82000,
                     help="stage2 M10 메시 목표 노드수(작게 주면 빠른 검증/미리보기).")
     ap.add_argument("--npts", type=int, default=14, help="stage2 calc_iv 스윕 점수")
+    ap.add_argument("--csv", dest="csv_path", type=str, default=None,
+                    help="결과 CSV 경로 override (기본: scripts/ 아래 시나리오·마진 태그 자동)")
+    ap.add_argument("--wf-list", dest="wf_list", type=str, default=None,
+                    help="grid stage finger width[um] 목록, 쉼표구분 (기본: --wf 값 1개)")
+    ap.add_argument("--pitch-list", dest="pitch_list", type=str, default=None,
+                    help="grid stage finger pitch[mm] 목록, 쉼표구분 (기본: --pitch 값 1개)")
+    ap.add_argument("--edge-margin", dest="edge_margin", type=float, default=0.0,
+                    help="엣지 실버-프리 마진[mm] (v28.45 랩미팅 지시; GUI 기본 1.0). "
+                         "0=기존 결과와 비트 동일. >0이면 CSV 파일명에 태그가 붙어 "
+                         "마진이 다른 실행끼리 --resume이 섞이지 않는다.")
     args = ap.parse_args()
     nbb_list = [int(x) for x in args.nbb.split(",")] if args.nbb else None
     wbb_list = [float(x) for x in args.wbb.split(",")] if args.wbb else None
@@ -303,11 +428,22 @@ def main():
     print(f"2L-FEST build {fest.__build__['version']} | scenarios={[s['label'] for s in scenarios]}")
     for sc in scenarios:
         if args.stage in ("fingers", "both"):
-            run_fingers(sc, args.quick, args.recovery, args.ax)
+            run_fingers(sc, args.quick, args.recovery, args.ax,
+                        edge_margin=args.edge_margin)
         if args.stage in ("busbars", "both"):
             run_busbars(sc, args.wf, args.pitch, args.recovery, resume=args.resume,
                         nbb_list=nbb_list, wbb_list=wbb_list, workers=args.workers,
-                        target_nodes=args.target_nodes, npts=args.npts)
+                        target_nodes=args.target_nodes, npts=args.npts,
+                        edge_margin=args.edge_margin, csv_path=args.csv_path)
+        if args.stage == "grid":
+            run_grid(sc,
+                     wf_list=[float(x) for x in args.wf_list.split(",")] if args.wf_list else [args.wf],
+                     pitch_list=[float(x) for x in args.pitch_list.split(",")] if args.pitch_list else [args.pitch],
+                     nbb_list=nbb_list if nbb_list is not None else BUSBAR_NUMBERS,
+                     wbb_list=wbb_list if wbb_list is not None else BUSBAR_WIDTHS_MM,
+                     edge_margin=args.edge_margin, resume=args.resume,
+                     workers=args.workers, target_nodes=args.target_nodes,
+                     npts=args.npts, csv_path=args.csv_path)
 
 
 if __name__ == "__main__":

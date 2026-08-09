@@ -72,10 +72,14 @@ def _sweep(fest, grid_list, *, scenario, recovery_factor, mode, npts,
 
 def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
                      busbar_number=3, busbar_width_mm=0.3, n_probe_points=0,
+                     edge_margin_mm=0.0,
                      scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
                      axis_segments_override=None, target_nodes=None,
                      objective="total_loss", progress=None):
     """Stage 1 — 소셀에서 finger width × pitch 스윕 (버스바 대표값 고정).
+
+    edge_margin_mm(v28.46): 엣지 실버-프리 마진을 Stage 1에도 전달한다. 기본 0.0
+    이면 기존과 비트 동일. GUI 기본값(1.0mm)과 CLI를 같은 조건으로 맞출 때 쓴다.
 
     n_probe 가드(v28.43): 다중 busbar를 n_probe_points=0(legacy 단일-busbar 수집)으로
     풀면 전류 미수집으로 FF가 붕괴해 **에러 없이 그럴듯한 틀린 값**을 낸다(preview
@@ -88,7 +92,7 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
             cell_w_mm=cell_mm, cell_h_mm=cell_mm,
             finger_spacing_mm=pitch_mm, w_finger_um=wf_um,
             n_busbars=busbar_number, w_busbar_mm=busbar_width_mm,
-            n_probe_points=n_probe_points))
+            n_probe_points=n_probe_points, edge_margin_mm=edge_margin_mm))
     out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
                  target_nodes=target_nodes, objective=objective, progress=progress,
@@ -139,6 +143,7 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
 
 def optimize_busbars(fest, *, cell_mm=182.0, finger_width_um, finger_pitch_mm,
                      n_busbars_list, busbar_widths_mm, n_probe_points=10,
+                     edge_margin_mm=0.0,
                      scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
                      axis_segments_override=None, target_nodes=None,
                      objective="total_loss", progress=None):
@@ -148,7 +153,8 @@ def optimize_busbars(fest, *, cell_mm=182.0, finger_width_um, finger_pitch_mm,
         grid_list.append(dict(
             cell_w_mm=cell_mm, cell_h_mm=cell_mm,
             finger_spacing_mm=finger_pitch_mm, w_finger_um=finger_width_um,
-            n_busbars=n_bb, w_busbar_mm=w_bb, n_probe_points=n_probe_points))
+            n_busbars=n_bb, w_busbar_mm=w_bb, n_probe_points=n_probe_points,
+            edge_margin_mm=edge_margin_mm))
     return _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
                   mode=mode, npts=npts, axis_segments_override=axis_segments_override,
                   target_nodes=target_nodes, objective=objective, progress=progress,
@@ -160,6 +166,20 @@ def roundtrip_check(fest, best, *, scenario=None, recovery_factor=0.0, mode="tan
     """최적 조건을 엔진에 '직접 재입력'했을 때 동일한 손실·효율이 나오는지 확인.
 
     실제 실현된 n_fingers(정수)로 재입력해 지오메트리를 정확히 재현한다.
+
+    재입력은 **스윕에 쓰인 전 축**을 복원해야 한다(v28.46 fix). v28.45에서
+    edge_margin / rho_bulk / rho_contact가 조합별 스윕 축이 되었는데 여기서 복원하지
+    않으면 재평가가 **다른 설계**(마진 없음·엔진 기본 물성)를 풀게 된다 → 멀쩡한
+    최적해를 "round-trip FAIL(불일치)"로 오보고한다. 값 자체가 조용히 틀리는 게
+    아니라 검증기가 가짜 경보를 내는 쪽이지만, 진짜 지오메트리 불일치와 구분이
+    안 돼 위험하다. edge_margin=0·물성 override 없음(기본 상태)에서는 복원할 것이
+    없어 기존 동작과 비트 동일하다.
+
+    물성은 ``parameters``(실제 사용된 값, µΩ·cm로 역환산됨)가 아니라
+    ``meta['grid_overrides']``(**원본 입력 그대로**)에서 복원한다. parameters를 쓰면
+    ρ[Ω·cm]→µΩ·cm→Ω·cm 왕복에서 부동소수 오차가 끼어 "비트 동일" 판정이 깨질 수
+    있기 때문이다.
+
     Returns (ok, reeval_result, best_result).
     """
     p = best["parameters"]
@@ -168,6 +188,8 @@ def roundtrip_check(fest, best, *, scenario=None, recovery_factor=0.0, mode="tan
         n_fingers=int(p["n_fingers"]), w_finger_um=p["finger_width_um"],
         n_busbars=int(p["busbar_number"]), w_busbar_mm=p["busbar_width_mm"],
         n_probe_points=int(p["n_probe_points"]))
+    # 조합별 override(edge_margin/rho_bulk/rho_contact)를 원본 입력 그대로 복원.
+    grid.update(best.get("meta", {}).get("grid_overrides", {}))
     re = evaluate_existing_simulation(
         fest, grid, scenario=scenario, busbar_recovery_factor=recovery_factor,
         mode=mode, npts=npts, axis_segments_override=axis_segments_override,
