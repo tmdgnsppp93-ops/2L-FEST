@@ -29,8 +29,10 @@ from front_electrode import i18n         # noqa: E402
 try:
     import customtkinter as _REAL_CTK
     import matplotlib.backends.backend_tkagg as _REAL_TKAGG
+    import tkinter as _REAL_TK
+    import tkinter.font as _REAL_TKFONT
 except Exception:                        # pragma: no cover - 디스플레이 없는 환경
-    _REAL_CTK = _REAL_TKAGG = None
+    _REAL_CTK = _REAL_TKAGG = _REAL_TK = _REAL_TKFONT = None
 
 pytestmark = pytest.mark.skipif(
     not gui_check.display_available(),
@@ -42,11 +44,14 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(autouse=True)
 def _real_gui_modules(monkeypatch):
     """conftest가 끼워 넣은 가짜 GUI 모듈을 이 테스트 동안 진짜로 되돌린다."""
-    if _REAL_CTK is not None:
-        monkeypatch.setitem(sys.modules, "customtkinter", _REAL_CTK)
-    if _REAL_TKAGG is not None:
-        monkeypatch.setitem(sys.modules, "matplotlib.backends.backend_tkagg",
-                            _REAL_TKAGG)
+    for name, mod in (("customtkinter", _REAL_CTK),
+                      ("matplotlib.backends.backend_tkagg", _REAL_TKAGG),
+                      # tkinter/tkinter.font도 mock 대상이다 — 폰트 측정
+                      # (tkfont.Font.measure)이 MagicMock이면 비교가 TypeError.
+                      ("tkinter", _REAL_TK),
+                      ("tkinter.font", _REAL_TKFONT)):
+        if mod is not None:
+            monkeypatch.setitem(sys.modules, name, mod)
     yield
 
 
@@ -233,6 +238,40 @@ def test_language_switch_preserves_results_bit_identical(tk_root, hangul_font):
         assert en1["effs"] == ko["effs"] == en2["effs"], (
             f"언어 전환으로 efficiency가 변했다: "
             f"EN={en1['effs']} KO={ko['effs']} EN2={en2['effs']}")
+    finally:
+        win.destroy()
+
+
+# 창에 실제로 입력될 값들 — 확정 결과(pitch 1.767 / 2.193)와 기본 preset 값.
+_MUST_FIT = ["1.767", "2.193", "2.600", "13.22", "4.22", "0.20", "100.0", "20"]
+
+
+def test_entry_widths_fit_real_values(tk_root):
+    """입력칸이 실제 값을 자르지 않는지 — 특히 range 행(min/max/steps).
+
+    v28.47에서 라벨 폭을 넓히며 range 칸을 44→36px로 줄였더니 확정 결과값
+    pitch 1.767(텍스트폭 33px)·2.193(34px)이 잘렸다. 폭을 다시 만지면 여기서 걸린다.
+    """
+    import tkinter.font as tkfont
+    win = gui_check.build_window("en", tk_root)
+    try:
+        sb = win._fe_internals["sidebar"]
+        entries = [w for w in gui_check._walk(sb)
+                   if w.__class__.__name__ == "CTkEntry"]
+        assert entries, "입력칸을 못 찾았다"
+        clipped = []
+        for e in entries:
+            width = e.winfo_width()
+            font = tkfont.Font(font=e._entry.cget("font"))
+            avail = width - 10          # CTkEntry 내부 테두리+패딩 실측 여유
+            # steps 칸(가장 좁음)은 정수만 들어가므로 소수 3자리는 요구하지 않는다.
+            wanted = ["1", "12"] if width <= 34 else _MUST_FIT
+            for text in wanted:
+                need = font.measure(text)
+                if need > avail:
+                    clipped.append((width, text, need, avail))
+        assert not clipped, (
+            "입력칸에서 값이 잘린다 (칸폭, 값, 텍스트폭, 가용폭): " + str(clipped))
     finally:
         win.destroy()
 

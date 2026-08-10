@@ -28,6 +28,15 @@ from .i18n import T, set_language, get_language, LANGUAGES, label_for
 SIDEBAR_W = 340
 _LABEL_W = 150          # 입력 라벨 고정 폭 — 모든 행의 입력칸 x 위치를 맞춘다
 _WRAP = SIDEBAR_W - 46  # 안내 문구 줄바꿈 폭(스크롤바·패딩 제외)
+# 입력칸 폭 [px]. range 행은 min/max/steps 3칸이라 한 칸이 좁아지기 쉬운데,
+# 확정 결과값(pitch 1.767 / 2.193)이 **잘리면 안 된다** — 실측 텍스트폭 33~34px에
+# CTkEntry 내부 여백 약 10px를 더해 44px가 하한이다(tests/test_gui_layout.py가 검증).
+#   실측(2026-08-10, macOS/CTk 5.2.2): "2.600"=36px, "100.0"=35px, "1.767"=33px
+#   → 필요 칸폭 46px. 행 프레임 폭 302px 예산 안에서 48/48/34 + padx 6 + 라벨 150
+#   = 286px라 여유 16px. 라벨 폭을 줄이지 않고도 들어가므로 정렬을 유지한다.
+_ENTRY_W = 110          # 단일 입력 행
+_ENTRY_W_RANGE = 48     # range 행의 min / max (소수 3자리까지)
+_ENTRY_W_STEPS = 34     # range 행의 steps (정수 1~2자리)
 
 
 _HANGUL_FONT_OK = {"checked": False, "ok": False}
@@ -219,7 +228,7 @@ def open_optimizer_window(fest, parent):
         lbl = ctk.CTkLabel(fr, width=_LABEL_W, anchor="w")
         _reg(lbl, key)
         lbl.pack(side="left")
-        e = ctk.CTkEntry(fr, width=110)
+        e = ctk.CTkEntry(fr, width=_ENTRY_W)
         e.insert(0, str(default))
         e.pack(side="left")
         return e
@@ -231,9 +240,15 @@ def open_optimizer_window(fest, parent):
         lbl = ctk.CTkLabel(fr, width=_LABEL_W, anchor="w")
         _reg(lbl, key)
         lbl.pack(side="left")
-        emin = ctk.CTkEntry(fr, width=36); emin.insert(0, str(dmin)); emin.pack(side="left", padx=1)
-        emax = ctk.CTkEntry(fr, width=36); emax.insert(0, str(dmax)); emax.pack(side="left", padx=1)
-        en = ctk.CTkEntry(fr, width=28); en.insert(0, str(dn)); en.pack(side="left", padx=1)
+        # min/max 칸은 확정 결과값(pitch 1.767 / 2.193 등 소수 3자리)이 잘리지 않아야
+        # 한다 — 실측 텍스트폭 33~34px + CTkEntry 내부 여백 ≈10px → 44px 필요.
+        # steps는 정수 1~2자리라 34px면 충분하다. (_ENTRY_W_* 참조)
+        emin = ctk.CTkEntry(fr, width=_ENTRY_W_RANGE)
+        emin.insert(0, str(dmin)); emin.pack(side="left", padx=1)
+        emax = ctk.CTkEntry(fr, width=_ENTRY_W_RANGE)
+        emax.insert(0, str(dmax)); emax.pack(side="left", padx=1)
+        en = ctk.CTkEntry(fr, width=_ENTRY_W_STEPS)
+        en.insert(0, str(dn)); en.pack(side="left", padx=1)
         return emin, emax, en
 
     def _note(parent_, key):

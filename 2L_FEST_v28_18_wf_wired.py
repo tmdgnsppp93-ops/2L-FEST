@@ -279,6 +279,12 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
          · [테스트 격리] conftest가 엔진 로드 시 customtkinter/backend_tkagg를 가짜로
            바꾸므로, 실제 위젯이 필요한 test_gui_layout은 수집 시점에 진짜 모듈을
            붙잡아 두고 테스트 동안 되돌려 쓴다(단독/전체 실행 결과 동일).
+         · [입력칸 폭 되돌림] 라벨 폭을 넓히며 range 행 칸을 44/44/34 → 36/36/28로
+           줄였는데 **확정 결과값이 잘렸다**. 실측(macOS/CTk 5.2.2) "2.600"=36px,
+           "100.0"=35px, "1.767"=33px → 필요 칸폭 46px. 행 프레임 폭 302px 예산
+           안에서 48/48/34 + padx 6 + 라벨 150 = 286px(여유 16px)라 **라벨을 줄이지
+           않고** 복구해 입력칸 x 정렬을 유지했다. 폭 상수는 _ENTRY_W* 단일 출처.
+           test_entry_widths_fit_real_values가 폰트 측정으로 회귀를 막는다.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
