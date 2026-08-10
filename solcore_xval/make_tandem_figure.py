@@ -5,6 +5,7 @@ Quasi-3D cannot converge it (stiff perovskite diode + 2-junction series; even
 Solcore's own 3J example simulates only a single junction). Frames it as a
 solver-capability / robustness comparison.
 """
+import os
 import numpy as np
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -16,7 +17,7 @@ for cand in ("AppleGothic", "Apple SD Gothic Neo", "NanumGothic"):
         plt.rcParams["font.family"] = cand; break
 plt.rcParams["axes.unicode_minus"] = False
 
-HERE = "/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval"
+HERE = os.path.dirname(os.path.abspath(__file__))
 d = np.load(f"{HERE}/compare_tandem_result.npz")
 Vf, Jf = d["Vf"], d["Jf"]
 Voc = float(d["mf_Voc"]); Jsc = float(d["mf_Jsc"]); FF = float(d["mf_FF"])*100; Eff = float(d["mf_Pmax"])

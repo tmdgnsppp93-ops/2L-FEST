@@ -4,8 +4,9 @@ Loads compare_result.npz (realistic 10-finger cell). Table shows absolute AND
 relative differences; conclusion (Korean) explains WHY the gap appears and WHICH
 solver is more accurate, with the reason.
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python make_report_figure.py
+    <solcore venv>/bin/python make_report_figure.py
 """
+import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -20,7 +21,7 @@ for cand in ("AppleGothic", "Apple SD Gothic Neo", "NanumGothic", "Malgun Gothic
         break
 plt.rcParams["axes.unicode_minus"] = False   # avoid missing minus glyph
 
-HERE = "/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval"
+HERE = os.path.dirname(os.path.abspath(__file__))
 d = np.load(f"{HERE}/compare_result.npz")
 
 Vf, Jf = d["Vf"], d["Jf"]

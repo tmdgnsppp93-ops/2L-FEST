@@ -1,8 +1,9 @@
 """English presentation figure — 2L-FEST (FEM) vs Solcore Quasi-3D (SPICE/FDM).
 
 Same data as the KR figure (compare_result.npz), English labels.
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python make_report_figure_en.py
+    <solcore venv>/bin/python make_report_figure_en.py
 """
+import os
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -10,7 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
 plt.rcParams["axes.unicode_minus"] = False
-HERE = "/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval"
+HERE = os.path.dirname(os.path.abspath(__file__))
 d = np.load(f"{HERE}/compare_result.npz")
 
 Vf, Jf = d["Vf"], d["Jf"]

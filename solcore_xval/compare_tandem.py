@@ -3,7 +3,7 @@
 Phase-A recombination junction (vertical Rc) — the representation both solvers
 share; Solcore's series-junction model has no DOF for Phase-B lateral interlayer.
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python compare_tandem.py [pix_um] [vstep] [nfing]
+    <solcore venv>/bin/python compare_tandem.py [pix_um] [vstep] [nfing]
 """
 import os, sys, importlib.util, warnings
 warnings.filterwarnings("ignore")

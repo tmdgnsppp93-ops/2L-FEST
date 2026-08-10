@@ -1,7 +1,7 @@
 """Smoke test: confirm Solcore Quasi-3D + ngspice pipeline runs and yields a sane IV.
 
 Run with the lfest_env interpreter:
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python smoke_quasi3d.py
+    <solcore venv>/bin/python smoke_quasi3d.py
 
 Goal: NOT a quantitative match yet — just verify (a) ngspice is found,
 (b) solve_quasi_3D returns a V,I curve, (c) Voc/Jsc/FF are physically sane

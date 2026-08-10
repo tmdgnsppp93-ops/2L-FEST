@@ -5,7 +5,7 @@ Uniform cell, negligible sheet resistance -> Solcore must reproduce the analytic
 grid / 2L-FEST comparison. Voc/FF must match <1%; Jsc matches after the
 illuminated-area fraction (one busbar column is shaded).
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python calibrate_units.py
+    <solcore venv>/bin/python calibrate_units.py
 """
 import numpy as np
 from xval_common import run_quasi3d, iv_metrics, analytic_2diode

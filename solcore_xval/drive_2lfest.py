@@ -4,13 +4,14 @@ Goal: get (V, J) curve + metrics from the REAL 2L-FEST FEM solver for the
 default single cell, and discover the exact geometry attributes we need to
 build a matching Solcore mask in step (3b).
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python drive_2lfest.py
+    <solcore venv>/bin/python drive_2lfest.py
 """
 import os, importlib.util, warnings, json
 warnings.filterwarnings("ignore")
 import numpy as np
 
-FEST = "/Users/seunghooooonii/Desktop/2L-FEST/2L_FEST_v28_18_wf_wired.py"
+HERE = os.path.dirname(os.path.abspath(__file__))
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try:
@@ -67,7 +68,7 @@ for obj_name, obj in [("GEO", GEO), ("S", S)]:
     print(f"  {obj_name} attrs:", attrs)
 
 # dump IV curve to npz for step 3b
-np.savez("/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval/fest_single.npz",
+np.savez(os.path.join(HERE, "fest_single.npz"),
          V=Vs, J=Js, **{k: float(iv[k]) for k in ("Jsc","Voc","Vmpp","Jmpp","Pmpp","FF","Eff") if k in iv})
 print("\nsaved fest_single.npz")
 print("DRIVE_DONE")

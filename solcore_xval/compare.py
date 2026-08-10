@@ -4,7 +4,7 @@ Drives the real 2L-FEST single-cell solver, rasterizes its exact metal grid into
 a Solcore injection/contacts mask, maps the resistance/diode parameters, runs the
 Solcore Quasi-3D SPICE solver, and reports an IV/Eff/FF/Pmax comparison + overlay.
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python compare.py [pixel_um]
+    <solcore venv>/bin/python compare.py [pixel_um]
 """
 import os, sys, importlib.util, warnings
 warnings.filterwarnings("ignore")
@@ -19,10 +19,10 @@ VSTEP = float(sys.argv[2]) if len(sys.argv) > 2 else 0.005    # bias step (V)
 NFING = int(sys.argv[3]) if len(sys.argv) > 3 else 0          # 0 = keep default
 WFING = float(sys.argv[4]) if len(sys.argv) > 4 else 0        # finger/busbar width [um]; 0=default
 RSVAL = float(sys.argv[5]) if len(sys.argv) > 5 else 0        # front TCO sheet R override [Ohm/sq]; 0=default(55)
-HERE = "/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval"
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 # ---------------------------------------------------------------- 2L-FEST side
-FEST = "/Users/seunghooooonii/Desktop/2L-FEST/2L_FEST_v28_18_wf_wired.py"
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)
