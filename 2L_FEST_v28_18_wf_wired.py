@@ -259,8 +259,26 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
            · matplotlib 문자열에서 µ/ρ/×/· 제거(ASCII 유지, v28.31 관례 복귀) —
              AppleGothic에 µ(U+00B5) 글리프가 없어 그래프 subtitle에 두부(□)로
              찍혔다. um/rhoL/rhoc 표기. test_plot_strings_are_ascii_safe로 회귀 차단.
-           · _gui_i18n_check에 _clipped() 추가 — 필수 버튼이 창 좌표 안에 실제로
-             들어오는지 1010x660과 820x430 두 크기에서 검사(세로 검사 구멍 메움).
+         · [검사 전환: 스크린샷 → 수치] 캡처는 사람 눈에 의존하고, macOS에서 Tk를
+           띄운 뒤 같은 프로세스에서 scipy sparse solve를 돌리면 GIL 오류로 죽는다
+           (실측; 순서를 뒤집으면 정상). ui가 fest를 Run 콜백에서만 쓰는 점을 이용해
+           **엔진 스텁**을 넘겨 scipy를 아예 로드하지 않고 위젯 좌표만 측정한다 →
+           크래시 조합이 구조적으로 성립하지 않는다. 물리 수치 검증은 반대로 Tk 없이
+           돈다(둘을 섞지 않는 것이 회피 원리).
+           _gui_i18n_check.py를 재사용 모듈로 재작성(build_window/layout_report/
+           i18n_report/display_available)하고 tests/test_gui_layout.py가 import해
+           **pytest 회귀**로 편입(9케이스, 3초, 디스플레이 없으면 사유 명시 skip).
+           검사 항목: 세로 넘침·가로 넘침·Run/Save 가시성(기본 1010x660 + minsize
+           760x420)·KO/EN 각각·i18n 키 일치·전환 시 결과 보존과 효율 비트 동일.
+           세로 넘침 판정에서 CTkScrollableFrame은 제외한다 — 뷰포트가 아니라 내용
+           높이를 보고하므로 사이드바보다 큰 것이 정상(그게 스크롤의 목적)이다.
+         · [폰트 방어] PT() 추가 — matplotlib에 들어가는 문자열만 거치며, 현재 폰트로
+           한글을 그릴 수 없으면 영문으로 폴백한다. 엔진의 한글 폰트 탐지는 최후에
+           'Helvetica'로 떨어지는데 거기엔 한글 글리프가 없어 그대로 두면 조용히
+           두부(□)가 찍힌다(µ에서 이미 겪은 유형). ft2font charmap으로 1회 확인·캐시.
+         · [테스트 격리] conftest가 엔진 로드 시 customtkinter/backend_tkagg를 가짜로
+           바꾸므로, 실제 위젯이 필요한 test_gui_layout은 수집 시점에 진짜 모듈을
+           붙잡아 두고 테스트 동안 되돌려 쓴다(단독/전체 실행 결과 동일).
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """

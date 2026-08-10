@@ -144,7 +144,7 @@ build_app.bat           # Windows -> dist\"2L-FEST PRO"\"2L-FEST PRO.exe"
 | `_audit.py` | 31개 계산 경로 헤드리스 스모크 테스트 (전 모드·지오메트리·SpatialMap·리포트·DXF) |
 | `_gui_test.py` | 실제 GUI 구동 스모크 테스트 (탭 렌더·CSV/PNG 저장·DXF/실측 CSV 로드) |
 | `_diag_bifacial.py` | bifacial 후면조도 진단 (top/bottom 전류정합 분석) |
-| `_gui_i18n_check.py` | 실제 GUI로 한/영 번역 전수 확인 + 사이드바 레이아웃 넘침 검사 |
+| `_gui_i18n_check.py` | 실제 GUI 위젯 좌표로 한/영 번역 전수 + 레이아웃 넘침 + Run/Save 가시성 검사 (스크린샷 불필요, 엔진 미로드) |
 
 ```bash
 python _validate_tandem.py

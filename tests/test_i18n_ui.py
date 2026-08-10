@@ -344,14 +344,51 @@ def test_switch_rerenders_existing_results(fake_gui, rec):
     assert not any("자동 상향" in t for t in back), "EN 복귀 후 KO 문구 잔존"
 
 
+def test_plot_falls_back_to_english_without_hangul_font(monkeypatch):
+    """한글 폰트가 없으면 그래프 문자열이 영문으로 떨어져야 한다(두부 방지).
+
+    엔진의 폰트 탐지는 최후에 'Helvetica'로 폴백하는데 거기엔 한글 글리프가 없다.
+    그 상태로 한글을 그리면 조용히 □가 찍힌다 — v28.47에서 µ로 겪은 실패 유형.
+    """
+    from front_electrode import ui
+    before = i18n.get_language()
+    try:
+        i18n.set_language("ko", persist=False)
+        monkeypatch.setattr(ui, "hangul_renderable", lambda *a, **k: False)
+        assert ui.PT("plot.subtitle_fixed", wf=20, wbb=0.2, rho_l=4.2,
+                     rho_c=10.0, edge=1.0) == i18n.STRINGS["en"][
+            "plot.subtitle_fixed"].format(wf=20, wbb=0.2, rho_l=4.2,
+                                          rho_c=10.0, edge=1.0)
+        assert ui.PT("plot.grid_insufficient", n_pitch=1, n_bb=1) == \
+            i18n.STRINGS["en"]["plot.grid_insufficient"].format(n_pitch=1, n_bb=1)
+        # 폰트가 있으면 한국어 그대로
+        monkeypatch.setattr(ui, "hangul_renderable", lambda *a, **k: True)
+        assert "단면" in ui.PT("plot.subtitle_fixed", wf=20, wbb=0.2, rho_l=4.2,
+                              rho_c=10.0, edge=1.0)
+    finally:
+        i18n.set_language(before, persist=False)
+
+
+def test_hangul_renderable_returns_bool():
+    """폰트 검사가 예외 없이 bool을 돌려주는지(환경 무관)."""
+    from front_electrode import ui
+    assert isinstance(ui.hangul_renderable(force_recheck=True), bool)
+
+
 @pytest.mark.parametrize("lang", ["en", "ko"])
-def test_plot_strings_follow_language(lang):
-    """matplotlib 그래프의 문자열도 선택 언어를 따른다(격자 부족 안내 포함)."""
+def test_plot_strings_follow_language(lang, monkeypatch):
+    """matplotlib 그래프의 문자열도 선택 언어를 따른다(격자 부족 안내 포함).
+
+    폰트 폴백 분기는 test_plot_falls_back_to_english_without_hangul_font가 따로
+    담당하므로, 여기서는 폰트가 있다고 두고 **언어 라우팅**만 본다.
+    """
     import matplotlib
     matplotlib.use("Agg", force=True)
     from matplotlib.figure import Figure
+    from front_electrode import ui as _ui
     from front_electrode.ui import render_preview_plots
 
+    monkeypatch.setattr(_ui, "hangul_renderable", lambda *a, **k: True)
     before = i18n.get_language()
     try:
         i18n.set_language(lang, persist=False)

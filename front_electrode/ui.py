@@ -30,6 +30,51 @@ _LABEL_W = 150          # 입력 라벨 고정 폭 — 모든 행의 입력칸 x
 _WRAP = SIDEBAR_W - 46  # 안내 문구 줄바꿈 폭(스크롤바·패딩 제외)
 
 
+_HANGUL_FONT_OK = {"checked": False, "ok": False}
+
+
+def hangul_renderable(force_recheck=False):
+    """현재 matplotlib 폰트로 한글을 그릴 수 있는지 (결과 캐시).
+
+    엔진이 기동 시 rcParams['font.family']를 한글 폰트로 잡지만, 탐지 실패 시
+    최후 폴백이 'Helvetica'라 한글 글리프가 없을 수 있다. 그 상태로 한글을 그리면
+    조용히 두부(□)가 찍힌다 — v28.47에서 µ로 이미 한 번 겪은 실패 유형이라
+    사전에 확인하고 안 되면 영문으로 떨어뜨린다.
+    """
+    if _HANGUL_FONT_OK["checked"] and not force_recheck:
+        return _HANGUL_FONT_OK["ok"]
+    ok = False
+    try:
+        import matplotlib
+        from matplotlib import font_manager
+        from matplotlib.ft2font import FT2Font
+        fam = matplotlib.rcParams.get("font.family") or ["sans-serif"]
+        path = font_manager.findfont(font_manager.FontProperties(family=fam),
+                                     fallback_to_default=True)
+        # 프로브 문자는 U+B2E8(한글 '단'). 리터럴 대신 코드포인트로 쓴다 —
+        # ui.py에 하드코딩 한글이 없어야 한다는 규칙(test_ui_module_uses_no_
+        # hardcoded_korean)을 지키기 위함이며, 이 문자는 표시용이 아니라 검사용이다.
+        ok = 0xB2E8 in FT2Font(path).get_charmap()
+    except Exception:
+        ok = False        # 확인 자체가 실패하면 안전한 쪽(영문)으로.
+    _HANGUL_FONT_OK.update(checked=True, ok=ok)
+    return ok
+
+
+def PT(key, **kwargs):
+    """그래프용 문자열 조회 — 한글 폰트가 없으면 영문으로 폴백한다.
+
+    UI 위젯은 Tk가 자체 폰트를 쓰므로 T()를 그대로 쓰고, **matplotlib에 들어가는
+    문자열만** 이 함수를 거친다.
+    """
+    if get_language() == "ko" and not hangul_renderable():
+        from .i18n import STRINGS, DEFAULT_LANGUAGE
+        s = STRINGS[DEFAULT_LANGUAGE].get(key)
+        if s is not None:
+            return s.format(**kwargs) if kwargs else s
+    return T(key, **kwargs)
+
+
 def render_preview_plots(fig, grid, plot_state, subtitle=None):
     """optimizer preview 결과를 fig에 그린다(GUI canvas/txt와 분리한 순수 함수).
 
@@ -44,8 +89,9 @@ def render_preview_plots(fig, grid, plot_state, subtitle=None):
           차광↓)로 단조 감소해 내부 최적점이 사라져 최적점 판단에 부적합하고,
           efficiency만 interior optimum(생성·저항·차광 trade-off 균형점)을 보인다.
 
-    문자열은 T()로 조회한다. 축 라벨·제목·범례는 기술 용어라 두 언어에서 동일한
-    영문이고, 산문형 안내(격자 부족 등)와 subtitle만 언어에 따라 바뀐다.
+    문자열은 **PT()**로 조회한다(T()가 아니라). 축 라벨·제목·범례는 기술 용어라 두
+    언어에서 동일한 영문이고, 산문형 안내(격자 부족)와 subtitle만 언어를 따른다.
+    PT()는 한글 폰트가 없는 환경에서 영문으로 폴백해 두부(□)를 막는다.
     """
     import numpy as np
     from matplotlib import colormaps
@@ -80,19 +126,19 @@ def render_preview_plots(fig, grid, plot_state, subtitle=None):
         else:
             ax1.plot(xs, ys, "o" if single_pitch else "o-",
                      color=color, lw=1.8, markersize=4,
-                     label=T("plot.legend_bb", nb=nb), zorder=3)
+                     label=PT("plot.legend_bb", nb=nb), zorder=3)
     # (2) 최적점 강조: 별표 + offset 주석
     ax1.plot([best_pitch], [best_eff], marker="*", markersize=15,
              color="#d81b60", markeredgecolor="black", markeredgewidth=0.7, zorder=6)
     _mid = (min(ps) + max(ps)) / 2 if len(ps) > 1 else best_pitch
     _dx = -10 if best_pitch > _mid else 10
-    ax1.annotate(T("plot.annot_best", nb=best_nb, pitch=best_pitch, eff=best_eff),
+    ax1.annotate(PT("plot.annot_best", nb=best_nb, pitch=best_pitch, eff=best_eff),
                  xy=(best_pitch, best_eff), textcoords="offset points",
                  xytext=(_dx, 12), ha=("right" if _dx < 0 else "left"),
                  fontsize=8, color="#d81b60",
                  arrowprops=dict(arrowstyle="->", color="#d81b60", lw=0.7))
-    ax1.set_xlabel(T("plot.xlabel_pitch")); ax1.set_ylabel(T("plot.ylabel_eff"))
-    ax1.set_title(T("plot.title_eff_vs_pitch"))
+    ax1.set_xlabel(PT("plot.xlabel_pitch")); ax1.set_ylabel(PT("plot.ylabel_eff"))
+    ax1.set_title(PT("plot.title_eff_vs_pitch"))
     ax1.margins(y=0.18)   # (4) 실제 스케일 유지, 여백만 확보(차이 과장 아님)
     ax1.legend(loc="best", fontsize=8, framealpha=0.7)
     if subtitle:   # 다축 스윕: pitch×busbar 단면이고 나머지 축은 BEST값 고정임을 명시
@@ -102,7 +148,7 @@ def render_preview_plots(fig, grid, plot_state, subtitle=None):
     if len(ps) < 2 or len(nbs) < 2:
         ax2.axis("off")
         ax2.text(0.5, 0.5,
-                 T("plot.grid_insufficient", n_pitch=len(ps), n_bb=len(nbs)),
+                 PT("plot.grid_insufficient", n_pitch=len(ps), n_bb=len(nbs)),
                  ha="center", va="center", fontsize=10, color="#555555")
     else:
         Z = np.full((len(nbs), len(ps)), np.nan)
@@ -115,8 +161,8 @@ def render_preview_plots(fig, grid, plot_state, subtitle=None):
         ax2.set_yticklabels([str(nb) for nb in nbs])
         ax2.set_xticks(ps)
         ax2.set_xticklabels([f"{p:.2f}" for p in ps], rotation=45, fontsize=8)
-        ax2.set_xlabel(T("plot.xlabel_pitch")); ax2.set_ylabel(T("plot.ylabel_busbar"))
-        ax2.set_title(T("plot.title_heatmap"))
+        ax2.set_xlabel(PT("plot.xlabel_pitch")); ax2.set_ylabel(PT("plot.ylabel_busbar"))
+        ax2.set_title(PT("plot.title_heatmap"))
         plot_state["cbar"] = fig.colorbar(im, ax=ax2)   # (3-1) 핸들 보관
     return fig
 
@@ -375,7 +421,7 @@ def open_optimizer_window(fest, parent):
             txt.insert("end", T("result.rho_compare_delta", hi=hi_rl, lo=lo_rl,
                                 delta=bestper[lo_rl] - bestper[hi_rl]))
 
-        sub = T("plot.subtitle_fixed", wf=b["finger_width_um"],
+        sub = PT("plot.subtitle_fixed", wf=b["finger_width_um"],
                 wbb=b["busbar_width_mm"], rho_l=b["rho_bulk_uohm_cm"],
                 rho_c=b["rho_contact_mohm_cm2"], edge=edge)
         render_preview_plots(fig, slice_grid, _plot_state, subtitle=sub)
@@ -563,5 +609,17 @@ def open_optimizer_window(fest, parent):
         "render_results": _render_results,
         "switch_language": _on_language,
         "i18n_widgets": _i18n_widgets,
+        # 레이아웃 검사용 프레임 핸들 — 스크롤 영역 안의 위젯은 부모 높이를 넘어도
+        # 정상(스크롤됨)이라, 넘침 판정을 하려면 어느 위젯이 스크롤 안쪽인지
+        # 구분해야 한다. tests/test_gui_layout.py가 이걸로 구분한다.
+        "sidebar": left,
+        "scroll_body": body,
+        "actions": actions,
+        "run_btn": run_btn,
+        "save_btn": save_btn,
+        # 언어 전환 후 결과·그래프가 실제로 다시 그려졌는지 검사하기 위한 핸들.
+        "result_textbox": txt,
+        "figure": fig,
+        "progress_label": prog,
     }
     return win
