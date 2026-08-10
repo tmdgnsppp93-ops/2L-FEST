@@ -3,16 +3,17 @@ hot pressing. FAST path: single-cell mode driven at the TANDEM operating current
 (grid loss is an I^2R of the front grid -> same whether tandem or single below it),
 so we skip the slow tandem Phase-B solve. Reports only Pf_finger / Pf_busbar.
 
-    /Users/seunghooooonii/Downloads/lfest_env/bin/python grid_loss_M10.py [mesh]
+    <solcore venv>/bin/python grid_loss_M10.py [mesh]
 """
-import sys, importlib.util, warnings, time
+import os, sys, importlib.util, warnings, time
 warnings.filterwarnings("ignore")
 import numpy as np
 
 MESH = sys.argv[1] if len(sys.argv) > 1 else "High"
 JPH_TANDEM = 19.65e-3   # A/cm^2 — perovskite/Si tandem operating current (Jph_top)
 
-FEST = "/Users/seunghooooonii/Desktop/2L-FEST/2L_FEST_v28_18_wf_wired.py"
+HERE = os.path.dirname(os.path.abspath(__file__))
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)

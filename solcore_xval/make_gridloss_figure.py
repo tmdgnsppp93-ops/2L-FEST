@@ -3,6 +3,7 @@
 High-mesh 2L-FEST result (mesh-converged; matches Rehman 2023 analytical and
 the rho-linear scaling). Conference-ready bar chart + table.
 """
+import os
 import numpy as np
 import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -13,7 +14,7 @@ for cand in ("AppleGothic", "Apple SD Gothic Neo", "NanumGothic"):
     if any(cand == f.name for f in fm.fontManager.ttflist):
         plt.rcParams["font.family"] = cand; break
 plt.rcParams["axes.unicode_minus"] = False
-HERE = "/Users/seunghooooonii/Desktop/2L-FEST/solcore_xval"
+HERE = os.path.dirname(os.path.abspath(__file__))
 
 # High-mesh results [mW/cm^2]
 before = {"Finger": 0.0073, "Busbar": 0.0018, "합계": 0.0091}
