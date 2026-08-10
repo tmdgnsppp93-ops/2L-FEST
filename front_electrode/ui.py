@@ -420,7 +420,8 @@ def open_optimizer_window(fest, parent):
                               f"{p['busbar_number']:>3} {p['busbar_width_mm']:>4.2f} "
                               f"{p['rho_bulk_uohm_cm']:>5.2f} {p['rho_contact_mohm_cm2']:>4.1f} "
                               f"{p.get('edge_margin_mm', 0.0):>4.1f} {rr['efficiency']:>6.3f}\n")
-        # ρ_L 비교(예: 13.22 as-printed vs 4.22 measured) — 각 ρL의 최고 eff 차이(%p).
+        # ρ_L 비교(예: 9 as-cured vs 4.22 가압) — 각 ρL의 최고 eff 차이(%p).
+        # 온도·시간이 같고 가압만 다른 쌍이라 차이가 곧 순수 가압 효과다.
         rho_ls = sorted(set(round(r["parameters"]["rho_bulk_uohm_cm"], 3) for r in results))
         if len(rho_ls) >= 2:
             txt.insert("end", T("result.rho_compare_header"))

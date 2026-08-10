@@ -25,15 +25,27 @@ import itertools
 from .adapter import evaluate_existing_simulation
 
 
-# ── 물성 시나리오 (Phase 2 헤드라인 & 엔진 기본 병행) ──────────────
+# ── 물성 시나리오 ────────────────────────────────────────────────────
 # 헤드라인: 본 연구 실측 전극 비저항 (저온 가압소결 90°C/30min/5MPa).
 SCENARIO_MEASURED = {
-    "label": "measured (rho=4.22 uohm.cm, KIST low-T sinter 90C/30min/5MPa)",
+    "label": "pressed (rho=4.22 uohm.cm, KIST low-T sinter 90C/30min/5MPa)",
     "rho_bulk_uohm_cm": 4.22,
 }
-# 엔진 기본값: before-pressing Ag 페이스트 벌크 비저항 13.22 uohm.cm (rho=None → 엔진값 사용).
+# 가압 효과의 **대조군** (v28.48에서 교체): 무가압 경화 실측 9 uohm.cm.
+#   · 측정 조건: 90°C / 30min, 무가압, 4-probe Kelvin sensing.
+#   · SCENARIO_MEASURED(4.22)와 **온도·시간이 동일하고 가압만 다르다** → 두 값의 차이가
+#     경화 효과가 상쇄된 **순수 가압 효과**다. 이것이 대조군으로 옳은 이유.
+#   · 이전에 쓰던 13.22는 as-printed(경화 전)라 경화 효과와 가압 효과가 섞여 있어
+#     "가압의 기여"를 과대평가했다. 히스토리는 docs/front_electrode_model_scope.md §9.
+SCENARIO_AS_CURED = {
+    "label": "as-cured (rho=9 uohm.cm, 90C/30min, no pressure)",
+    "rho_bulk_uohm_cm": 9.0,
+}
+# 엔진 GridDesign 기본값을 그대로 쓰는 시나리오(rho=None). 엔진 기본은 as-printed
+# 13.22 uohm.cm이며 Compare 탭(before/after hot pressing)의 BEFORE 상태와 연동된다 —
+# **가압 효과 비교의 대조군이 아니다**. 대조군은 SCENARIO_AS_CURED를 쓸 것.
 SCENARIO_ENGINE_DEFAULT = {
-    "label": "engine default (rho=13.22 uohm.cm, before-pressing)",
+    "label": "engine default (as-printed, GridDesign rho_bulk)",
     "rho_bulk_uohm_cm": None,
 }
 

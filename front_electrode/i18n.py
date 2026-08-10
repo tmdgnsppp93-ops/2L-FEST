@@ -69,8 +69,9 @@ STRINGS = {
                              "(steps=1 means a single value)",
         "note.busbar_numbers_format": "Format: comma-separated integers "
                                       "(e.g. 6,8,10,12,16,20)",
-        "note.rho_l_compare": "To compare as-printed 13.22 vs measured 4.22, "
-                              "enter: 13.22,4.22",
+        "note.rho_l_compare": "To isolate the pressing effect, enter 9,4.22 — "
+                              "as-cured (90 °C/30 min, no pressure) vs pressed "
+                              "(same heat + 5 MPa).",
         "note.edge_margin": "Silver-free margin at the wafer edge "
                             "(= Griddler \"Edge Gap\"). GUI default 1.0 mm.",
         "note.recovery_assumption": "※ Adjustable KIST project assumption "
@@ -169,7 +170,8 @@ STRINGS = {
         "note.preset_0bb": "(0BB는 M10_0BB_future — mainstream과 분리, 미래기술 전용)",
         "note.range_fields": "아래 range 필드: min / max / steps (steps=1이면 단일값)",
         "note.busbar_numbers_format": "형식: 쉼표 구분 정수 (예: 6,8,10,12,16,20)",
-        "note.rho_l_compare": "as-printed 13.22 / measured 4.22 비교: 13.22,4.22",
+        "note.rho_l_compare": "가압 효과만 보려면 9,4.22 입력 — "
+                              "as-cured(90 °C/30 min, 무가압) vs 가압(동일 열처리 + 5 MPa).",
         "note.edge_margin": "웨이퍼 엣지 실버-프리 마진 "
                             "(= Griddler \"Edge Gap\"). GUI 기본 1.0 mm.",
         "note.recovery_assumption": "※ Adjustable KIST project assumption (보편 물성값 아님)",

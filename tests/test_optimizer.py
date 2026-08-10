@@ -13,6 +13,8 @@ from front_electrode import (  # noqa: E402
     roundtrip_check,
     export_csv,
     SCENARIO_MEASURED,
+    SCENARIO_AS_CURED,
+    SCENARIO_ENGINE_DEFAULT,
 )
 
 AX = 36
@@ -36,8 +38,11 @@ def test_optimize_fingers_sorted_and_best(fest, monkeypatch):
     for r in rs:
         assert isinstance(r["parameters"]["n_fingers"], int)
         assert r["parameters"]["finger_pitch_mm"] > 0
-    # 시나리오 라벨(measured) 부착
-    assert "measured" in opt["best"]["scenario_label"]
+    # 시나리오 라벨 부착 — 문구가 아니라 **어떤 시나리오였는지**를 검사한다.
+    # (v28.48에서 라벨이 "measured ..." → "pressed ..."로 바뀌며 문자열 결합이 깨졌다.)
+    assert opt["best"]["scenario_label"] == SCENARIO_MEASURED["label"]
+    assert abs(opt["best"]["parameters"]["rho_bulk_uohm_cm"]
+               - SCENARIO_MEASURED["rho_bulk_uohm_cm"]) < 1e-9
 
 
 def test_roundtrip(fest, monkeypatch):
@@ -127,3 +132,20 @@ def test_export_csv(fest, tmp_path, monkeypatch):
                 "busbar_number", "busbar_width_mm", "total_loss", "efficiency",
                 "scenario_label"):
         assert col in header, f"CSV에 {col} 누락"
+
+
+def test_scenarios_encode_pressing_comparison():
+    """가압 비교의 두 축이 올바른 값·조건을 담고 있는지 (v28.48).
+
+    9(as-cured)와 4.22(pressed)는 **온도·시간이 같고 가압만 다른** 쌍이라 차이가
+    순수 가압 효과다. 엔진 기본(as-printed)은 대조군이 아니므로 rho를 지정하지 않는다
+    — 이 구분이 깨지면 보고되는 "가압 기여"가 경화 효과까지 포함해 과대평가된다.
+    """
+    assert SCENARIO_AS_CURED["rho_bulk_uohm_cm"] == 9.0
+    assert SCENARIO_MEASURED["rho_bulk_uohm_cm"] == 4.22
+    assert SCENARIO_ENGINE_DEFAULT["rho_bulk_uohm_cm"] is None
+    # 라벨에 측정 조건이 드러나야 한다(조건 없이 숫자만 있으면 오해를 부른다)
+    assert "no pressure" in SCENARIO_AS_CURED["label"]
+    assert "90C/30min" in SCENARIO_AS_CURED["label"]
+    assert "5MPa" in SCENARIO_MEASURED["label"]
+    assert "as-printed" in SCENARIO_ENGINE_DEFAULT["label"]

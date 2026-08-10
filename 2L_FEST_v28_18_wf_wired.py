@@ -175,7 +175,8 @@ v28.45: [feat] front_electrode edge margin + 파라미터 스윕 확장 (2026.08
            rho_contact(ρc)를 다중값으로 스윕(optimize_grid). 물성은 grid로 넘겨
            adapter가 조합별 적용. 기본값=현재값 → 비트동일. 조합수 폭발 경고,
            Top-10·CSV 전 축 컬럼, 히트맵은 BEST의 pitch×busbar 단면(고정축 부제 명시).
-           ρL 13.22(as-printed) vs 4.22(measured) 비교 실행·Δeff 표시 지원.
+           ρL 대조 실행·Δeff 표시 지원(당시 기준 13.22 as-printed vs 4.22;
+           v28.48에서 대조군을 as-cured 9로 교체 — 아래 참조).
 v28.46: [fix/feat/infra] front_electrode 최적화 도구 정비 — 엔진 물리 무변경.
          · [fix] roundtrip_check가 v28.45에서 새로 생긴 스윕 축(edge_margin,
            rho_bulk, rho_contact)을 재입력하지 않아 **다른 설계**(마진 없음·엔진
@@ -290,6 +291,33 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
            않고** 복구해 입력칸 x 정렬을 유지했다. 폭 상수는 _ENTRY_W* 단일 출처.
            test_entry_widths_fit_real_values가 폰트 측정으로 회귀를 막는다.
 
+v28.48: [data] 가압 효과 대조군을 as-printed(13.22) → as-cured(9 µΩ·cm)로 교체.
+         엔진 물리 무변경 — 시나리오·라벨·문구·문서만.
+         · 근거: 가압 기여를 말하려면 **가압만 다른 두 조건**을 비교해야 한다.
+           as-cured 9 = 90°C/30min 무가압, pressed 4.22 = 동일 열처리 + 5MPa
+           (둘 다 4-probe Kelvin). 이전 대조군 13.22는 **경화 전** 값이라
+           경화 효과와 가압 효과가 섞여 가압 기여를 과대평가했다.
+         · optimizer에 SCENARIO_AS_CURED(9.0) 신설. SCENARIO_MEASURED 라벨은
+           "pressed"로, SCENARIO_ENGINE_DEFAULT는 "engine default (as-printed,
+           GridDesign rho_bulk)"로 정정 — 후자는 Compare 탭 BEFORE와 연동된
+           별개 데이터셋이라 **가압 비교의 대조군이 아니다**.
+         · GUI 안내(KO/EN) "13.22,4.22" → "9,4.22" + 조건 명시.
+           CLI --scenario as_cured 추가, --rho-list로 ρ_L 축 스윕 지원.
+           CSV에 FF/Jsc/Voc와 efficiency_rec25 컬럼 추가(보고서에 FF 필요).
+         · [결과] M10 18조합(wf20/wbb0.20/edge1.0/recovery0.25):
+           **가압 기여 = +0.108 %p** (9: 31.0085 → 4.22: 31.1163, 각자 최적설계).
+           recovery OFF에서도 +0.107 %p로 동일 → 회수 가정 무관.
+           이전 기준 +0.342 %p 중 **약 1/3만 가압**, 나머지는 경화 효과였다.
+         · [결과] **최적 설계는 이동하지 않는다** — 두 ρ_L 모두 pitch 1.767/10BB.
+           "ρ_L이 낮아지면 핑거를 덜 촘촘히" 예상은 불성립. edge 1.0mm에서 최적을
+           지배하는 항은 Pc·shading이고 ρ_L은 Pf_finger에만 작용하는데, 최적점
+           부근에서 Pf_finger 몫이 작아(0.107→0.052) 균형점을 못 옮긴다.
+           가압 이득은 버스바 多·pitch 성길수록 커진다(+0.070 ~ +0.198 %p).
+         · sanity: Pf_finger가 0.49배로 감소 = ρ_L비 4.22/9=0.469 재현.
+         · **바꾸지 않은 것(의도)**: 엔진 GridDesign 기본 rho_bulk=13.22e-6과
+           Compare 탭 param_defs(13.22→6.81)는 유지. 바꾸면 invariant 1(단일셀
+           비트 동일)·Compare 탭·비트 핀이 전부 깨진다. docs §9에 명시.
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -387,7 +415,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.47",
+    "version": "v28.48",
     "date": "2026-08-10",
     "name": "wf_wired",
 }

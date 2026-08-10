@@ -18,6 +18,7 @@ from .adapter import (
 )
 from .optimizer import (
     SCENARIO_MEASURED,
+    SCENARIO_AS_CURED,
     SCENARIO_ENGINE_DEFAULT,
     optimize_fingers,
     optimize_grid,
@@ -43,6 +44,7 @@ __all__ = [
     "busbar_shading_breakdown",
     "evaluate_existing_simulation",
     "SCENARIO_MEASURED",
+    "SCENARIO_AS_CURED",
     "SCENARIO_ENGINE_DEFAULT",
     "optimize_fingers",
     "optimize_grid",
