@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """
 2L-FEST PRO v5.0 -- 2-Layer Front Electrode Simulation Tool
 =============================================================
@@ -152,8 +155,11 @@ v28.43: [fix] GUI preview '에러 없이 틀린 값' 버그 — n_probe_points=0
          n_probe==0이면 Griddler식 수집(=10, CLI/핀과 동일)으로 자동 상향하고 meta에
          기록. 모든 front_electrode 경로(optimize_fingers/busbars/direct) 일괄 보호.
          GUI는 자동 상향 사실을 결과·진행표시줄에 명시(0→10). 대형 preview cell
-         시간 안내 추가. 검증: GUI 경로 cell182/pitch2.2/nbb8/f0.25 = 31.32%
-         (CLI 31.398%와 0.075%p 차 = 메쉬밀도 45k vs 81k). 소셀 n_busbars=1은 무영향.
+         시간 안내 추가. 검증: GUI 경로 cell182/pitch2.2/nbb8/f0.25 = 31.392%
+         vs CLI 31.398% (|Δ|=0.006%p). 소셀 n_busbars=1은 무영향.
+         (v28.49 정정: 이 줄에 31.32%/0.075%p가 적혀 있었으나 31.32는 같은 항목
+          앞부분의 n_probe 0→10 중간 진단값이고, 최종 검증값은 커밋 메시지대로
+          31.392%다. 메쉬밀도 차이라는 설명도 그 오기에 딸린 것이라 함께 정정.)
 v28.44: [ui] preview 좌측 그래프 개선(render_preview_plots) — 엔진 무변경.
          이전엔 nbs[0](최소 busbar) 계열 하나만 그려 실제 최적(예 8BB)이 안 보였다.
          · busbar 전 계열을 efficiency vs pitch로 겹쳐 그림(viridis 단조색 + 범례),
@@ -318,6 +324,36 @@ v28.48: [data] 가압 효과 대조군을 as-printed(13.22) → as-cured(9 µΩ�
            Compare 탭 param_defs(13.22→6.81)는 유지. 바꾸면 invariant 1(단일셀
            비트 동일)·Compare 탭·비트 핀이 전부 깨진다. docs §9에 명시.
 
+v28.49: [chore] 저작권 등록 전 정리 — **계산 결과 무변경**(주석·죽은코드·문서만).
+         · [fix] ui.py `except Exception as e` 늦은 바인딩 버그. Python 3는 except
+           블록을 벗어날 때 예외 이름을 삭제하는데 lambda가 그 이름을 참조하고
+           있어, Run 중 예외가 나면 after() 실행 시 NameError → **오류 문구도 안 뜨고
+           Run 버튼이 영구 비활성**됐다(입력 오류 시 GUI가 멈춘 것처럼 보임).
+           메시지를 즉시 문자열로 굳혀 기본값 인자로 포획. 회귀 테스트 추가
+           (버그를 되돌리면 NameError로 실패함을 확인).
+         · [dead] ui.py `pitches = pitches * 1` 무동작 줄 제거 — list*1은 동일
+           리스트 복사라 가드 전체가 no-op였다. 단일 pitch 처리는 원래
+           render_preview_plots의 single_pitch 분기가 한다.
+         · [dead] optimizer.optimize_busbars 제거 — 호출처 0. 풀 M10 버스바 스윕은
+           병렬 드라이버 run_busbars가 담당하고(워커별 독립 엔진), 파라미터 공간은
+           optimize_grid가 덮는다. 모듈 docstring도 실제 구조에 맞게 정정.
+         · [doc] v28.43 항목 검증값 오기 정정: 31.32%/0.075%p → **31.392%/0.006%p**
+           (31.32는 같은 항목 앞부분의 n_probe 0→10 중간 진단값이었고, 메쉬밀도
+           설명도 그 오기에 딸린 것). front_electrode/__init__ docstring이 Phase 2/3을
+           "이후 추가"로 서술하던 것, adapter의 efficiency 주석에 Pin 정규화가 빠져
+           있던 것 정정.
+         · [등록] 전 Python 소스 40개에 SPDX 저작권·라이선스 헤더 일관 부여
+           (모듈 docstring 보존 확인). requirements에 pytest(개발용)·solcore(별도
+           venv 전용) 누락 명시. scripts/README.md 신설 — CSV별 내용·인용처·재생성
+           비용을 적어 "재생성 가능하나 보존" 근거를 남김. _review_extract.txt는
+           엔진의 알려진 한계(shading A_ov 과다 차감 등)가 유일하게 기록된 문서라
+           보존하고 README에 정체 명시.
+         · 점검했으나 문제 없던 것: 단위 변환 헬퍼(_mm_to_cm/_um_to_cm/
+           _uohm_cm_to_ohm_cm)는 전 호출부에서 정확히 1회씩·역변환도 일관.
+           Pin 정규화는 recovery 관련 3개 지점 모두 엔진 출력에서 역산해 적용 중.
+           parameters dict는 입력이 아니라 **실제 빌드된 지오메트리**에서 읽는다.
+           TODO/FIXME 0건. pyflakes 0건.
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -415,7 +451,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.48",
+    "version": "v28.49",
     "date": "2026-08-10",
     "name": "wf_wired",
 }

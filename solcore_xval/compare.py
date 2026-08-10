@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Step (3b): 2L-FEST (FEM) vs Solcore Quasi-3D (SPICE) on the SAME single cell.
 
 Drives the real 2L-FEST single-cell solver, rasterizes its exact metal grid into

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Adapter — 기존 2L-FEST 엔진 호출 래퍼 + busbar 반사광 회수(recovery).
 
     기존 엔진(fest 모듈)
@@ -325,7 +328,9 @@ def evaluate_existing_simulation(
             "optical_loss": optical_loss,                      # mW/cm² (회수 반영)
             "electrical_loss": electrical_loss,                # mW/cm²
             "total_loss": total_loss,                          # mW/cm²
-            "efficiency": efficiency,                          # % — 회수 반영(=iv["Eff"]+recovered_power; f=0이면 iv["Eff"])
+            # % — 회수 반영. = iv["Eff"] + recovered_power/Pin×100 (f=0이면 iv["Eff"]).
+            # Pin 정규화를 빼먹지 말 것(v28.42 [2-fix-a]) — 아래 계산부와 같은 식이다.
+            "efficiency": efficiency,
         },
         # 회귀/round-trip 검증용 원본 엔진 값(무보정)
         "engine_raw": {

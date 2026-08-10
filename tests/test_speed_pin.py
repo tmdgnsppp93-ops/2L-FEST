@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """M10 속도개선 회귀 핀 — measured 8BB/0.20mm/finger 20µm·1.77mm.
 
 Phase B 속도 최적화(엔진 수정)가 결과를 바꾸지 않음을 보장하는 authoritative 핀.

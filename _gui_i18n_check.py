@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """GUI 레이아웃 · i18n 검사 (수치 기반, 스크린샷 불필요).
 
 왜 스크린샷을 안 쓰나

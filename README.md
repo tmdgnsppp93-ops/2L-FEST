@@ -146,6 +146,12 @@ build_app.bat           # Windows -> dist\"2L-FEST PRO"\"2L-FEST PRO.exe"
 | `_diag_bifacial.py` | bifacial 후면조도 진단 (top/bottom 전류정합 분석) |
 | `_gui_i18n_check.py` | 실제 GUI 위젯 좌표로 한/영 번역 전수 + 레이아웃 넘침 + Run/Save 가시성 검사 (스크린샷 불필요, 엔진 미로드) |
 
+`_review_extract.txt`는 실행 도구가 아니라 **코드 리뷰 결과 기록**이다(지오메트리 8건,
+검증 5건). `CellGeometry.shading_fraction`의 `A_ov` 과다 차감 등 **엔진의 알려진 한계가
+여기에만 기록돼 있어** 삭제하지 않고 보존한다. 해당 항목들은 기본 설정(pad=0,
+busbar_length_frac=1)에서는 발현되지 않으며, 영향 크기도 shading 0.003 %abs 수준으로
+검증돼 있다.
+
 ```bash
 python _validate_tandem.py
 python _validate_griddler.py

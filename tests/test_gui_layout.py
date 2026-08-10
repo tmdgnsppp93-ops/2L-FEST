@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """GUI 레이아웃 회귀 테스트 — 실제 Tk 위젯 좌표로 판정 (v28.47).
 
 왜 필요한가: v28.47 첫 판에서 영문 안내가 2줄로 늘어나며 사이드바 하단이 창 밖으로

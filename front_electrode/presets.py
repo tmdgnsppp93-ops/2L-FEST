@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """front_electrode presets — M10 전면전극 탐색범위 (별도 데이터 파일).
 
 지시서 §3a. UI/optimizer에 값을 하드코딩하지 않고 여기에 모아 둔다. 모든 범위는

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Step (3a): drive 2L-FEST single-cell solver headlessly, dump IV + geometry.
 
 Goal: get (V, J) curve + metrics from the REAL 2L-FEST FEM solver for the

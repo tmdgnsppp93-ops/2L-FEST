@@ -1,9 +1,12 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Headless-driven GUI smoke test: instantiates the REAL FESTProApp, patches all
 blocking dialogs/messageboxes, and invokes each user-facing handler
 programmatically (input parsing, tab rendering, file save/load) — catching
 exceptions and verifying outputs. Never enters mainloop.
 """
-import importlib.util, os, tempfile, traceback, numpy as np
+import importlib.util, os, tempfile, traceback
 
 spec = importlib.util.spec_from_file_location('fest', '2L_FEST_v28_18_wf_wired.py')
 m = importlib.util.module_from_spec(spec)

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Phase 2 — optimizer 테스트 (작은 config로 headless 검증).
 
 실제 M10 stage-2는 1조합 ≈17분이라 pytest에서 못 돌린다. optimizer 함수는

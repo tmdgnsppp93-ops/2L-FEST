@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Tandem report figure for Dr. Kim.
 
 2L-FEST solves the perovskite/Si 2T tandem (Voc~1.9V, Eff~30.6%); Solcore

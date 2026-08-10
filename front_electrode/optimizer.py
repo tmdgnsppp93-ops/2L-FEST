@@ -1,15 +1,21 @@
-"""Optimizer — 전면전극 grid search (2단계 분리).
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
+"""Optimizer — 전면전극 grid search.
 
-승인된 접근(Phase 0 실측 근거): 풀-M10 FEM은 1조합 ≈17분이라 4-파라미터
-grid search 불가. 파라미터를 물리적 성격으로 나눠 각자 맞는 곳에서 최적화한다.
+풀-M10 FEM은 1조합 ≈17분이라 무제한 grid search가 불가능하다. 두 갈래를 제공한다.
 
-  Stage 1 (작은 대표 셀, 예 39mm): finger width × finger pitch 만 스윕.
+  optimize_fingers (Stage 1, 작은 대표 셀 예 39mm): finger width × pitch 만 스윕.
      버스바는 대표값 하나로 고정. 프랙셔널 손실은 pitch 지배 → 최적 finger
      설계가 셀 크기에 거의 불변. 대표 셀은 버스바 간격의 3배 이상을 담아야
      finger 저항이 실제 M10과 맞는다(사용자 지시).
-  Stage 2 (풀 M10): Stage 1의 최적 finger 설계를 고정하고 busbar number ×
-     busbar width 만 스윕. 버스바 개수 이득(L_seg = W/n_bb)은 셀 크기에
-     비례하는 절대 길이라 작은 셀로 재현 불가 → 반드시 풀 M10에서 확정.
+  optimize_grid: finger width × pitch × busbar 수 × busbar 폭 × ρ_L × ρ_c 전 축
+     Cartesian 스윕. GUI preview와 CLI `--stage grid`가 쓴다.
+
+풀 M10의 버스바 스윕(옛 Stage 2)은 조합당 비용 때문에 **병렬 드라이버**
+`scripts/optimize_m10.py:run_busbars`가 담당한다 — 워커마다 독립 엔진을 띄우고
+adapter를 직접 호출한다. 같은 일을 하던 순차 함수 optimize_busbars는 호출처가
+없어 v28.49에서 제거했다(optimize_grid가 같은 공간을 덮는다).
 
 이 모듈은 새 물리/새 효율식을 만들지 않는다. adapter.evaluate_existing_simulation
 (기존 엔진 래퍼)을 반복 호출하고, 기존 total_loss/efficiency로 정렬만 한다.
@@ -151,26 +157,6 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
     out["n_probe_auto_bumped"] = any(m.get("n_probe_auto_bumped") for m in metas)
     out["n_combos"] = len(grid_list)
     return out
-
-
-def optimize_busbars(fest, *, cell_mm=182.0, finger_width_um, finger_pitch_mm,
-                     n_busbars_list, busbar_widths_mm, n_probe_points=10,
-                     edge_margin_mm=0.0,
-                     scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
-                     axis_segments_override=None, target_nodes=None,
-                     objective="total_loss", progress=None):
-    """Stage 2 — 풀 M10에서 finger 고정 + busbar number × width 스윕."""
-    grid_list = []
-    for n_bb, w_bb in itertools.product(n_busbars_list, busbar_widths_mm):
-        grid_list.append(dict(
-            cell_w_mm=cell_mm, cell_h_mm=cell_mm,
-            finger_spacing_mm=finger_pitch_mm, w_finger_um=finger_width_um,
-            n_busbars=n_bb, w_busbar_mm=w_bb, n_probe_points=n_probe_points,
-            edge_margin_mm=edge_margin_mm))
-    return _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
-                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
-                  target_nodes=target_nodes, objective=objective, progress=progress,
-                  stage="busbars")
 
 
 def roundtrip_check(fest, best, *, scenario=None, recovery_factor=0.0, mode="tandem",

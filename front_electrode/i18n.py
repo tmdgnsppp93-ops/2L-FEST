@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """front_electrode i18n — 한국어 / English 문자열 중앙 저장소 (v28.47).
 
 배경: 외국인 연구원이 이 툴을 쓰게 되면서 GUI 문자열의 한국어 하드코딩을 걷어낸다.

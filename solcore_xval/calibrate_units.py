@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Step (2): unit calibration — Solcore Quasi-3D vs closed-form 2-diode.
 
 Uniform cell, negligible sheet resistance -> Solcore must reproduce the analytic

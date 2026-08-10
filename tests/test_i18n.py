@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """i18n 테스트 (v28.47) — 키 누락·포맷 불일치·언어 무관 결과 보장.
 
 핵심은 **키 누락 자동 검출**이다. 한쪽 언어에만 키를 넣고 잊으면 GUI에서 그 자리만

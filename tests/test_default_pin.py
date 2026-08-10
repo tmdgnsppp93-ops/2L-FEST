@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Pin test: DEFAULT (Phase B) path bit-preservation (v28.33).
 
 Default DiodeParams (Rs_junction=5000, Rc_junction=0.1), FEST_LEGACY_LOCAL_MATCH

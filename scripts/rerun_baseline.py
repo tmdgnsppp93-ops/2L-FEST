@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Re-run the two tandem baselines under the v28.33 default (Phase B interlayer).
 
 Headless (no GUI): reuses the tests/conftest.py mock harness to import the app

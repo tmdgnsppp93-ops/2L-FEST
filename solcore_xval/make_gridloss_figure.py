@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """M10 front-grid resistive loss before/after hot pressing — report figure.
 
 High-mesh 2L-FEST result (mesh-converged; matches Rehman 2023 analytical and

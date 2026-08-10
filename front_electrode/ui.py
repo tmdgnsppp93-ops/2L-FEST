@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """front_electrode UI — 최적화 창 (기존 GUI에 버튼 하나로 연결, 최소 침습).
 
 지시서 §3b. 새 페이지를 만들지 않고, 기존 결과화면의 "Optimize Electrode" 버튼이
@@ -538,9 +541,9 @@ def open_optimizer_window(fest, parent):
         try:
             cell = float(e_cell.get())
             wfs = _range_vals(e_wfmin, e_wfmax, e_wfn)
+            # 단일 pitch도 허용한다 — 그래프 쪽에서 라인 대신 마커로 그린다
+            # (render_preview_plots의 single_pitch 분기). 여기서 따로 손댈 것 없음.
             pitches = _range_vals(e_pmin, e_pmax, e_pn)
-            if len(pitches) < 2:
-                pitches = pitches * 1   # 단일 pitch 허용(그래프는 마커만)
             nbbs = [int(x) for x in str(e_nbb.get()).split(",") if x.strip()]
             wbbs = _range_vals(e_wbmin, e_wbmax, e_wbn)
             rho_l = _list_vals(e_rhol)
@@ -583,9 +586,14 @@ def open_optimizer_window(fest, parent):
             f0 = _current_f()
             parent.after(0, lambda: (_render_results(f0),
                                      run_btn.configure(state="normal")))
-        except Exception as e:  # GUI가 죽지 않도록
-            parent.after(0, lambda: (prog.configure(text=T("prog.error", msg=e)),
-                                     run_btn.configure(state="normal")))
+        except Exception as exc:  # GUI가 죽지 않도록
+            # Python 3는 except 블록을 벗어날 때 예외 이름을 삭제한다. lambda가 그
+            # 이름을 참조하면 나중에 after()가 실행될 때 NameError가 나서 **오류
+            # 문구도 안 뜨고 Run 버튼이 영구 비활성**된다. 메시지를 지금 문자열로
+            # 굳혀서 기본값 인자로 잡아둔다.
+            _msg = str(exc)
+            parent.after(0, lambda m=_msg: (prog.configure(text=T("prog.error", msg=m)),
+                                            run_btn.configure(state="normal")))
 
     def _on_run():
         run_btn.configure(state="disabled")
@@ -634,6 +642,7 @@ def open_optimizer_window(fest, parent):
         "run_btn": run_btn,
         "save_btn": save_btn,
         # 언어 전환 후 결과·그래프가 실제로 다시 그려졌는지 검사하기 위한 핸들.
+        "do_run": _do_run,
         "result_textbox": txt,
         "figure": fig,
         "progress_label": prog,

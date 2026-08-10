@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Headless audit of 2L-FEST computation surface across all modes/paths.
 Exercises geometry variants, solver modes, analysis methods, 0D models,
 spatial maps, mesh metrics, and report-page rendering. Reports PASS/FAIL.
@@ -37,7 +40,7 @@ P = dict(rm=1.6e-6, hf=10e-4, wf=40e-4, wb=50e-4, cf=0.785, rc=1e-3, Rs=55.0)
 def quick_iv(S, dp, mode, npts=6):
     Vs,Js,iv = S.calc_iv(P['rm'],P['hf'],P['wf'],P['rc'],P['Rs'],P['cf'],dp,mode=mode,npts=npts,wb=P['wb'])
     assert np.isfinite(iv['Eff']) and iv['Eff']>0, f"bad Eff={iv.get('Eff')}"
-    assert iv['Jsc']>0 and iv['Voc']>0, f"bad Jsc/Voc"
+    assert iv['Jsc']>0 and iv['Voc']>0, f"bad Jsc={iv['Jsc']} Voc={iv['Voc']}"
     return f"Eff={iv['Eff']:.2f} Jsc={iv['Jsc']:.2f} Voc={iv['Voc']:.3f} FF={iv['FF']:.1f}"
 
 # ---------- A. GEOMETRY / MESH VARIANTS ----------
@@ -155,7 +158,7 @@ record("MESH quality + distribution metrics", mesh_metrics)
 
 # ---------- G. REPORT PAGES (render all 8 to Agg) ----------
 def build_full_cache():
-    dp = DiodeParams(); S = S0; GEO = m.GEO
+    dp = DiodeParams(); S = S0
     rm,hf,wf,wb,cf,rc,rs = P['rm'],P['hf'],P['wf'],P['wb'],P['cf'],P['rc'],P['Rs']
     bp = (rm,hf,wf,wb,cf,rc,rs); ap = bp
     Vs,Js,iv = S.calc_iv(rm,hf,wf,rc,rs,cf,dp,mode='tandem',npts=6,wb=wb)

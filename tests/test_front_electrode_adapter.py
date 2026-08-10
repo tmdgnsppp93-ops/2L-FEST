@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Phase 1 — front_electrode adapter + busbar recovery 테스트.
 
 절대 원칙 검증: recovery OFF일 때 adapter 결과가 기존 엔진 직접 호출과 완전히

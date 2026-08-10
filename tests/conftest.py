@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Headless test infrastructure for 2L-FEST (Phase 0).
 
 Loads the single-file GUI application ``2L_FEST_v28_18_wf_wired.py`` as a

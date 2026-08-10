@@ -11,3 +11,12 @@ customtkinter>=5.2
 # --- 선택적 의존성 (Optional) ---
 # DXF 그리드 도면 가져오기/내보내기 기능 사용 시에만 필요
 ezdxf>=1.0
+
+# --- 개발/검증용 (앱 실행에는 불필요) ---
+# 단위·회귀 테스트: pytest -m "not slow"
+# pytest>=8.0
+#
+# --- 별도 환경에서만 필요 (Optional, 본 저장소에 미포함) ---
+# solcore_xval/ 의 Solcore Quasi-3D 교차검증 스크립트는 Solcore + ngspice가 깔린
+# **별도 venv**에서 실행한다. 2L-FEST 본체 실행에는 전혀 필요 없다.
+# solcore>=5.10  ; ngspice(시스템 패키지)

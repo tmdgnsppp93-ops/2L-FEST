@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """M10 (182x182 mm) front-grid resistive loss — finger + busbar — before/after
 hot pressing. FAST path: single-cell mode driven at the TANDEM operating current
 (grid loss is an I^2R of the front grid -> same whether tandem or single below it),

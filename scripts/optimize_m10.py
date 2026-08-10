@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """M10 전면전극 2단계 최적화 — headless 드라이버 (GUI 불필요).
 
 Stage 1 (39mm 대표 소셀): finger width × pitch 스윕 → 최적 finger 설계 확정.

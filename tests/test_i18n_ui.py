@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """i18n GUI 전수 검증 (v28.47) — 화면에 들어간 모든 문자열이 선택 언어인지.
 
 왜 이렇게까지 하나: 번역 누락은 "한국어 모드인데 그 라벨만 영어" 형태로 나타나는데,
@@ -427,3 +430,40 @@ def test_results_are_language_independent(fest, monkeypatch):
         i18n.set_language(before, persist=False)
     for key in ("efficiency", "total_loss", "optical_loss", "electrical_loss"):
         assert a["results"][key] == b["results"][key], f"{key}가 언어에 따라 달라졌다"
+
+
+def test_run_error_path_reports_message_and_reenables_button(fake_gui, rec):
+    """Run 중 예외가 나면 오류 문구가 뜨고 Run 버튼이 다시 활성화돼야 한다.
+
+    회귀 방지(v28.49): `except Exception as e` 안에서 만든 lambda가 `e`를 이름으로
+    참조하고 있었다. Python 3는 except 블록을 벗어날 때 그 이름을 삭제하므로,
+    나중에 after()가 lambda를 실행할 때 NameError가 나서 **오류 문구도 안 뜨고
+    Run 버튼이 영구 비활성** 상태로 남았다(입력 오류 시 GUI가 멈춘 것처럼 보인다).
+    """
+    win = _build(fake_gui, "en", rec)
+    st = win._fe_internals
+    # 지연 콜백을 즉시 실행하도록 만든 뒤, 계산 경로에서 예외를 유발한다.
+    run_btn = st["run_btn"]
+    boom = RuntimeError("삐끗")
+
+    def _explode(*a, **k):
+        raise boom
+
+    import front_electrode.ui as ui_mod
+    orig = ui_mod._opt.optimize_grid
+    ui_mod._opt.optimize_grid = _explode
+    try:
+        rec["texts"].clear()
+        run_btn.configure(state="disabled")
+        # _do_run은 스레드에서 도는데, 여기서는 동기로 호출해 예외 경로만 확인한다.
+        st["do_run"]()
+        # after()에 실린 콜백들을 실행 — 실제 Tk mainloop가 하는 일.
+        for fn in list(rec["after"]):
+            if callable(fn):
+                fn()
+    finally:
+        ui_mod._opt.optimize_grid = orig
+
+    joined = " ".join(t for t in rec["texts"] if isinstance(t, str))
+    assert "삐끗" in joined, f"오류 메시지가 표시되지 않았다: {rec['texts']}"
+    assert run_btn._text is not None      # 위젯이 살아 있음

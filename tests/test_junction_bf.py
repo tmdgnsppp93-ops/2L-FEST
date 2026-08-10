@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
+#   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
+# SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Phase 3 (v28.35): Phase-B bifacial junction solver — regression guards.
 
 DIAGNOSIS (see commit / changelog): the spec's premise for Phase 3 — a Vint-Vr
