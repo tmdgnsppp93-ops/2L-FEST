@@ -320,7 +320,7 @@ def _grid_sweep_key(wf, pitch, n_bb, w_bb, edge, rho=None):
 
 def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
              resume=False, csv_path=None, workers=1, target_nodes=82000, npts=14,
-             rho_list=None):
+             rho_list=None, edge_list=None):
     """결합 스윕 — 풀 M10에서 finger pitch/width와 busbar를 **동시에** 스윕.
 
     필요성(docs §5): 기존 2단계 분리는 Stage 1(39mm 소셀, 3BB)에서 정한 finger
@@ -333,17 +333,24 @@ def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
     쓰되, resume 키만 sweep_key(입력값 문자열)로 바꾼다 — 축이 늘어 (n_bb,w_bb)로는
     조합을 구분할 수 없기 때문이다.
     """
+    edges = [float(x) for x in edge_list] if edge_list else [float(edge_margin or 0.0)]
     if csv_path is None:
         tag = "measured" if "measured" in scenario["label"] else "default"
-        if float(edge_margin or 0.0) > 0.0:
-            tag += f"_edge{float(edge_margin):g}mm"
+        if len(edges) > 1:
+            # 마진이 축이면 파일명에 단일 값을 박을 수 없다 — 스윕임을 표시한다.
+            tag += "_edgesweep"
+        elif edges[0] > 0.0:
+            tag += f"_edge{edges[0]:g}mm"
         csv_path = os.path.join(_HERE, f"opt_grid_m10_{tag}.csv")
     rhos = list(rho_list) if rho_list else [None]
-    combos = list(itertools.product(wf_list, pitch_list, nbb_list, wbb_list, rhos))
+    combos = list(itertools.product(wf_list, pitch_list, nbb_list, wbb_list, rhos, edges))
     print(f"\n=== Grid stage (coupled finger×busbar, M10 182mm) — {scenario['label']} ===")
     print(f"    wf={wf_list}um  pitch={pitch_list}mm  nbb={nbb_list}  wbb={wbb_list}mm"
-          f"  edge_margin={float(edge_margin or 0.0):g}mm"
+          f"  edge_margin={edges if len(edges) > 1 else f'{edges[0]:g}mm'}"
           f"  rho_L={rhos if rho_list else '(scenario 기본)'}")
+    if len(edges) > 1:
+        print("    ※ edge margin은 공정 제약이라 효율이 마진에 단조 감소한다 — 전역 BEST를"
+              "\n      고르지 말고 **마진별 BEST**(아래 요약)를 볼 것.")
     print(f"    조합 {len(combos)}개 × 풀 M10(1조합 ≈17분). CSV(append): {csv_path}")
 
     done = set()
@@ -356,14 +363,14 @@ def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
 
     header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
     pending = []
-    for wf, pitch, n_bb, w_bb, rho in combos:
-        key = _grid_sweep_key(wf, pitch, n_bb, w_bb, edge_margin, rho)
+    for wf, pitch, n_bb, w_bb, rho, edge in combos:
+        key = _grid_sweep_key(wf, pitch, n_bb, w_bb, edge, rho)
         if key in done:
             print(f"    skip {key} (완료됨)", flush=True)
             continue
         pending.append(dict(n_bb=n_bb, w_bb=w_bb, wf=wf, pitch=pitch,
                             scenario=scenario, target_nodes=target_nodes, npts=npts,
-                            edge_margin=edge_margin, sweep_key=key, rho_bulk=rho))
+                            edge_margin=edge, sweep_key=key, rho_bulk=rho))
 
     def _append_row(row):
         nonlocal header_written
@@ -392,17 +399,33 @@ def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
             for row in pool.imap_unordered(_eval_combo, pending):
                 _append_row(row)
 
-    best = None
     with open(csv_path, encoding="utf-8-sig") as fh:
-        for row in csv.DictReader(fh):
-            e = float(row["efficiency"])
-            if best is None or e > best[0]:
-                best = (e, row)
-    if best is not None:
-        r = best[1]
-        print(f"\n>>> BEST [grid, by efficiency] {r.get('sweep_key','')} "
-              f"eff={float(r['efficiency']):.4f}%  "
-              f"(nf={int(float(r['n_fingers']))} pitch_real={float(r['finger_pitch_mm']):.3f}mm)")
+        all_rows = list(csv.DictReader(fh))
+    if not all_rows:
+        return csv_path
+
+    def _fmt(r):
+        return (f"{r.get('sweep_key','')} eff={float(r['efficiency']):.4f}%  "
+                f"(nf={int(float(r['n_fingers']))} "
+                f"pitch_real={float(r['finger_pitch_mm']):.3f}mm)")
+
+    if len(edges) > 1:
+        # 마진별 최적 — 전역 argmax는 항상 최소 마진이라 의미가 없다.
+        print("\n>>> BEST per edge margin (마진은 공정 제약: 고르는 값이 아니라 대가를 보는 값)")
+        per = {}
+        for r in all_rows:
+            e = round(float(r.get("edge_margin_mm", 0.0) or 0.0), 6)
+            if e not in per or float(r["efficiency"]) > float(per[e]["efficiency"]):
+                per[e] = r
+        ref = None
+        for e in sorted(per):
+            eff = float(per[e]["efficiency"])
+            if ref is None:
+                ref = eff
+            print(f"    edge {e:>4.2f}mm : {_fmt(per[e])}   최소마진 대비 {eff - ref:+.4f}%p")
+    else:
+        best = max(all_rows, key=lambda r: float(r["efficiency"]))
+        print(f"\n>>> BEST [grid, by efficiency] {_fmt(best)}")
     return csv_path
 
 
@@ -438,6 +461,10 @@ def main():
     ap.add_argument("--rho-list", dest="rho_list", type=str, default=None,
                     help="grid stage ρ_L[µΩ·cm] 목록, 쉼표구분 (예: 9,4.22 = as-cured vs "
                          "가압소결). 미지정이면 scenario의 물성을 쓴다.")
+    ap.add_argument("--edge-margin-list", dest="edge_margin_list", type=str, default=None,
+                    help="grid stage 엣지 마진[mm] 목록, 쉼표구분 (예: 0,0.5,1.0,1.5). "
+                         "마진은 공정 제약이라 효율이 단조 감소한다 — 최적을 고르는 축이 "
+                         "아니라 **대가를 재는 축**이며, 요약은 마진별 BEST로 출력된다.")
     ap.add_argument("--edge-margin", dest="edge_margin", type=float, default=0.0,
                     help="엣지 실버-프리 마진[mm] (v28.45 랩미팅 지시; GUI 기본 1.0). "
                          "0=기존 결과와 비트 동일. >0이면 CSV 파일명에 태그가 붙어 "
@@ -470,7 +497,9 @@ def main():
                      workers=args.workers, target_nodes=args.target_nodes,
                      npts=args.npts, csv_path=args.csv_path,
                      rho_list=([float(x) for x in args.rho_list.split(",")]
-                               if args.rho_list else None))
+                               if args.rho_list else None),
+                     edge_list=([float(x) for x in args.edge_margin_list.split(",")]
+                                if args.edge_margin_list else None))
 
 
 if __name__ == "__main__":

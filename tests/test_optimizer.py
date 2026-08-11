@@ -152,3 +152,41 @@ def test_scenarios_encode_pressing_comparison():
     assert "90C/30min" in SCENARIO_AS_CURED["label"]
     assert "5MPa" in SCENARIO_MEASURED["label"]
     assert "as-printed" in SCENARIO_ENGINE_DEFAULT["label"]
+
+
+def test_edge_margin_sweep_axis(fest, monkeypatch):
+    """edge_margin을 축으로 스윕하면 마진별 최적이 따로 나와야 한다 (v28.50).
+
+    마진은 설계 자유도가 아니라 공정 제약이라 효율이 마진에 단조 감소한다. 전역
+    argmax를 쓰면 **항상 최소 마진**이 뽑혀 무의미하므로 best_by_edge를 제공한다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    opt = optimize_grid(
+        fest, cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+        n_busbars_list=[2], busbar_widths_mm=[0.2],
+        edge_margins_mm=[0.0, 0.5], n_probe_points=10,
+        scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS)
+    assert opt["n_combos"] == 2
+    margins = sorted(round(r["parameters"]["edge_margin_mm"], 6)
+                     for r in opt["results"])
+    assert margins == [0.0, 0.5], "마진이 조합별로 적용되지 않았다"
+
+    by = opt["best_by_edge"]
+    assert set(by) == {0.0, 0.5}, "마진별 최적이 없다"
+    # 마진이 커지면 금속·접촉 면적이 줄어 효율이 낮아진다(단조 감소)
+    assert by[0.5]["results"]["efficiency"] < by[0.0]["results"]["efficiency"]
+    # 전역 best는 항상 최소 마진 → 이것만 보면 안 된다는 사실 자체를 고정
+    assert opt["best"]["parameters"]["edge_margin_mm"] == 0.0
+
+
+def test_edge_margin_scalar_path_unchanged(fest, monkeypatch):
+    """edge_margins_mm 미지정 시 기존 스칼라 경로와 비트 동일 + best_by_edge 없음."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    kw = dict(cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+              n_busbars_list=[2], busbar_widths_mm=[0.2], n_probe_points=10,
+              scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS)
+    a = optimize_grid(fest, edge_margin_mm=0.5, **kw)
+    b = optimize_grid(fest, edge_margin_mm=0.5, edge_margins_mm=None, **kw)
+    assert "best_by_edge" not in a, "단일 마진인데 마진별 최적이 생겼다"
+    assert (a["best"]["results"]["efficiency"]
+            == b["best"]["results"]["efficiency"]), "스칼라 경로가 비트 동일하지 않다"

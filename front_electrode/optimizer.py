@@ -123,26 +123,38 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
 
 def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
                   n_busbars_list, busbar_widths_mm, rho_bulk_list=(None,),
-                  rho_contact_list=(None,), edge_margin_mm=0.0, n_probe_points=0,
+                  rho_contact_list=(None,), edge_margin_mm=0.0,
+                  edge_margins_mm=None, n_probe_points=0,
                   scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
                   axis_segments_override=None, target_nodes=None,
                   objective="efficiency", progress=None):
     """전 축 Cartesian 스윕 (v28.45, 2026.08.06 랩미팅).
 
     축: finger_width × finger_pitch × busbar_number × busbar_width ×
-        rho_bulk × rho_contact. 각 축은 리스트. rho_bulk_list/rho_contact_list의
-        None 항목은 override 없음(scenario/엔진 기본값) → 기본 상태 비트 동일.
+        rho_bulk × rho_contact (× edge_margin). 각 축은 리스트.
+        rho_bulk_list/rho_contact_list의 None 항목은 override 없음(scenario/엔진
+        기본값) → 기본 상태 비트 동일.
     물성(rho_bulk/rho_contact)과 edge_margin은 grid dict로 넘겨 adapter 초크포인트가
     조합별로 적용한다. 반환은 _sweep과 동일 구조 + n_combos.
+
+    edge_margin 스윕(v28.50): `edge_margins_mm`에 리스트를 주면 마진도 축이 된다.
+    미지정이면 스칼라 `edge_margin_mm` 하나만 쓴다(기존과 비트 동일).
+
+    ⚠ **마진은 설계 자유도가 아니라 공정 제약이다.** 실측상 마진이 커질수록 효율이
+    단조 감소하므로(금속·접촉 면적이 줄어든다), 마진을 최적화 축으로 보고 전체
+    argmax를 취하면 **항상 가장 작은 마진**이 뽑혀 무의미하다. 그래서 마진을 여러 개
+    준 경우 `best`(전역 최적) 대신 **`best_by_edge`(마진별 최적)** 를 보라. 답해야 할
+    질문은 "어떤 마진을 고를까"가 아니라 "이 마진의 대가가 얼마인가"다.
     """
+    edges = list(edge_margins_mm) if edge_margins_mm else [edge_margin_mm]
     grid_list = []
-    for wf, pitch, nbb, wbb, rho_l, rho_c in itertools.product(
+    for wf, pitch, nbb, wbb, rho_l, rho_c, edge in itertools.product(
             finger_widths_um, finger_pitches_mm, n_busbars_list,
-            busbar_widths_mm, rho_bulk_list, rho_contact_list):
+            busbar_widths_mm, rho_bulk_list, rho_contact_list, edges):
         d = dict(cell_w_mm=cell_mm, cell_h_mm=cell_mm,
                  finger_spacing_mm=pitch, w_finger_um=wf,
                  n_busbars=nbb, w_busbar_mm=wbb,
-                 n_probe_points=n_probe_points, edge_margin_mm=edge_margin_mm)
+                 n_probe_points=n_probe_points, edge_margin_mm=edge)
         if rho_l is not None:
             d["rho_bulk_uohm_cm"] = rho_l
         if rho_c is not None:
@@ -156,6 +168,16 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
     out["n_probe_points"] = metas[0].get("n_probe_points", n_probe_points) if metas else n_probe_points
     out["n_probe_auto_bumped"] = any(m.get("n_probe_auto_bumped") for m in metas)
     out["n_combos"] = len(grid_list)
+    # 마진을 여러 개 스윕했다면 마진별 최적을 따로 제공한다 — 전역 best는 항상
+    # 최소 마진이 되어 오해를 부른다(docstring 참조).
+    if len(edges) > 1:
+        by_edge = {}
+        for r in out["results"]:
+            e = round(float(r["parameters"].get("edge_margin_mm", 0.0)), 6)
+            if e not in by_edge or (r["results"]["efficiency"]
+                                    > by_edge[e]["results"]["efficiency"]):
+                by_edge[e] = r
+        out["best_by_edge"] = dict(sorted(by_edge.items()))
     return out
 
 
