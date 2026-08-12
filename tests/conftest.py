@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Headless test infrastructure for 2L-FEST (Phase 0).
 
-Loads the single-file GUI application ``2L_FEST_v28_18_wf_wired.py`` as a
+Loads the single-file GUI application ``2L_FEST.py`` as a
 plain module named ``fest`` WITHOUT a display or a real Tk/CustomTkinter
 install, so the physics core (CellGeometry / generate_mesh / classify_nodes /
 FESTSolver) can be unit-tested.
@@ -109,7 +109,7 @@ def _install_gui_mocks():
 # --- 3. load the app as `fest` ----------------------------------------------
 _APP_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "2L_FEST_v28_18_wf_wired.py",
+    "2L_FEST.py",
 )
 
 

@@ -14,7 +14,7 @@ warnings.filterwarnings("ignore")
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try:

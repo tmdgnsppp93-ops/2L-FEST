@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """front_electrode — M10 전면전극 최적 설계 부가 모듈.
 
-기존 2L-FEST 계산 엔진(2L_FEST_..._wf_wired.py)을 **수정하지 않고** 감싸는
+기존 2L-FEST 계산 엔진(2L_FEST.py)을 **수정하지 않고** 감싸는
 별도 패키지. 구성: adapter(엔진 호출 래퍼 + busbar 반사광 회수),
 optimizer(grid search), presets(ITRPV 탐색범위), ui(최적화 창), i18n(한/영 문자열).
 

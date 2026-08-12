@@ -22,7 +22,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 EG_TOP, EG_BOT = 1.68, 1.12   # perovskite / Si bandgaps (Solcore ngspice diode; neutral at T=Tnom)
 
 # ---- 2L-FEST tandem (Phase A) ----
-FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)

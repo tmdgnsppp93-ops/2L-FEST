@@ -6,7 +6,7 @@
 # =============================================================
 cd "$(dirname "$0")" || exit 1
 
-APP="2L_FEST_v28_18_wf_wired.py"
+APP="2L_FEST.py"
 if [ ! -f "$APP" ]; then
     echo "ERROR: $APP 가 이 폴더에 없습니다: $(pwd)"
     read -n1 -r -p "Press any key to close..."; exit 1

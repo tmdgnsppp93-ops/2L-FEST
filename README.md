@@ -3,7 +3,7 @@
 태양전지 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
 유한요소법(FEM) 기반으로 시뮬레이션하는 데스크톱 도구입니다.
 
-- **버전**: v28.47 (`wf_wired`)
+- **버전**: v28.51
 - **개발**: Seunghoon Lee — KIST, Dr. Inho Kim's Solar Cell Research Team
 - **언어/UI**: Python 3.10+ / CustomTkinter (다크·라이트 테마)
 
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 ## 실행
 
 ```bash
-python 2L_FEST_v28_18_wf_wired.py
+python 2L_FEST.py
 ```
 
 실행 시 GUI 창이 열립니다. 셀 형상·그리드 파라미터·다이오드 파라미터를 입력한 뒤
@@ -162,7 +162,7 @@ python -m pytest -m "not slow"     # 단위·회귀 테스트 (tests/)
 
 ## 코드 구조
 
-단일 실행 파일 `2L_FEST_v28_18_wf_wired.py` (약 12,000줄). 핵심 클래스:
+단일 실행 파일 `2L_FEST.py` (약 12,000줄). 핵심 클래스:
 
 | 클래스 | 역할 |
 |--------|------|

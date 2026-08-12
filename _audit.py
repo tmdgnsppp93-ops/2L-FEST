@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-spec = importlib.util.spec_from_file_location('fest', '2L_FEST_v28_18_wf_wired.py')
+spec = importlib.util.spec_from_file_location('fest', '2L_FEST.py')
 m = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(m)

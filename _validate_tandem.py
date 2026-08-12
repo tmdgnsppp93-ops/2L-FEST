@@ -13,7 +13,7 @@ between the 0D analytic 2T tandem and the FEM full_area solve is the spatial
 """
 import importlib.util, numpy as np
 
-spec = importlib.util.spec_from_file_location('fest', '2L_FEST_v28_18_wf_wired.py')
+spec = importlib.util.spec_from_file_location('fest', '2L_FEST.py')
 m = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(m)

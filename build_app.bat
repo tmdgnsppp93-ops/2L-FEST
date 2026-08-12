@@ -13,7 +13,7 @@ python -m PyInstaller --noconfirm --windowed ^
     --name "2L-FEST PRO" ^
     --collect-all customtkinter ^
     --collect-all ezdxf ^
-    2L_FEST_v28_18_wf_wired.py
+    2L_FEST.py
 
 echo.
 echo Done. Output in:  dist\"2L-FEST PRO"\

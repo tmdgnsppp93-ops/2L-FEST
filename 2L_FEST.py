@@ -369,6 +369,53 @@ v28.50: [feat] 엣지 마진도 스윕 축으로 사용 가능 — 엔진 물리
            마진을 스윕하면 CSV 파일명이 _edgesweep 태그가 된다(단일 값 태그 불가).
          docs §10에 해석 방법과 주의를 기록. 검증: 마진별 값 분리·resume·요약 출력을
          실제 스윕으로 확인, 스칼라 경로 비트 동일 테스트 추가.
+v28.51: [ui] DIODE PARAMS 카드 라벨에서 "(Griddler PRO equiv.)" 제거 — 계산 무변경.
+         _make_card 라벨 폭이 100px인데 이 문구까지 붙으면 라벨이 입력칸을 밀어내
+         카드가 터져 값이 안 보였다. "Recomb.J Contact ρ ↕" / "Recomb.J Sheet R ↔"
+         (v28.31 규칙)만 남긴다. 배선은 인덱스 tb_diode[5]/[6]이라 불변.
+         Griddler PRO 등가라는 정보는 MODEL 탭 설명과 Phase B 검증 배너에 이미 있어
+         라벨에서 중복될 이유가 없다 — v28.47에서 "Edge margin [mm] (=Edge Gap)"을
+         라벨/설명으로 분리한 것과 같은 처리다.
+         [naming] 소스 파일명 정리: `2L_FEST_v28_18_wf_wired.py` → **`2L_FEST.py`**.
+         파일명에 박힌 v28_18은 v28.51인 지금 명백히 거짓이었고(정식 버전은 __build__와
+         이 changelog가 단일 출처), wf_wired는 개발 중 브랜치 흔적일 뿐이다. 저작권
+         등록 자료에 파일 목록이 들어가므로 지금 정리한다. git mv로 옮겨 이력 보존.
+         같은 이유로 __build__의 "name": "wf_wired" 키를 제거 — 배너가
+         "2L-FEST v28.51 build <sha> (2026-08-12)"로 짧아진다. SHA·날짜가 이미
+         빌드를 유일하게 식별하므로 태그는 정보를 더하지 않았다.
+         참조 18개 파일 일괄 갱신(run/build 스크립트, CI, tests/conftest,
+         solcore_xval 4종, 진단 스크립트 4종, README·설명서·등록자료).
+v28.52: [ui] 형상 계수(Shape CF) 설명 노트 — 계산 무변경(설명 전용).
+         AFTER 카드 아래 남던 공간에 "0.785/0.95가 어디서 나온 숫자인가"를 붙였다.
+         · 단면 스케치 3종을 **같은 외접 사각형(점선)** 안에 그린다. cf가
+           "실제 단면적 ÷ w×h"라는 정의가 채움 비율로 바로 보인다:
+           직사각형 1.000 / 반타원 돔 π/4=0.785 / 가압 후 0.95(어깨만 결손).
+         · 본문: π/4의 출처, 가압 후 0.95는 **가정값(측정 아님)**임을 명시,
+           R ∝ 1/cf이므로 cf만 놓고 보면 0.785→0.95가 핑거 R을 17% 낮춘다.
+         · 접히는 "반사·회수" 절(기본 접힘 — 다 펴면 입력 카드가 스크롤 밖으로
+           밀린다). 여기서 **경계를 못박는다: 엔진에 형상→반사 경로는 없다.**
+           cf는 단면적(저항)에만 들어가고 그늘은 투영 폭 w로만 계산한다. 반사광
+           회수는 별도 계수 f(버스바 전용·기본 0.25·가정값)로만 들어간다.
+           방향성만 수치로 준다 — 유리 n=1.5에서 전반사하려면 표면 기울기가
+           θc/2=20.9°를 넘어야 하고, 돔 50×10 µm는 투영 폭의 31%만 그 조건을
+           만족, 완전 평탄면은 0%. 수직입사·완전정반사·금속 반사율 1 가정의
+           **기하학적 상한**이라고 화면에 적었다(실제 인쇄 Ag는 확산이라 더 작음).
+         · 숫자는 하드코딩이 아니라 BEFORE/AFTER 입력에서 계산한다 —
+           dome_recapture_width_fraction()/recapture_slope_threshold_deg()
+           (모듈 레벨 순수 함수). _apply_grid_design 성공 시와 언어 전환 시 갱신.
+         · tests/test_shape_note.py 8케이스: 손계산 대조(31%, 20.9°, π/4),
+           평탄면 0%, 종횡비 단조성, 그리고 **호출처가 설명 경로 2곳뿐인지**
+           검사해 이 헬퍼가 솔버로 새어 들어가면 실패시킨다.
+v28.53: [fix/ui] 형상 노트 헤더 가로 넘침 — 계산 무변경.
+         헤더 바 가용 폭은 카드 250 − padx 2×10 = 230px인데 EN 문구
+         "SHAPE CF — WHERE THE NUMBERS COME FROM"이 272px라 잘렸다(사용자 보고).
+         "SHAPE CF — WHY 0.785 / 0.95"(173px)로 교체 — 짧아지면서 오히려 이 노트가
+         답하는 질문이 제목에 그대로 들어갔다. KR(134px)은 원래 맞아서 유지.
+         가로 스크롤을 붙이지 않은 이유: 280px 사이드바에서 드래그로 읽게 만드는
+         건 잘린 걸 감추는 쪽에 가깝다. 본문/캔버스는 실측 219~234px로 이미
+         가용 폭(234) 안이라 넘치는 건 헤더 하나뿐이었다.
+         회귀 방지: test_note_header_fits_the_card가 실측 환산치(≈7.2px/char,
+         한글 ≈11px/char)로 두 언어 헤더 폭에 상한을 건다 — 디스플레이 없이 돈다.
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -467,9 +514,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.50",
-    "date": "2026-08-10",
-    "name": "wf_wired",
+    "version": "v28.53",
+    "date": "2026-08-12",
 }
 _BUILD_SHA_CACHE = None
 
@@ -488,7 +534,7 @@ def _build_sha():
 
 def _build_label():
     return (
-        f"2L-FEST {__build__['version']} {__build__['name']} "
+        f"2L-FEST {__build__['version']} "
         f"build {_build_sha()} ({__build__['date']})"
     )
 
@@ -735,6 +781,11 @@ _TR = {
     'finger_h': {'EN': 'Finger Height', 'KR': '핑거 높이'},
     'finger_w': {'EN': 'Finger Width', 'KR': '핑거 폭'},
     'shape_cf': {'EN': 'Shape CF', 'KR': '형상 계수'},
+    # v28.53: 헤더 바의 가용 폭은 카드 250 − padx 2×10 = 230px뿐이다. 이전 EN
+    # 문구("SHAPE CF — WHERE THE NUMBERS COME FROM")는 272px라 잘렸다.
+    # 측정치 ≈7.2px/char(size 11 bold) → EN은 30자 이내로 유지할 것.
+    'shape_note_hdr': {'EN': 'SHAPE CF — WHY 0.785 / 0.95',
+                       'KR': '형상 계수 cf — 이 숫자의 출처'},
     'contact_res': {'EN': 'Contact ρ ↕', 'KR': '접촉 비저항 ↕'},
     'busbar_w': {'EN': 'Busbar Width', 'KR': '버스바 폭'},
     'tco_rsheet': {'EN': 'TCO Sheet R ↔', 'KR': 'TCO 면저항 ↔'},
@@ -7815,6 +7866,61 @@ def _rpt_p8(f, d):
 _RPT_PAGES = [_rpt_p1, _rpt_p2, _rpt_p3, _rpt_p4, _rpt_p5, _rpt_p6, _rpt_p7, _rpt_p8]
 
 
+# =============================================================
+# 형상 계수(shape_cf) 설명용 순수 기하 헬퍼 — v28.52
+#   ⚠ 이 함수들은 **GUI 설명 텍스트 전용**이다. 솔버/손실 계산은 이 값을 쓰지
+#     않는다. 엔진에서 shape_cf는 오직 단면적(A = cf·w·h)에만 들어가고 광학
+#     (그늘)은 투영 폭 w로만 계산된다 — 즉 엔진에는 형상→반사 경로가 없다.
+# =============================================================
+SHAPE_CF_RECT = 1.0             # 완전 직사각형 단면: A = w·h
+SHAPE_CF_DOME = np.pi / 4.0     # 반타원(돔) 단면: A = (π/4)·w·h  → 0.7854
+N_ENCAP_GLASS = 1.5             # 봉지 유리 굴절률(재포획 조건 계산용)
+
+
+def dome_recapture_width_fraction(w_um, h_um, n_encap=N_ENCAP_GLASS):
+    """반타원 돔 핑거에서 '정반사광이 봉지 유리에서 전반사로 재포획될 수 있는'
+    투영 폭의 비율을 돌려준다 (0~1). **기하학적 상한이며 엔진 미사용.**
+
+    유도: 단면을 반타원 y = h·√(1−u²), u = 2x/w 로 두면 표면 기울기는
+        tan α = (2h/w)·u/√(1−u²)
+    수직 입사광이 기울기 α인 면에서 정반사하면 법선에서 2α 로 꺾인다. 유리/공기
+    계면에서 전반사하려면 2α > θc = arcsin(1/n) 이어야 하므로 α > θc/2.
+    k = tan(θc/2)/(2h/w) 로 두면 조건은 u > k/√(1+k²) 이고, 그 바깥 구간이
+    차지하는 투영 폭 비율이 1 − k/√(1+k²) 다.
+
+    가정(전부 낙관적 방향): 수직 입사·완전 정반사·반타원 단면·금속 자체
+    반사율 R=1·재포획된 빛은 전부 흡수. 실제 스크린 인쇄 Ag는 유리 프릿과
+    거칠기 때문에 훨씬 확산적이라 실값은 이보다 작다. 그래서 '상한'이다.
+    완전 평탄면(h=0)은 α=0이라 0.0 — 정반사가 수직으로 되돌아 나간다.
+    """
+    w = float(w_um); h = float(h_um)
+    if w <= 0.0 or h <= 0.0:
+        return 0.0
+    theta_c = np.arcsin(min(1.0, 1.0 / float(n_encap)))
+    slope_at_edge = 2.0 * h / w              # tan α 의 스케일 (2h/w)
+    k = np.tan(theta_c / 2.0) / slope_at_edge
+    u_min = k / np.sqrt(1.0 + k * k)
+    return float(max(0.0, min(1.0, 1.0 - u_min)))
+
+
+def recapture_slope_threshold_deg(n_encap=N_ENCAP_GLASS):
+    """재포획에 필요한 최소 표면 기울기 α = θc/2 [deg]. 유리 n=1.5면 20.9°."""
+    return float(np.degrees(np.arcsin(min(1.0, 1.0 / float(n_encap))) / 2.0))
+
+
+def _busbar_recovery_default():
+    """front_electrode의 busbar 회수 기본값을 **지연 임포트**로 읽는다.
+
+    엔진은 front_electrode에 의존하지 않는다(그쪽이 엔진을 감싸는 구조라
+    반대 방향 임포트를 걸면 순환이 된다). 설명 문구에 숫자 하나 쓰자고 의존성을
+    만들 이유가 없으므로, 없으면 조용히 문서화된 기본값으로 떨어진다."""
+    try:
+        from front_electrode.adapter import DEFAULT_BUSBAR_RECOVERY_FACTOR as _f
+        return float(_f)
+    except Exception:
+        return 0.25
+
+
 # User cancellation exception
 # 로딩 창 X 버튼 클릭 시 _prog_update 에서 발생 → tab 메서드가 catch.
 class _UserCancelled(Exception):
@@ -8034,6 +8140,15 @@ class FESTProApp(ctk.CTk):
                                       self.param_defs[:6])])
 
         # Spacer
+        ctk.CTkFrame(step2, height=8, fg_color="transparent").pack()
+
+        # --- SHAPE CF 설명 노트 --- [STEP 2, AFTER 카드 아래 빈 공간]
+        # v28.52 (사용자 요청): 0.785/0.95가 어디서 나온 숫자인지 화면에서 바로
+        # 읽히게 한다. 단면 스케치(직사각형/반타원/가압 후)를 그리고, 그 아래
+        # cf의 저항 영향과 '반사·회수는 cf가 아니라 별도 계수'라는 점을 적는다.
+        self._build_shape_note(step2)
+
+        # Spacer
         ctk.CTkFrame(step2, height=12, fg_color="transparent").pack()
 
         # --- MODE TOGGLE (Tandem / Single) --- [STEP 1: Design 맨 위]
@@ -8134,8 +8249,11 @@ class FESTProApp(ctk.CTk):
             ("n1 Bot (Si)", f"{DP.n1_bot:.1f}", ""),
             (_t('n2_bot'), f"{DP.n2_bot:.1f}", ""),
             ("LC Coupling", "0.0e+00", "A/cm²"),
-            ("Recomb.J Contact ρ ↕ (Griddler PRO equiv.)", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
-            ("Recomb.J Sheet R ↔ (Griddler PRO equiv.)", f"{DP.Rs_junction:.1f}", "Ω/sq"),
+            # v28.51: "(Griddler PRO equiv.)" 제거 — _make_card 라벨 폭(100px)을 훨씬
+            # 넘겨 카드/사이드바가 터졌다. Griddler PRO 등가 설명은 MODEL 탭과 검증
+            # 배너에 이미 있다(v28.47 edge_margin 라벨과 같은 처리: 라벨은 짧게, 설명은 밖에).
+            ("Recomb.J Contact ρ ↕", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
+            ("Recomb.J Sheet R ↔", f"{DP.Rs_junction:.1f}", "Ω/sq"),
         ])
         self._card_headers.append(hdr_d)
 
@@ -8921,6 +9039,13 @@ class FESTProApp(ctk.CTk):
             # Update mesh recommendation hint
             try:
                 self._update_mesh_hint()
+            except Exception:
+                pass
+            # v28.52: 형상 노트는 BEFORE 카드의 폭/높이/cf를 인용하므로 여기서
+            # 같이 갱신한다(입력이 확정되는 유일한 지점). 실패해도 설계 적용은
+            # 성공이므로 삼켜서 return True를 막지 않는다.
+            try:
+                self._refresh_shape_note()
             except Exception:
                 pass
             return True
@@ -10109,6 +10234,203 @@ class FESTProApp(ctk.CTk):
         return entries, label_widgets, hdr_lbl
 
 
+    # ---------------------------------------------------------------
+    # 형상 계수(Shape CF) 설명 노트 — v28.52
+    # ---------------------------------------------------------------
+    _SHAPE_NOTE_W   = 234     # 사이드바 카드 내부 가용 폭(px)
+    _SHAPE_SKETCH_H = 78      # 단면 스케치 캔버스 높이(px, 캡션 2줄 포함)
+
+    def _build_shape_note(self, parent):
+        """AFTER 카드 밑 빈 공간에 'cf가 왜 0.785/0.95인가'를 설명하는 노트.
+
+        구성: (1) 단면 스케치 3종 — 같은 외접 사각형 안에서 채워지는 면적 비율이
+        곧 cf라는 걸 눈으로 보게 한다. (2) 본문 — π/4의 출처와 cf가 저항에
+        미치는 영향. (3) 접히는 '반사·회수' 절 — cf가 광학과 무관하다는 경계와
+        평탄화의 방향성. 반사 쪽은 기본으로 접어 둔다: AFTER 카드 아래 남는
+        공간이 ~158px뿐이라 전부 펴면 입력 카드까지 스크롤로 밀려난다.
+        """
+        card = ctk.CTkFrame(parent, fg_color=CLR_CARD_BG, corner_radius=8,
+                            border_width=1, border_color=CLR_CARD_BD)
+        card.pack(fill="x", pady=2)
+
+        hbar = ctk.CTkFrame(card, fg_color="#475569", height=24, corner_radius=0)
+        hbar.pack(fill="x"); hbar.pack_propagate(False)
+        self._shape_note_hdr = ctk.CTkLabel(
+            hbar, text=_t('shape_note_hdr'), font=ctk.CTkFont(size=11, weight="bold"),
+            text_color="white")
+        self._shape_note_hdr.pack(side="left", padx=10, pady=2)
+
+        self._shape_canvas = tk.Canvas(card, width=self._SHAPE_NOTE_W,
+                                       height=self._SHAPE_SKETCH_H,
+                                       bg=CLR_CARD_BG, highlightthickness=0, bd=0)
+        self._shape_canvas.pack(padx=8, pady=(6, 2))
+
+        self._shape_note_lbl = ctk.CTkLabel(
+            card, text="", font=ctk.CTkFont(size=9), justify="left", anchor="w",
+            text_color=CLR_TEXT_SEC, wraplength=self._SHAPE_NOTE_W)
+        self._shape_note_lbl.pack(fill="x", padx=8, pady=(0, 2))
+
+        self._shape_more_open = False
+        self._shape_more_btn = ctk.CTkButton(
+            card, text="", font=ctk.CTkFont(size=9), height=20, anchor="w",
+            fg_color="transparent", hover_color=CLR_EVEN_ROW,
+            text_color=CLR_BLUE, command=self._toggle_shape_more)
+        self._shape_more_btn.pack(fill="x", padx=8, pady=(0, 2))
+
+        self._shape_more_lbl = ctk.CTkLabel(
+            card, text="", font=ctk.CTkFont(size=9), justify="left", anchor="w",
+            text_color=CLR_TEXT_SEC, wraplength=self._SHAPE_NOTE_W)
+        # 기본 접힘 — pack은 _toggle_shape_more에서만 한다.
+
+        ctk.CTkFrame(card, height=6, fg_color=CLR_CARD_BG).pack()
+        self._refresh_shape_note()
+        return card
+
+    def _toggle_shape_more(self):
+        """'반사·회수' 절 펼치기/접기."""
+        self._shape_more_open = not getattr(self, '_shape_more_open', False)
+        if self._shape_more_open:
+            self._shape_more_lbl.pack(fill="x", padx=8, pady=(0, 2),
+                                      after=self._shape_more_btn)
+        else:
+            self._shape_more_lbl.pack_forget()
+        self._refresh_shape_note()
+
+    def _draw_shape_sketches(self):
+        """단면 3종을 같은 외접 사각형(점선) 안에 그린다 — 채움 비율 = cf."""
+        cv = getattr(self, '_shape_canvas', None)
+        if cv is None:
+            return
+        cv.delete("all")
+        kr = (_LANG['current'] == 'KR')
+        cf_b, cf_a = self._read_shape_cfs()
+        # (중심x, 외곽선, 채움, 종류, 캡션, cf 표시)
+        cells = [
+            (39,  "#94A3B8", "#E2E8F0", "rect", "직사각형" if kr else "rectangle",
+             f"cf = {SHAPE_CF_RECT:.3f}"),
+            (117, CLR_RED,   "#FECACA", "dome", "반타원 돔" if kr else "half-ellipse",
+             f"cf = π/4 = {SHAPE_CF_DOME:.3f}"),
+            (195, CLR_GREEN, "#A7F3D0", "flat", "가압 후" if kr else "pressed",
+             f"cf = {cf_a:.3f}"),
+        ]
+        y0, hh, hw = 40, 22, 24          # 바닥선 y, 단면 높이, 반폭
+        for cx, line, fill, kind, cap, cfs in cells:
+            L, R, T = cx - hw, cx + hw, y0 - hh
+            cv.create_rectangle(L, T, R, y0, outline="#CBD5E1", dash=(2, 2))
+            if kind == "rect":
+                cv.create_rectangle(L, T, R, y0, outline=line, fill=fill, width=2)
+            elif kind == "dome":
+                cv.create_arc(L, T, R, y0 + hh, start=0, extent=180,
+                              style="chord", outline=line, fill=fill, width=2)
+            else:
+                # 평탄 상면 + 라운드 어깨: cf<1을 만드는 건 어깨의 결손분뿐이다.
+                sh = max(2, int(round((1.0 - cf_a) * hw * 2.2)))
+                cv.create_polygon(L, y0, L, T + sh, L + sh, T, R - sh, T,
+                                  R, T + sh, R, y0,
+                                  outline=line, fill=fill, width=2)
+            cv.create_text(cx, y0 + 10, text=cap, fill=CLR_TEXT,
+                           font=("", 8), anchor="n")
+            cv.create_text(cx, y0 + 22, text=cfs, fill=line,
+                           font=("", 8, "bold"), anchor="n")
+        cv.create_line(4, y0, self._SHAPE_NOTE_W - 4, y0, fill="#94A3B8")
+        _ = cf_b   # BEFORE cf는 텍스트 쪽에서 사용
+
+    def _read_shape_cfs(self):
+        """BEFORE/AFTER 카드에서 cf를 읽는다. 입력 중이라 못 읽으면 기본값."""
+        out = []
+        for tb, dflt in ((getattr(self, 'tb_b', None), SHAPE_CF_DOME),
+                         (getattr(self, 'tb_a', None), 0.95)):
+            try:
+                v = float(tb[4].get())
+                out.append(v if 0.0 < v <= 1.0 else dflt)
+            except Exception:
+                out.append(dflt)
+        return out[0], out[1]
+
+    def _read_before_finger_wh_um(self):
+        """BEFORE 카드의 핑거 폭/높이[µm]. 못 읽으면 param_defs 기본값."""
+        try:
+            w = float(self.tb_b[2].get())
+        except Exception:
+            w = float(self.param_defs[2][1])
+        try:
+            h = float(self.tb_b[1].get())
+        except Exception:
+            h = float(self.param_defs[1][1])
+        return w, h
+
+    def _refresh_shape_note(self):
+        """스케치 + 설명문을 현재 입력값·언어로 다시 만든다."""
+        if getattr(self, '_shape_note_lbl', None) is None:
+            return
+        try:
+            self._draw_shape_sketches()
+        except Exception:
+            pass
+        kr = (_LANG['current'] == 'KR')
+        cf_b, cf_a = self._read_shape_cfs()
+        w_um, h_um = self._read_before_finger_wh_um()
+        f_rec = _busbar_recovery_default()
+        dR = (1.0 - cf_b / cf_a) * 100.0 if cf_a > 0 else 0.0   # R ∝ 1/cf
+        frac = dome_recapture_width_fraction(w_um, h_um) * 100.0
+        a_min = recapture_slope_threshold_deg()
+        if kr:
+            txt = (
+                f"cf = 실제 단면적 ÷ 외접 사각형(w×h) — 위 점선이 w×h다.\n"
+                f"π/4={SHAPE_CF_DOME:.4f}는 반타원 면적 (π/4)wh를 wh로 나눈 값이고,"
+                f" 스크린 인쇄 직후의 돔 단면이 여기 해당한다. 가압 후 {cf_a:.2f}는"
+                f" 상면이 평탄해지고 어깨만 남는다는 가정값이다(측정값 아님).\n"
+                f"R ∝ 1/cf라, cf만 놓고 보면 {cf_b:.3f}→{cf_a:.2f}가 핑거 저항을"
+                f" {dR:.0f}% 낮춘다."
+            )
+            more = (
+                f"cf는 저항 전용이다. 그늘은 투영 폭 w로만 계산하므로 cf를 바꿔도"
+                f" 광학 결과는 변하지 않는다 — 즉 엔진에는 형상→반사 경로가 없다."
+                f" 반사광 회수는 별도 계수 f(버스바 전용·기본 {f_rec:.2f}·가정값,"
+                f" Optimize 창 슬라이더)로만 들어간다.\n"
+                f"방향만 보면 평탄화는 회수를 줄인다 — 유리 n={N_ENCAP_GLASS}에서"
+                f" 전반사하려면 표면 기울기가 {a_min:.1f}°를 넘어야 하는데(임계각의"
+                f" 절반), 돔 {w_um:.0f}×{h_um:.1f} µm는 투영 폭의 {frac:.0f}%만 이"
+                f" 조건을 만족하고 완전 평탄면은 0%다.\n"
+                f"수직 입사·완전 정반사·금속 반사율 1을 가정한 기하학적 상한이다."
+                f" 실제 인쇄 Ag는 훨씬 확산적이라 이보다 작다. 엔진 계산엔 안 들어간다."
+            )
+            btn = ("▾ 반사·회수는?" if self._shape_more_open else "▸ 반사·회수는?")
+        else:
+            txt = (
+                f"cf = actual cross-section / bounding box (w x h) - the dashed"
+                f" outline above.\n"
+                f"pi/4={SHAPE_CF_DOME:.4f} is the half-ellipse area (pi/4)wh over"
+                f" wh, which is the as-printed dome. After pressing, {cf_a:.2f}"
+                f" assumes a flat top with only the shoulders rounded (assumed,"
+                f" not measured).\n"
+                f"R scales as 1/cf, so cf alone going {cf_b:.3f} -> {cf_a:.2f}"
+                f" lowers finger resistance by {dR:.0f}%."
+            )
+            more = (
+                f"cf is resistance-only. Shading uses the projected width w, so"
+                f" changing cf leaves the optics untouched - the engine has no"
+                f" shape-to-reflection path at all. Recapture enters only through"
+                f" the separate factor f (busbar-only, default {f_rec:.2f},"
+                f" assumed; slider in the Optimize window).\n"
+                f"Directionally, flattening reduces recapture: TIR in n="
+                f"{N_ENCAP_GLASS} glass needs a surface slope above {a_min:.1f} deg"
+                f" (half the critical angle), which a {w_um:.0f} x {h_um:.1f} um"
+                f" dome meets over only {frac:.0f}% of its projected width, and a"
+                f" perfectly flat top over 0%.\n"
+                f"That is a geometric upper bound assuming normal incidence, pure"
+                f" specular reflection and metal reflectance 1. Real printed Ag is"
+                f" far more diffuse, so the true value is lower. Not used by the"
+                f" engine."
+            )
+            btn = ("v Reflection / recapture" if self._shape_more_open
+                   else "> Reflection / recapture")
+        self._shape_note_lbl.configure(text=txt)
+        self._shape_more_lbl.configure(text=more)
+        self._shape_more_btn.configure(text=btn)
+        if getattr(self, '_shape_note_hdr', None) is not None:
+            self._shape_note_hdr.configure(text=_t('shape_note_hdr'))
+
     def _build_tabbar(self, parent):
         """Tab buttons row."""
         bar = ctk.CTkFrame(parent, fg_color=CLR_TAB_BG, height=44, corner_radius=0)
@@ -10419,6 +10741,9 @@ class FESTProApp(ctk.CTk):
             hdr_texts = [_t('before'), _t('after'), _t('grid_design'), _t('diode_params')]
             for hdr_lbl, txt in zip(self._card_headers, hdr_texts):
                 hdr_lbl.configure(text=txt)
+        # v28.52: 형상 계수 노트는 문장형이라 _TR 한 줄로 안 떨어진다 —
+        # 언어가 바뀌면 통째로 다시 만든다(스케치 캡션도 같이 갱신됨).
+        self._refresh_shape_note()
 
     def _status(self, msg):
         # safe if called before _status_label is built (early wizard init)

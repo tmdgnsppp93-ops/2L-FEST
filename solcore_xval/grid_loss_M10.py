@@ -16,7 +16,7 @@ MESH = sys.argv[1] if len(sys.argv) > 1 else "High"
 JPH_TANDEM = 19.65e-3   # A/cm^2 — perovskite/Si tandem operating current (Jph_top)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FEST = os.path.join(os.path.dirname(HERE), "2L_FEST_v28_18_wf_wired.py")
+FEST = os.path.join(os.path.dirname(HERE), "2L_FEST.py")
 spec = importlib.util.spec_from_file_location("fest", FEST)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)
