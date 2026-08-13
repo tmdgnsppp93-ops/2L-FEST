@@ -65,6 +65,12 @@ def plot_roadmap(csv_path, png_path=None):
                             ha="center", fontsize=8,
                             color=("#1b5e20" if d >= 0 else "#b71c1c"))
 
+        # 세로 여백. baseline 점은 정의상 기준선 위에 놓이므로, 자동 스케일에
+        # 맡기면 그 값 라벨이 파선과 겹치고 델타 라벨이 연결선에 얹힌다.
+        lo, hi = min(y), max(y)
+        span = (hi - lo) or (abs(hi) * 0.01 or 1.0)
+        ax.set_ylim(lo - span * 0.35, hi + span * 0.30)
+
         ax.set_ylabel(ylabel, fontsize=10)
         ax.set_xticks(list(x))
         ax.set_xticklabels(labels, fontsize=9, rotation=12, ha="right")
