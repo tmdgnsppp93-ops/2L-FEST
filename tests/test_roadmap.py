@@ -357,3 +357,43 @@ def test_resume_skips_completed(fest, monkeypatch, tmp_path):
     again = run_roadmap(fest, load_scenario(sc_path), csv_path, resume=True,
                         axis_segments_override=AX)
     assert again == [], "resume인데 완료 케이스를 다시 돌렸다"
+
+
+# ---------------------------------------------------------------------------
+# 4-panel 플롯 (FEM 없음 — CSV만으로 재작도 가능해야 한다)
+# ---------------------------------------------------------------------------
+from front_electrode import plot_roadmap  # noqa: E402
+
+
+def _write_demo_csv(tmp_path, effs=(31.0, 31.5)):
+    sc = _min_scenario()
+    sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
+    env = provenance_env(_FakeFest, sc)
+    csv_path = str(tmp_path / "r.csv")
+    written = False
+    for c, eff in zip(expand_cases(sc), effs):
+        written = append_row(csv_path, build_row(c, _fake_out(eff), sc, env, 1.0),
+                             written)
+    return csv_path
+
+
+def test_plot_roadmap_creates_png(tmp_path):
+    """FEM 없이 CSV만으로 그림을 다시 그릴 수 있어야 한다."""
+    csv_path = _write_demo_csv(tmp_path)
+    png = plot_roadmap(csv_path)
+    assert png == str(tmp_path / "r.png")
+    assert os.path.getsize(png) > 5000, "PNG가 비었거나 너무 작다"
+
+
+def test_plot_roadmap_explicit_path(tmp_path):
+    csv_path = _write_demo_csv(tmp_path)
+    out_png = str(tmp_path / "custom.png")
+    assert plot_roadmap(csv_path, out_png) == out_png
+    assert os.path.exists(out_png)
+
+
+def test_plot_roadmap_rejects_empty_csv(tmp_path):
+    p = tmp_path / "empty.csv"
+    p.write_text("", encoding="utf-8-sig")
+    with pytest.raises(ValueError, match="빈"):
+        plot_roadmap(str(p))

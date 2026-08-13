@@ -43,6 +43,7 @@ from .roadmap import (
     unspecified_provenance_keys,
     run_roadmap,
 )
+from .roadmap_plot import plot_roadmap
 from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 from .i18n import (
     LANGUAGES,
@@ -81,6 +82,7 @@ __all__ = [
     "completed_labels",
     "unspecified_provenance_keys",
     "run_roadmap",
+    "plot_roadmap",
     "PRESETS",
     "MAINSTREAM_PRESETS",
     "get_preset",
