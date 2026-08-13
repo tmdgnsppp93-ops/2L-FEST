@@ -27,6 +27,14 @@ from .optimizer import (
     roundtrip_check,
     export_csv,
 )
+from .roadmap import (
+    SCHEMA_ID,
+    PROV_TAGS,
+    SCENARIO_MAP,
+    validate_scenario,
+    load_scenario,
+    expand_cases,
+)
 from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 from .i18n import (
     LANGUAGES,
@@ -51,6 +59,12 @@ __all__ = [
     "optimize_grid",
     "roundtrip_check",
     "export_csv",
+    "SCHEMA_ID",
+    "PROV_TAGS",
+    "SCENARIO_MAP",
+    "validate_scenario",
+    "load_scenario",
+    "expand_cases",
     "PRESETS",
     "MAINSTREAM_PRESETS",
     "get_preset",
