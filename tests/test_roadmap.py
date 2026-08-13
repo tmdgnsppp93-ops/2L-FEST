@@ -397,3 +397,42 @@ def test_plot_roadmap_rejects_empty_csv(tmp_path):
     p.write_text("", encoding="utf-8-sig")
     with pytest.raises(ValueError, match="빈"):
         plot_roadmap(str(p))
+
+
+# ---------------------------------------------------------------------------
+# 동봉 예시 시나리오 (FEM 없음)
+# ---------------------------------------------------------------------------
+from front_electrode import unspecified_provenance_keys as _unspec  # noqa: E402
+
+
+def test_shipped_example_scenario_is_valid():
+    """동봉한 예시 시나리오가 실제로 로드·검증을 통과하는지.
+
+    파일에 오타가 있으면 사용자가 처음 돌릴 때 발견된다 — 그 전에 잡는다.
+    """
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "scripts", "scenarios", "unist_tco.json")
+    sc = load_scenario(path)
+
+    cases = expand_cases(sc)
+    assert len(cases) == 2, "최소 동작 예시는 baseline + 1 case"
+    base, modified = cases
+
+    # 설계 파라미터는 opt_grid_m10_measured.csv 최적행과 일치해야 한다
+    assert base["grid_params"]["n_busbars"] == 8
+    assert base["grid_params"]["w_busbar_mm"] == 0.20
+    assert base["grid_params"]["edge_margin_mm"] == 0.0
+    assert abs(base["grid_params"]["finger_spacing_mm"] - 2.193) < 1e-9
+
+    # 케이스는 rho_c만 바꾼다 (설계 고정 → TCO 개선 단독 효과)
+    assert modified["grid_params"]["rho_contact_mohm_cm2"] == 2.0
+    assert modified["grid_params"]["n_busbars"] == 8
+    assert sc["provenance"]["rho_contact_mohm_cm2"]["tag"] == "assumed"
+    assert sc["provenance"]["w_busbar_mm"]["tag"] == "derived"
+
+
+def test_shipped_example_declares_all_provenance():
+    """동봉 예시는 스스로 경고를 내지 않아야 한다 — 모든 키에 태그가 있다."""
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    path = os.path.join(root, "scripts", "scenarios", "unist_tco.json")
+    assert _unspec(load_scenario(path)) == []

@@ -1,0 +1,47 @@
+{
+  "schema": "2lfest.roadmap/1",
+  "name": "UNIST TCO modification",
+
+  "engine": {
+    "mode": "tandem",
+    "npts": 14,
+    "target_nodes": 82000,
+    "scenario": "measured"
+  },
+
+  "baseline": {
+    "label": "as-is (baseline)",
+    "note": "opt_grid_m10_measured.csv 최적행 (Eff 31.330%)",
+    "cell_w_mm": 182.0,
+    "cell_h_mm": 182.0,
+    "finger_spacing_mm": 2.193,
+    "w_finger_um": 20.0,
+    "n_busbars": 8,
+    "w_busbar_mm": 0.20,
+    "n_probe_points": 10,
+    "edge_margin_mm": 0.0,
+    "rho_bulk_uohm_cm": 4.22,
+    "rho_contact_mohm_cm2": 10.0
+  },
+
+  "cases": [
+    {
+      "label": "TCO modified",
+      "note": "rho_c 10 -> 2 mOhm.cm2 (placeholder - 실측값 미확보)",
+      "set": { "rho_contact_mohm_cm2": 2.0 }
+    }
+  ],
+
+  "provenance": {
+    "cell_w_mm":            { "tag": "derived",  "note": "M10 포맷 182mm" },
+    "cell_h_mm":            { "tag": "derived",  "note": "M10 포맷 182mm" },
+    "finger_spacing_mm":    { "tag": "derived",  "note": "optimize_grid edge0 최적 (opt_grid_m10_measured.csv, 31.330%)" },
+    "n_busbars":            { "tag": "derived",  "note": "동일 스윕 최적 (8BB)" },
+    "w_finger_um":          { "tag": "derived",  "note": "동일 스윕 고정축 20um (ITRPV 인쇄 현실성)" },
+    "w_busbar_mm":          { "tag": "derived",  "note": "동일 스윕 고정축 0.20mm - pitch/BB 최적해와 같은 근거. 0.25는 ITRPV 16BB 계산용이며 그때는 n_busbars도 8->16이라 Stage A 재실행 필요" },
+    "n_probe_points":       { "tag": "derived",  "note": "동일 스윕 고정축 10 (Griddler식 수집)" },
+    "rho_bulk_uohm_cm":     { "tag": "measured", "note": "KIST low-T sinter 90C/30min/5MPa" },
+    "rho_contact_mohm_cm2": { "tag": "assumed",  "note": "placeholder - 실측값 미확보" },
+    "edge_margin_mm":       { "tag": "assumed",  "note": "공정 제약 미확정 (0 = 마진 없음 가정)" }
+  }
+}
