@@ -40,6 +40,8 @@ from .roadmap import (
     build_row,
     append_row,
     completed_labels,
+    unspecified_provenance_keys,
+    run_roadmap,
 )
 from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 from .i18n import (
@@ -77,6 +79,8 @@ __all__ = [
     "build_row",
     "append_row",
     "completed_labels",
+    "unspecified_provenance_keys",
+    "run_roadmap",
     "PRESETS",
     "MAINSTREAM_PRESETS",
     "get_preset",

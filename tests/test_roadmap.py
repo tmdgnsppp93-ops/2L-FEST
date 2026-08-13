@@ -271,3 +271,89 @@ def test_append_row_and_completed_labels(tmp_path):
 
 def test_completed_labels_on_missing_file(tmp_path):
     assert completed_labels(str(tmp_path / "nope.csv")) == set()
+
+
+# ---------------------------------------------------------------------------
+# 실행 루프 (FEM) + provenance 미선언 경고
+# ---------------------------------------------------------------------------
+from front_electrode import (  # noqa: E402
+    SCENARIO_MEASURED,
+    evaluate_existing_simulation,
+    run_roadmap,
+    unspecified_provenance_keys,
+)
+
+
+def _write_scenario(tmp_path, sc):
+    p = tmp_path / "s.json"
+    p.write_text(json.dumps(sc), encoding="utf-8")
+    return str(p)
+
+
+def test_unspecified_provenance_keys():
+    """스펙 §5 규칙 2 — 케이스가 안 바꾸는 키는 막지 않되 드러낸다."""
+    sc = _min_scenario()
+    keys = unspecified_provenance_keys(sc)
+    # rho_contact_mohm_cm2만 선언되어 있다
+    assert "rho_contact_mohm_cm2" not in keys
+    assert "cell_w_mm" in keys and "w_busbar_mm" in keys
+    assert keys == sorted(keys), "정렬된 목록이어야 재현 가능하다"
+
+
+def test_unspecified_provenance_keys_empty_when_all_declared():
+    sc = _min_scenario()
+    for k in list(sc["baseline"]):
+        if k not in ("label", "note"):
+            sc["provenance"].setdefault(k, {"tag": "assumed", "note": "x"})
+    assert unspecified_provenance_keys(sc) == []
+
+
+def test_baseline_bit_identical(fest, monkeypatch, tmp_path, capsys):
+    """★ roadmap의 baseline 케이스가 evaluate_existing_simulation 직접 호출과
+    비트 동일. 기존 결과 불변의 실증.
+
+    tests/test_optimizer.py:96-106 test_edge_margin_zero_is_bit_identical의
+    관용구를 그대로 따른다 (cell 20mm + AX/NPTS + == 비교).
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    sc = _min_scenario()
+    sc["cases"] = []                      # baseline 단독
+    grid = {k: v for k, v in sc["baseline"].items() if k != "label"}
+
+    direct = evaluate_existing_simulation(
+        fest, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+        mode="tandem", npts=NPTS, axis_segments_override=AX)
+
+    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+                       str(tmp_path / "r.csv"), axis_segments_override=AX)
+
+    assert len(rows) == 1
+    for key in ENGINE_RAW_KEYS:
+        assert rows[0][key] == direct["engine_raw"][key], f"{key} 비트동일 실패"
+    assert rows[0]["total_loss"] == direct["results"]["total_loss"]
+
+    # provenance 미선언 경고가 실제로 출력되는지 (스펙 §5 규칙 2)
+    assert "provenance 미선언" in capsys.readouterr().out
+
+
+def test_case_changes_result(fest, monkeypatch, tmp_path):
+    """rho_c를 낮추면 접촉 손실이 줄고 효율이 오른다 — 케이스가 실제로 먹는지."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    sc = _min_scenario()
+    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+                       str(tmp_path / "r.csv"), axis_segments_override=AX)
+    assert len(rows) == 2
+    assert rows[1]["Pc"] < rows[0]["Pc"], "rho_c를 5배 낮췄는데 접촉 손실이 안 줄었다"
+    assert rows[1]["Eff"] > rows[0]["Eff"]
+
+
+def test_resume_skips_completed(fest, monkeypatch, tmp_path):
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    sc_path = _write_scenario(tmp_path, _min_scenario())
+    csv_path = str(tmp_path / "r.csv")
+    first = run_roadmap(fest, load_scenario(sc_path), csv_path,
+                        axis_segments_override=AX)
+    assert len(first) == 2
+    again = run_roadmap(fest, load_scenario(sc_path), csv_path, resume=True,
+                        axis_segments_override=AX)
+    assert again == [], "resume인데 완료 케이스를 다시 돌렸다"

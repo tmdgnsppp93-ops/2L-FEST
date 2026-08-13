@@ -21,6 +21,7 @@ import os
 import subprocess
 import time
 
+from .adapter import evaluate_existing_simulation
 from .optimizer import (
     SCENARIO_AS_CURED,
     SCENARIO_ENGINE_DEFAULT,
@@ -267,3 +268,67 @@ def completed_labels(csv_path):
         return set()
     with open(csv_path, encoding="utf-8-sig", newline="") as fh:
         return {r["label"] for r in csv.DictReader(fh) if r.get("label")}
+
+
+# ---------------------------------------------------------------------------
+# 실행 루프
+# ---------------------------------------------------------------------------
+
+def unspecified_provenance_keys(sc):
+    """provenance가 선언되지 않은 baseline grid 키 (정렬됨).
+
+    스펙 §5 규칙 2: 케이스가 바꾸는 키는 필수(ValueError)지만, 나머지는
+    막지 않는다 — 대신 드러낸다. 논문 figure의 근거를 나중에 추적할 때
+    '이 값이 어디서 왔는지 아무도 안 적었다'를 실행 시점에 알 수 있어야 한다.
+    """
+    prov = sc.get("provenance", {})
+    return sorted(k for k in _grid_keys(sc["baseline"]) if k not in prov)
+
+
+def run_roadmap(fest, sc, csv_path, *, resume=False,
+                axis_segments_override=None, progress=None):
+    """시나리오의 각 케이스를 순차 실행하고 CSV에 누적한다.
+
+    busbar_recovery_factor는 0.0으로 고정한다 — roadmap의 4-panel은 순수
+    엔진값을 써야 하고, 회수 보정이 섞이면 논문 figure의 근거가 흐려진다.
+    회수를 보고 싶으면 CSV를 adapter.apply_recovery로 사후 재산출하라.
+
+    반환: 이번 호출에서 실제로 실행한 행들 (resume으로 건너뛴 것은 제외).
+    """
+    cases = expand_cases(sc)
+    eng = sc.get("engine", {})
+    scenario_const = SCENARIO_MAP[eng.get("scenario", "measured")]
+    mode = eng.get("mode", "tandem")
+    npts = int(eng.get("npts", 14))
+    # axis_segments_override(테스트·빠른 미리보기)가 target_nodes보다 우선한다.
+    target_nodes = None if axis_segments_override is not None else eng.get("target_nodes")
+
+    unspec = unspecified_provenance_keys(sc)
+    if unspec:
+        print(f"  ⚠ provenance 미선언 {len(unspec)}개: {unspec} — "
+              f"CSV에 unspecified로 기록됨", flush=True)
+
+    env = provenance_env(fest, sc)
+    done = completed_labels(csv_path) if resume else set()
+    header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
+
+    rows = []
+    for case in cases:
+        if case["label"] in done:
+            continue
+        t0 = time.time()
+        out = evaluate_existing_simulation(
+            fest, case["grid_params"],
+            scenario=scenario_const,
+            busbar_recovery_factor=0.0,
+            mode=mode,
+            npts=npts,
+            axis_segments_override=axis_segments_override,
+            target_nodes=target_nodes,
+        )
+        row = build_row(case, out, sc, env, time.time() - t0)
+        header_written = append_row(csv_path, row, header_written)
+        rows.append(row)
+        if progress is not None:
+            progress(case["case_index"], len(cases), row)
+    return rows
