@@ -108,7 +108,7 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
     "finger_spacing_mm": 2.193,
     "w_finger_um": 20.0,
     "n_busbars": 8,
-    "w_busbar_mm": 0.25,
+    "w_busbar_mm": 0.20,
     "n_probe_points": 10,
     "edge_margin_mm": 0.0,
     "rho_bulk_uohm_cm": 4.22,
@@ -127,7 +127,7 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
     "finger_spacing_mm":    { "tag": "derived",  "note": "optimize_grid edge0 최적 (opt_grid_m10_measured.csv, 31.330%)" },
     "n_busbars":            { "tag": "derived",  "note": "동일 스윕 최적 (8BB)" },
     "w_finger_um":          { "tag": "derived",  "note": "동일 스윕 고정축 20um (ITRPV 인쇄 현실성)" },
-    "w_busbar_mm":          { "tag": "assumed",  "note": "위 스윕은 0.20mm에서 최적화됨 — 0.25는 미검증 가정" },
+    "w_busbar_mm":          { "tag": "derived",  "note": "동일 스윕의 고정축 0.20mm — pitch/BB 최적해와 같은 근거" },
     "rho_bulk_uohm_cm":     { "tag": "measured", "note": "KIST low-T sinter 90C/30min/5MPa" },
     "rho_contact_mohm_cm2": { "tag": "assumed",  "note": "placeholder — 실측값 미확보" },
     "edge_margin_mm":       { "tag": "assumed",  "note": "공정 제약 미확정 (0 = 마진 없음 가정)" }
@@ -147,9 +147,13 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
 
 **`label`은 시나리오 내에서 유일해야 한다** (baseline 포함). `--resume`이 label을 키로 완료 케이스를 skip하므로, 중복 label은 조용한 오작동을 만든다. 로드 시 검증한다.
 
-### ⚠ 예시 시나리오의 알려진 불일치
+### 예시 시나리오 값의 근거 — `w_busbar_mm = 0.20`인 이유
 
-`w_busbar_mm = 0.25`는 pitch/BB 최적해의 근거인 `scripts/opt_grid_m10_measured.csv`(0.20 mm에서 스윕)와 짝이 맞지 않는다. 예시 파일은 지시대로 0.25를 쓰되 `assumed`로 태깅했다. 엄밀한 논문 수치가 필요하면 **0.25 mm에서 Stage A를 다시 돌려야 한다.** provenance 필드가 정확히 이런 불일치를 드러내기 위해 존재한다.
+예시의 설계 파라미터는 **전부 같은 스윕 한 번에서 나온 값이다**: `scripts/opt_grid_m10_measured.csv`의 최적행 (pitch 2.1928 mm / 82 fingers / **8BB** / **wbb 0.20 mm** / wf 20 µm, Eff 31.330 %). `w_busbar_mm`을 0.20으로 두어야 pitch·BB 최적해와 근거가 일관된다. 그래서 provenance 태그도 `derived`다.
+
+**0.25 mm는 여기에 넣지 않는다.** 0.25는 ITRPV 기반 **16BB** 논문 계산에서 쓸 값이며, 그 계산에서는 busbar 개수도 8 → 16으로 함께 바뀐다. 즉 설계점이 통째로 이동하므로 **Stage A를 처음부터 다시 돌려 16BB·0.25 mm 조건의 최적해를 새로 구해야 한다.** 그 결과가 나오기 전에 0.25를 이 시나리오에 끼워 넣으면, 8BB 최적화에서 나온 pitch와 16BB용 busbar 폭이 한 행에 섞인 — 어느 스윕에도 대응하지 않는 — 조합이 된다.
+
+두 조건은 별개의 시나리오 파일로 관리한다.
 
 ---
 
@@ -267,12 +271,14 @@ baseline이 `case_index = 0`이다.
 | `test_expand_cumulative` | 누적 전개가 기대 상태 시퀀스 산출 | 순수함수, 즉시 |
 | `test_rejects_unknown_key` | `set`의 모르는 키 → `ValueError` | 즉시 |
 | `test_requires_provenance_for_changed_key` | `set` 키에 provenance 없으면 `ValueError` | 즉시 |
-| `test_baseline_bit_identical` | **★ roadmap baseline 결과 == `evaluate_existing_simulation` 직접 호출 결과 (비트 동일)** | 39 mm 소셀 |
+| `test_baseline_bit_identical` | **★ roadmap baseline 결과 == `evaluate_existing_simulation` 직접 호출 결과 (비트 동일)** | 20 mm 소셀 |
 | `test_csv_schema` | 헤더·행수·`case_index` 순서·provenance 컬럼 존재 | 즉시 |
 
 `test_baseline_bit_identical`이 "기존 결과 비트 불변"의 실증이다. 신규 파일만 추가한다는 구조적 보장에 더해, baseline 경로가 기존 경로와 **같은 함수를 같은 인자로 호출한다**는 것을 수치로 못박는다.
 
-FEM이 필요한 테스트는 39 mm 소셀로 돌려 스위트 시간을 늘리지 않는다 (M10은 1조합 ≈17분이며 `slow` 마커 대상이다).
+FEM이 필요한 테스트는 **기존 선례 `tests/test_optimizer.py:96-106` `test_edge_margin_zero_is_bit_identical`을 그대로 따른다** — `cell_mm=20.0` + 모듈 상수 `AX` / `NPTS`, 그리고 기존 경로와 새 경로를 같은 인자로 돌려 `==`로 비트 비교하는 구조. 같은 목적의 테스트가 이미 이 형태로 존재하므로 새 관용구를 만들 이유가 없고, 20 mm 소셀은 스위트 시간에 거의 영향을 주지 않는다 (M10은 1조합 ≈17분이며 `slow` 마커 대상이다).
+
+베이스라인 실측(2026-08-13, `pytest -m "not slow"`): **94 passed / 2 deselected / 6 xfailed, 11분 29초.** 6 xfail은 `test_junction_bf.py`의 Vb=0 케이스로 설계상 예상된 것이다. `test_default_pin` / `test_legacy_pin`의 스택 불일치 xfail은 발동하지 않았다 — 이 머신에서 **비트 핀이 실제로 강제되고 있다.**
 
 **착수 전제**: `pytest -m "not slow"` 베이스라인이 초록이어야 한다. 기존 실패가 있으면 그것을 먼저 기록해 새 변경이 만든 실패와 구분한다.
 
