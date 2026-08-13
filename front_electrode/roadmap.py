@@ -14,9 +14,12 @@ docs/superpowers/specs/2026-08-13-roadmap-runner-design.md 참조.
 엔진(2L_FEST.py)과 adapter.py는 수정하지 않는다 — evaluate_existing_simulation을
 그대로 호출한다.
 """
+import csv
 import hashlib
 import json
 import os
+import subprocess
+import time
 
 from .optimizer import (
     SCENARIO_AS_CURED,
@@ -166,3 +169,101 @@ def expand_cases(sc):
             "grid_params": dict(state),
         })
     return out
+
+
+# ---------------------------------------------------------------------------
+# provenance 수집 + CSV 행 조립
+# ---------------------------------------------------------------------------
+
+# engine_raw에서 CSV로 옮길 필드. 4-panel(Jsc/Voc/FF/Eff)의 데이터 소스이며
+# busbar recovery 사후보정이 섞이지 않은 순수 엔진값이다(adapter.py 336-344).
+ENGINE_RAW_KEYS = (
+    "Jsc", "Voc", "FF", "Eff", "Pmpp", "Vmpp", "Jmpp",
+    "P_shade", "Pe", "Pf_finger", "Pf_busbar", "Pc",
+)
+
+# 워커 스케줄·벽시계 의존 → 회귀 대조 시 제외 (optimize_m10.py와 같은 규약).
+NONDETERMINISTIC_COLS = ("elapsed_s", "timestamp")
+
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def _git_commit():
+    """짧은 SHA(+dirty). git이 없거나 실패하면 'unknown' — 치명적이지 않다."""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5, cwd=_REPO_ROOT)
+        if head.returncode != 0:
+            return "unknown"
+        sha = head.stdout.strip() or "unknown"
+        status = subprocess.run(
+            ["git", "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5, cwd=_REPO_ROOT)
+        if status.returncode == 0 and status.stdout.strip():
+            sha += "-dirty"
+        return sha
+    except Exception:
+        return "unknown"
+
+
+def provenance_env(fest, sc):
+    """실행 환경 provenance.
+
+    engine_sha가 git_commit보다 강한 앵커다 — 커밋하지 않고 엔진을 고친 채
+    돌린 결과를 구분해 낸다.
+    """
+    meta = sc.get("_meta", {})
+    return {
+        "git_commit": _git_commit(),
+        "engine_version": fest.__build__["version"],
+        "engine_sha": fest._build_sha(),
+        "scenario_file": meta.get("file", "unknown"),
+        "scenario_sha256": meta.get("sha256", "unknown"),
+    }
+
+
+def build_row(case, out, sc, env, elapsed_s):
+    """한 케이스의 결과를 CSV 행 dict로 조립한다."""
+    row = {
+        "case_index": case["case_index"],
+        "label": case["label"],
+        "note": case["note"],
+    }
+    row.update(out["parameters"])
+    er = out["engine_raw"]
+    for key in ENGINE_RAW_KEYS:
+        row[key] = er[key]
+    row["total_loss"] = out["results"]["total_loss"]
+
+    prov = sc.get("provenance", {})
+    for key in sorted(case["grid_params"]):
+        row["prov_" + key] = prov.get(key, {}).get("tag", "unspecified")
+
+    row.update(env)
+    meta = out["meta"]
+    row["nodes"] = meta["nodes"]
+    row["mode"] = meta["mode"]
+    row["n_probe_auto_bumped"] = meta.get("n_probe_auto_bumped", False)
+    row["elapsed_s"] = round(float(elapsed_s), 1)
+    row["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    return row
+
+
+def append_row(csv_path, row, header_written):
+    """한 행을 즉시 append + flush. 중간 크래시에도 완료분이 보존된다."""
+    with open(csv_path, "a", newline="", encoding="utf-8-sig") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(row.keys()))
+        if not header_written:
+            writer.writeheader()
+        writer.writerow(row)
+        fh.flush()
+    return True
+
+
+def completed_labels(csv_path):
+    """--resume용. 기존 CSV에 기록된 label 집합. 파일이 없으면 빈 집합."""
+    if not (os.path.exists(csv_path) and os.path.getsize(csv_path) > 0):
+        return set()
+    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
+        return {r["label"] for r in csv.DictReader(fh) if r.get("label")}

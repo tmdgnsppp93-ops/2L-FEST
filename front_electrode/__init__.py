@@ -34,6 +34,12 @@ from .roadmap import (
     validate_scenario,
     load_scenario,
     expand_cases,
+    ENGINE_RAW_KEYS,
+    NONDETERMINISTIC_COLS,
+    provenance_env,
+    build_row,
+    append_row,
+    completed_labels,
 )
 from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
 from .i18n import (
@@ -65,6 +71,12 @@ __all__ = [
     "validate_scenario",
     "load_scenario",
     "expand_cases",
+    "ENGINE_RAW_KEYS",
+    "NONDETERMINISTIC_COLS",
+    "provenance_env",
+    "build_row",
+    "append_row",
+    "completed_labels",
     "PRESETS",
     "MAINSTREAM_PRESETS",
     "get_preset",
