@@ -259,6 +259,23 @@ def build_blocks(with_tests=None):
 
 # --- 문서 갱신 ---------------------------------------------------------------
 
+# --check 비교에서 제외할 변동성 필드. 커밋 SHA와 커밋 수는 --write가 문서를
+# 고치는 순간 또 달라지므로 원리상 수렴하지 않는다. 이들 때문에 --check가 영구히
+# 빨간불이 되면 게이트로 쓸 수 없다. 진짜 낡음(규모·버전·테스트 수)만 본다.
+_VOLATILE = (
+    (re.compile(r"커밋 `[0-9a-f]+`"), "커밋 `<sha>`"),
+    (re.compile(r"`[0-9a-f]{7,40}`"), "`<sha>`"),
+    (re.compile(r"커밋 \d+건"), "커밋 <n>건"),
+    (re.compile(r"\d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}"), "<기간>"),
+)
+
+
+def _normalize_volatile(text):
+    for pat, repl in _VOLATILE:
+        text = pat.sub(repl, text)
+    return text
+
+
 def _pattern(name):
     return re.compile(
         r"(<!-- STATS:BEGIN %s -->\n)(.*?)(\n<!-- STATS:END %s -->)"
@@ -333,12 +350,13 @@ def main():
         return 2
 
     if args.check:
-        if updated != original:
+        if _normalize_volatile(updated) != _normalize_volatile(original):
             print(f"❌ 문서가 낡았다 — 갱신 필요 구간: {changed}\n"
                   f"   python scripts/gen_registration_stats.py "
                   f"--from-log <로그> --write", file=sys.stderr)
             return 1
-        print("✅ 문서 수치가 저장소 실측과 일치한다.")
+        print("✅ 문서 수치가 저장소 실측과 일치한다 "
+              "(커밋 SHA·커밋 수·기간은 변동성 필드라 비교에서 제외).")
         return 0
 
     if updated == original:
