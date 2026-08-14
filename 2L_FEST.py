@@ -417,6 +417,21 @@ v28.53: [fix/ui] 형상 노트 헤더 가로 넘침 — 계산 무변경.
          회귀 방지: test_note_header_fits_the_card가 실측 환산치(≈7.2px/char,
          한글 ≈11px/char)로 두 언어 헤더 폭에 상한을 건다 — 디스플레이 없이 돈다.
 
+v28.54: [ui] Current Extraction의 Method / R-Method 드롭다운 비활성화 —
+         계산 무변경. extraction_method는 GridDesign에 저장만 되고 솔버가 전혀
+         읽지 않는다(저장소 전체 참조가 정의·저장·GUI 매핑뿐이며, 다른 소비처
+         없음). 그래서 "Ribbon Ends (Module)"이나 "Floating (Voc only)"을 골라도
+         probe_point와 **완전히 같은 결과가 에러도 경고도 없이** 나왔다 —
+         사용자는 모듈 모사를 했다고 믿게 된다. v28.43의 n_probe_points=0
+         (조용히 틀린 값)과 같은 계열이라, 솔버에 연결하기 전까지 선택지를
+         닫는 편이 옳다고 판단했다.
+         조치: values를 동작하는 "At Probe Point (I-V tester)" 하나로 줄이고
+         state="disabled", 옆에 붉은 이탤릭 "(not implemented)" 라벨을 붙인다.
+         전면·후면 둘 다. 기본값이 원래 probe_point였으므로 **계산 결과는
+         비트 단위로 불변**이다(_apply_grid_design의 매핑 경로 무수정).
+         되돌리기: 솔버 연결 시 values 복원 + state 제거 + 라벨 삭제.
+         근거: docs/audit_2026-08-13.md §4 "Current extraction mode".
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -514,8 +529,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.53",
-    "date": "2026-08-12",
+    "version": "v28.54",
+    "date": "2026-08-14",
 }
 _BUILD_SHA_CACHE = None
 
@@ -8437,19 +8452,26 @@ class FESTProApp(ctk.CTk):
         method_row.pack(fill="x", padx=4, pady=3); method_row.pack_propagate(False)
         ctk.CTkLabel(method_row, text="Method:", font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=CLR_TEXT_SEC, width=58, anchor="w").pack(side="left", padx=(6, 2))
+        # v28.54: 비활성화. extraction_method는 GridDesign에 저장만 되고 솔버가
+        #   읽지 않는다(저장소 전체 참조가 정의·저장·GUI 매핑뿐). 그 상태로 열어
+        #   두면 "Ribbon Ends"/"Floating"을 골라도 probe_point와 **똑같은 결과가
+        #   에러 없이** 나와, 사용자가 모듈 모사를 했다고 믿게 된다. v28.43의
+        #   n_probe_points=0 버그(조용히 틀린 값)와 같은 계열이라 솔버 연결 전까지
+        #   선택지를 닫는다. 연결 시 values 복원 + state 제거로 되돌린다.
+        #   근거: docs/audit_2026-08-13.md §4 "Current extraction mode".
         self._extract_method_var = ctk.StringVar(value="At Probe Point (I-V tester)")
+        ctk.CTkLabel(method_row, text="(not implemented)",
+                     font=ctk.CTkFont(size=9, slant="italic"),
+                     text_color="#B71C1C").pack(side="right", padx=(2, 6))
         self._extract_method_dropdown = ctk.CTkOptionMenu(
             method_row,
-            values=[
-                "At Probe Point (I-V tester)",
-                "Ribbon Ends (Module)",
-                "Floating (Voc only)",
-            ],
+            values=["At Probe Point (I-V tester)"],
             variable=self._extract_method_var,
             font=ctk.CTkFont(size=10),
             fg_color="#7B1FA2", button_color="#6A1B9A",
             button_hover_color="#4A148C", height=26, width=180,
-            dropdown_font=ctk.CTkFont(size=10))
+            dropdown_font=ctk.CTkFont(size=10),
+            state="disabled")
         self._extract_method_dropdown.pack(side="left", fill="x", expand=True, padx=4)
 
         # --- REAR DESIGN Card --- [STEP 1]
@@ -8575,20 +8597,20 @@ class FESTProApp(ctk.CTk):
         rear_method_row.pack(fill="x", padx=6, pady=3); rear_method_row.pack_propagate(False)
         ctk.CTkLabel(rear_method_row, text="R-Method:", font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=CLR_TEXT_SEC, width=68, anchor="w").pack(side="left", padx=(6, 2))
+        # v28.54: 비활성화 — 전면 Method와 같은 이유(솔버 미연결). 위 주석 참조.
         self._rear_extract_method_var = ctk.StringVar(value="At Probe Point (I-V tester)")
+        ctk.CTkLabel(rear_method_row, text="(not implemented)",
+                     font=ctk.CTkFont(size=9, slant="italic"),
+                     text_color="#B71C1C").pack(side="right", padx=(2, 6))
         self._rear_extract_method_dropdown = ctk.CTkOptionMenu(
             rear_method_row,
-            values=[
-                "At Probe Point (I-V tester)",
-                "Ribbon Ends (Module)",
-                "Full Area Chuck",
-                "Floating (Voc only)",
-            ],
+            values=["At Probe Point (I-V tester)"],
             variable=self._rear_extract_method_var,
             font=ctk.CTkFont(size=10),
             fg_color="#4E342E", button_color="#3E2723",
             button_hover_color="#1B0000", height=26, width=180,
-            dropdown_font=ctk.CTkFont(size=10))
+            dropdown_font=ctk.CTkFont(size=10),
+            state="disabled")
         self._rear_extract_method_dropdown.pack(side="left", fill="x", expand=True, padx=4)
         self._rear_patt_rows.append(rear_method_row)  # so it hides with bifacial toggle
 
