@@ -12,6 +12,7 @@ physical → contact area / 금속 저항, optical → shading.
 import os
 import sys
 
+import numpy as np
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -64,3 +65,134 @@ def test_optical_shading_fraction_less_when_transparent(fest):
                               optical_transparency_f=0.4,
                               optical_transparency_b=0.4))
     assert geo.optical_shading_fraction() < geo.shading_fraction()
+
+
+# ---------------------------------------------------------------------------
+# 엔진 배선 (FEM, 20mm 소셀)
+# ---------------------------------------------------------------------------
+def _build_case(fest, t_f=0.0, t_b=0.0):
+    """20mm 소셀 + coarse 메시로 solver/geo/dp 한 세트를 만든다."""
+    front = fest.GridDesign(n_fingers=4, n_busbars=2,
+                            w_finger=100e-4, w_busbar=200e-4,
+                            n_probe_points=10,
+                            optical_transparency_f=t_f,
+                            optical_transparency_b=t_b)
+    geo = fest.CellGeometry(cell_w=2.0, cell_h=2.0, front=front)
+    pts, tri = fest.generate_mesh(geo, axis_segments_override=AX)
+    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
+    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+    return S, geo, fest.DiodeParams()
+
+
+def _built_solver(fest, t_f=0.0, t_b=0.0):
+    """_build()까지만 돌린 solver — 폭에서 유도되는 모델을 직접 비교할 때 쓴다."""
+    S, geo, dp = _build_case(fest, t_f, t_b)
+    g = geo.front
+    S._build(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact, g.Rs_sheet,
+             g.shape_cf, dp)
+    return S
+
+
+def _run(fest, t_f=0.0, t_b=0.0):
+    """calc_iv + losses를 돌려 (iv, loss, geo) 반환."""
+    S, geo, dp = _build_case(fest, t_f, t_b)
+    g = geo.front
+    _, _, iv = S.calc_iv(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact,
+                         g.Rs_sheet, g.shape_cf, dp, mode="tandem", npts=NPTS)
+    vb = iv.get("Vmpp_internal", iv["Vmpp"])
+    res = iv.get("_mpp_result") or S.solve(
+        g.rho_bulk, g.finger_h, g.w_f, g.rho_contact, g.Rs_sheet, vb,
+        g.shape_cf, dp, "tandem")
+    loss = S.losses(res, g.rho_bulk, g.finger_h, g.w_f, g.rho_contact,
+                    g.Rs_sheet, g.shape_cf, dp,
+                    Vmpp=iv["Vmpp"], Jmpp=iv["Jmpp"])
+    return iv, loss, geo
+
+
+def test_transparency_zero_bit_identical(fest, monkeypatch):
+    """★ T=0 명시 전달 == 미전달. 기존 결과 불변의 실증."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    iv_default, loss_default, _ = _run(fest)      # 파라미터 미전달과 동일 (기본 0)
+    iv_zero, loss_zero, _ = _run(fest, t_f=0.0, t_b=0.0)
+    for k in ("Jsc", "Voc", "FF", "Eff", "Pmpp"):
+        assert iv_zero[k] == iv_default[k], f"{k} 비트동일 실패"
+    for k in ("Pe", "Pf_finger", "Pf_busbar", "Pc", "P_shade"):
+        assert loss_zero[k] == loss_default[k], f"{k} 비트동일 실패"
+
+
+def test_transparency_does_not_touch_contact(fest, monkeypatch):
+    """★ 이 기능의 정의 — T는 접촉·저항 **모델**에 닿지 않는다.
+
+    불변이어야 하는 것은 모델이지 소산 전력이 아니다.
+    Pc = Σ(Ve−Vm)²·Gc 는 전력이므로, Gc가 그대로여도 T가 발전량을 늘리면
+    전류가 늘어 Pc는 물리적으로 **당연히 오른다**. 소산 전력을 불변으로
+    단언하면 옳은 구현이 실패한다 — 실측(20mm 소셀, T 0→0.4)에서 Pc가
+    +3.32% 올랐고, 이는 발전량비 1.0164의 제곱(1.0331)과 일치한다.
+    저항 소산이 전류²에 비례하기 때문이다.
+
+    그래서 검사 대상은 **폭에서 직접 유도되는 양**이다 — 접촉 컨덕턴스 _Gc,
+    금속 저항 네트워크 _Km, emitter 시트 _Ke, 금속 점유율 metal_frac.
+    이들이 비트 동일하면 T가 물리 폭 경로로 새지 않았다는 뜻이며,
+    소산 전력을 보는 것보다 강한 보증이다.
+
+    결과 수준(전력·효율)의 방향과 크기는
+    test_transparency_effects_stay_in_optical_path가 담당한다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    a = _built_solver(fest, t_f=0.0, t_b=0.0)
+    b = _built_solver(fest, t_f=0.4, t_b=0.4)
+
+    assert np.array_equal(a._Gc, b._Gc), "T가 접촉 컨덕턴스를 건드렸다"
+    assert (a._Km - b._Km).nnz == 0, "T가 금속 저항 네트워크를 건드렸다"
+    assert (a._Ke - b._Ke).nnz == 0, "T가 emitter 시트 행렬을 건드렸다"
+    assert np.array_equal(a.metal_frac, b.metal_frac), "T가 금속 점유율을 건드렸다"
+
+    # 반대 방향 — 광학 경로에는 반드시 나타나야 한다
+    assert b.illum_frac.sum() > a.illum_frac.sum(), "T를 줬는데 발전량이 안 늘었다"
+
+
+def test_transparency_effects_stay_in_optical_path(fest, monkeypatch):
+    """T의 영향이 광학 경로에만 나타나는지 — 결과 수준의 보증.
+
+    모델이 불변임은 위 테스트가 본다. 여기서는 실제 계산 결과가 물리적으로
+    말이 되는지, 그리고 저항 소산의 증가가 **발전량 증가만으로 설명되는지**를
+    본다. 설명되지 않는 증가가 있으면 T가 어딘가 다른 경로로 샌 것이다.
+
+    상한은 느슨하게 잡는다: 저항 소산은 전류²에 준해 오르므로 발전량비의
+    제곱이 자연스러운 기준이고, 여기에 여유 2배를 둔다. 정밀 회귀가 아니라
+    "딴 경로로 새지 않았다"의 방어선이다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    iv0, l0, _ = _run(fest, t_f=0.0, t_b=0.0)
+    iv1, l1, geo1 = _run(fest, t_f=0.4, t_b=0.4)
+
+    # 발전량 증가비 — 엔진의 _gen_s와 같은 식 (solver 내부를 보지 않고 재현)
+    gen_ratio = ((1.0 - geo1.optical_shading_fraction())
+                 / (1.0 - geo1.shading_fraction()))
+    assert gen_ratio > 1.0, "T>0인데 발전량 증가비가 1 이하다"
+
+    assert l1["P_shade"] < l0["P_shade"], "T를 줬는데 shading 손실이 안 줄었다"
+    assert iv1["Eff"] > iv0["Eff"], "shading이 줄었는데 효율이 안 올랐다"
+
+    upper = 1.0 + (gen_ratio ** 2 - 1.0) * 2.0
+    for k in ("Pc", "Pf_finger", "Pf_busbar"):
+        assert l1[k] > l0[k], f"{k}가 안 늘었다 — 전류가 안 늘었다는 뜻"
+        assert l1[k] / l0[k] < upper, (
+            f"{k} 증가({l1[k] / l0[k]:.4f}배)가 발전량 증가"
+            f"({gen_ratio:.4f}배)로 설명되지 않는다 — T가 딴 경로로 샜다")
+
+
+def test_rear_transparency_warns(fest, monkeypatch, capsys):
+    """rear T는 모델에 반영되지 않는다 — 조용한 no-op으로 두지 않고 경고한다."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    front = fest.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10)
+    rear = fest.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10,
+                           optical_transparency_f=0.3)
+    geo = fest.CellGeometry(cell_w=2.0, cell_h=2.0, front=front, rear=rear)
+    pts, tri = fest.generate_mesh(geo, axis_segments_override=AX)
+    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
+    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+    g = geo.front
+    S._build(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact, g.Rs_sheet,
+             g.shape_cf, fest.DiodeParams())
+    assert "rear optical transparency" in capsys.readouterr().out

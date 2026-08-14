@@ -4007,12 +4007,26 @@ class FESTSolver:
         #   s = (1 - shade_case) / (1 - shade_design) 을 곱한다. ±10μm급 폭
         #   변화의 공간 재분배는 노드 간격(수백 μm)보다 한참 작아 전역 스케일이
         #   일관된 1차 처리다. illum_frac은 항상 원본 base에서 재계산(중첩 방지).
+        # v28.55: rear T는 배선하지 않는다 — shading_fraction()이 전면 기하만
+        #   계산하고, 후면 입사광 차폐 자체가 현 모델에 없다. 조용한 no-op으로
+        #   두면 v28.54에서 막은 extraction_method와 같은 함정이 되므로 경고한다.
+        #   솔버 인스턴스당 1회만 출력한다(_build는 solve마다 호출된다).
+        _rear = getattr(self.geo, "rear", None)
+        if (_rear is not None and not getattr(self, "_rear_T_warned", False)
+                and (getattr(_rear, "optical_transparency_f", 0.0) > 0.0
+                     or getattr(_rear, "optical_transparency_b", 0.0) > 0.0)):
+            print("  ⚠ rear optical transparency는 현재 모델에 반영되지 않는다 "
+                  "(후면 입사광 차폐 미모델링). 값은 무시된다.", flush=True)
+            self._rear_T_warned = True
+
         _gen_s = 1.0
         if getattr(self.geo, '_dxf_finger_rects', None) is None:
             try:
+                # v28.55: 케이스 shading은 **광학 폭** 기준이다 (Manual §2.7).
+                #   _sh_geo는 물리 폭 그대로 두어야 _gen_s의 분모 기준이 유지된다.
+                #   T=0이면 두 값이 같아 _gen_s == 1 → 기존 경로와 비트 동일.
                 _sh_geo = float(self.geo.shading_fraction())
-                _sh_case = float(self.geo.shading_fraction(w_f_opt=wf,
-                                                           w_b_opt=wb_case))
+                _sh_case = float(self.geo.optical_shading_fraction(wf, wb_case))
                 _gen_s = (1.0 - _sh_case) / max(1.0 - _sh_geo, 1e-9)
             except Exception:
                 _gen_s = 1.0
@@ -6946,7 +6960,8 @@ class FESTSolver:
 
         # Shading loss — v28.18: wb도 케이스별(이전엔 설계 폭 고정이라 분해 내부조차 비일관).
         wb_eff = self.geo.w_b if wb is None else float(wb)
-        shade_frac = self.geo.shading_fraction(wf, wb_eff)
+        # v28.55: 광학 폭 기준 — 실제로 잃는 빛이 곧 shading 손실이다.
+        shade_frac = self.geo.optical_shading_fraction(wf, wb_eff)
         if Vmpp is not None and Jmpp is not None:
             P_shade = shade_frac * Jmpp * Vmpp
         else:
