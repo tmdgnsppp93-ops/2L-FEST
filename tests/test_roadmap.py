@@ -190,7 +190,8 @@ def _fake_out(eff=31.0):
             "rho_bulk_uohm_cm": 4.22, "rho_contact_mohm_cm2": 10.0,
             "edge_margin_mm": 0.0,
         },
-        "results": {"total_loss": 1.07, "efficiency": eff},
+        "results": {"total_loss": 1.07, "efficiency": eff,
+                    "shading_physical": 0.0173, "shading_optical": 0.0173},
         "engine_raw": {
             "Jsc": 39.42, "Voc": 1.951, "FF": 78.31, "Eff": eff,
             "Pmpp": eff, "Vmpp": 1.62, "Jmpp": 19.1,
@@ -436,6 +437,22 @@ def test_shipped_example_declares_all_provenance():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(root, "scripts", "scenarios", "unist_tco.json")
     assert _unspec(load_scenario(path)) == []
+
+
+def test_build_row_carries_shading_columns():
+    """논문 figure 원장이므로 물리/광학 shading을 둘 다 싣는다.
+
+    T=0이면 두 값이 같지만 항상 둘 다 남긴다 — 금속이 덮은 면적과 빛을 잃은
+    면적을 논문에서 구분해 설명해야 하기 때문이다.
+    """
+    sc = _min_scenario()
+    sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
+    out = _fake_out()
+    out["results"]["shading_optical"] = 0.0121      # T>0 상황
+    row = build_row(expand_cases(sc)[0], out, sc,
+                    provenance_env(_FakeFest, sc), 1.0)
+    assert row["shading_physical"] == 0.0173
+    assert row["shading_optical"] == 0.0121
 
 
 # ---------------------------------------------------------------------------
