@@ -143,6 +143,11 @@ def _build_geometry(fest, grid_params):
     """
     gp = grid_params
     n_probe = int(gp.get("n_probe_points", 0))
+    # Metal optical transparency (Manual v7.0 §2.7). 0이면 광학폭 == 물리폭이라
+    # 기존 경로와 비트 동일하다. 엔진 내부 인자명은 _f/_b, 사용자 단위 키는
+    # _finger/_busbar — 기존 w_finger_um → w_finger 규약과 같은 패턴이다.
+    t_f = float(gp.get("optical_transparency_finger", 0.0) or 0.0)
+    t_b = float(gp.get("optical_transparency_busbar", 0.0) or 0.0)
     edge_margin_cm = _mm_to_cm(gp.get("edge_margin_mm", 0.0) or 0.0)
     cell_h_cm = _mm_to_cm(gp["cell_h_mm"])
     # 버스바 y-길이 축소분(핑거 x는 edge_gap이 담당). margin=0이면 1.0(불변).
@@ -158,6 +163,7 @@ def _build_geometry(fest, grid_params):
             w_busbar=_mm_to_cm(gp["w_busbar_mm"]),
             n_probe_points=n_probe,
             edge_gap=edge_margin_cm, busbar_length_frac=bb_frac,
+            optical_transparency_f=t_f, optical_transparency_b=t_b,
         )
     else:
         front = fest.GridDesign(
@@ -168,6 +174,7 @@ def _build_geometry(fest, grid_params):
             w_busbar=_mm_to_cm(gp["w_busbar_mm"]),
             n_probe_points=n_probe,
             edge_gap=edge_margin_cm, busbar_length_frac=bb_frac,
+            optical_transparency_f=t_f, optical_transparency_b=t_b,
         )
     geo = fest.CellGeometry(
         cell_w=_mm_to_cm(gp["cell_w_mm"]),
@@ -220,8 +227,25 @@ def evaluate_existing_simulation(
     # roundtrip_check가 최적 조합을 재입력할 때 이걸 되돌린다 — parameters에 기록된
     # 값(단위 역환산됨)을 쓰면 부동소수 왕복 오차로 비트 동일이 깨질 수 있다.
     _grid_overrides = {k: grid_params[k] for k in
-                       ("edge_margin_mm", "rho_bulk_uohm_cm", "rho_contact_mohm_cm2")
+                       ("edge_margin_mm", "rho_bulk_uohm_cm", "rho_contact_mohm_cm2",
+                        "optical_transparency_finger", "optical_transparency_busbar")
                        if grid_params.get(k) is not None}
+
+    # busbar recovery factor와 optical transparency는 같은 물리(busbar 반사광
+    # 회수)를 서로 다른 계층에서 모델링한다 — 둘 다 켜면 이중계산이다.
+    # recovery는 사후 line-item이라 FEM에 피드백되지 않고(위 모듈 docstring),
+    # T는 엔진 입력이라 발전량에 실제로 들어간다. 조용히 둘 다 적용되는 것이
+    # 최악이므로 막는다. finger는 recovery 모델이 없어 충돌하지 않는다.
+    _t_b_in = float(grid_params.get("optical_transparency_busbar", 0.0) or 0.0)
+    if float(busbar_recovery_factor) > 0.0 and _t_b_in > 0.0:
+        raise ValueError(
+            f"busbar_recovery_factor(={busbar_recovery_factor})와 "
+            f"optical_transparency_busbar(={_t_b_in})를 동시에 쓸 수 없다 — "
+            "같은 물리(busbar 반사광 회수)를 두 번 계산한다.\n"
+            "  · 기존 방식 유지: optical_transparency_busbar=0 으로 둘 것 "
+            "(권장 — 현재 기본)\n"
+            "  · 광학 폭으로 전환: busbar_recovery_factor=0 으로 둘 것 "
+            "(T 값의 문헌/측정 근거가 있을 때만)")
 
     geo = _build_geometry(fest, grid_params)
 
@@ -331,6 +355,10 @@ def evaluate_existing_simulation(
             # % — 회수 반영. = iv["Eff"] + recovered_power/Pin×100 (f=0이면 iv["Eff"]).
             # Pin 정규화를 빼먹지 말 것(v28.42 [2-fix-a]) — 아래 계산부와 같은 식이다.
             "efficiency": efficiency,
+            # 금속이 덮은 면적(물리) vs 빛을 잃은 면적(광학). T=0이면 같은 값이다.
+            # 논문에서 두 값을 구분해 설명해야 하므로 항상 둘 다 남긴다.
+            "shading_physical": geo.shading_fraction(wf, geo.w_b),
+            "shading_optical": geo.optical_shading_fraction(wf, geo.w_b),
         },
         # 회귀/round-trip 검증용 원본 엔진 값(무보정)
         "engine_raw": {

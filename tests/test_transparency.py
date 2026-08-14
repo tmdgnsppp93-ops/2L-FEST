@@ -196,3 +196,71 @@ def test_rear_transparency_warns(fest, monkeypatch, capsys):
     S._build(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact, g.Rs_sheet,
              g.shape_cf, fest.DiodeParams())
     assert "rear optical transparency" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# adapter 경로
+# ---------------------------------------------------------------------------
+from front_electrode import (  # noqa: E402
+    SCENARIO_MEASURED,
+    evaluate_existing_simulation,
+)
+
+
+def _grid(**over):
+    g = dict(cell_w_mm=20.0, cell_h_mm=20.0, finger_spacing_mm=1.8,
+             w_finger_um=50.0, n_busbars=2, w_busbar_mm=0.2,
+             n_probe_points=10)
+    g.update(over)
+    return g
+
+
+def test_adapter_transparency_zero_bit_identical(fest, monkeypatch):
+    """T=0 키를 넘긴 것과 안 넘긴 것이 비트 동일."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    kw = dict(scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+              mode="tandem", npts=NPTS, axis_segments_override=AX)
+    base = evaluate_existing_simulation(fest, _grid(), **kw)
+    zero = evaluate_existing_simulation(
+        fest, _grid(optical_transparency_finger=0.0,
+                    optical_transparency_busbar=0.0), **kw)
+    for k in ("Jsc", "Voc", "FF", "Eff", "Pmpp", "Pc", "Pf_finger"):
+        assert zero["engine_raw"][k] == base["engine_raw"][k], f"{k} 비트동일 실패"
+
+
+def test_shading_columns_physical_and_optical(fest, monkeypatch):
+    """T=0이면 두 컬럼이 같고, T>0이면 optical < physical."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    kw = dict(scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+              mode="tandem", npts=NPTS, axis_segments_override=AX)
+    zero = evaluate_existing_simulation(fest, _grid(), **kw)["results"]
+    assert zero["shading_physical"] == zero["shading_optical"]
+
+    tr = evaluate_existing_simulation(
+        fest, _grid(optical_transparency_finger=0.4,
+                    optical_transparency_busbar=0.4), **kw)["results"]
+    assert tr["shading_optical"] < tr["shading_physical"]
+    # 물리 shading은 T와 무관하다 (금속이 덮은 면적은 그대로)
+    assert tr["shading_physical"] == pytest.approx(zero["shading_physical"])
+
+
+def test_transparency_conflicts_with_recovery(fest):
+    """같은 물리를 두 번 계산하는 조합은 막는다. 메시지에 해결책 양쪽이 있어야 한다."""
+    with pytest.raises(ValueError) as ei:
+        evaluate_existing_simulation(
+            fest, _grid(optical_transparency_busbar=0.3),
+            scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.25,
+            mode="tandem", npts=NPTS, axis_segments_override=AX)
+    msg = str(ei.value)
+    assert "optical_transparency_busbar=0" in msg
+    assert "busbar_recovery_factor=0" in msg
+
+
+def test_finger_transparency_does_not_conflict(fest, monkeypatch):
+    """finger에는 recovery 모델이 없으므로 충돌하지 않는다."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    out = evaluate_existing_simulation(
+        fest, _grid(optical_transparency_finger=0.3),
+        scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.25,
+        mode="tandem", npts=NPTS, axis_segments_override=AX)
+    assert out["results"]["shading_optical"] < out["results"]["shading_physical"]
