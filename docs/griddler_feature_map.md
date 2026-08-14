@@ -3,6 +3,7 @@
 > **출처**: Griddler 2.5 & PRO Manual v7.0 (2023-09-15), SERIS
 > **성격**: 원문 요약·재서술. 원문 발췌 아님. 매뉴얼 PDF 자체는 저작권 문제로 repo에 포함하지 않음 (`~/dev/refs/` 별도 보관, 필요 시 `--add-dir`).
 > **최종 정리**: 2026-08-13
+> **개정 2026-08-14** (매뉴얼 원문 §2.7 / §4.4 / §7 재확인): §2.8에 §4.4 워크플로·Apply lock·탠덤 광학 부재를 추가하고 RayFlare 부재를 명시. §2.12에 Top Cell Position, 조도 3영역, Interlayer R, Photon Coupling J01을 추가하고 §7의 PRO 표기 부재를 근거와 함께 확정.
 
 ---
 
@@ -191,7 +192,26 @@ n_i(T) = 9.15e19 × ( (T+273.15)/300 )^2 × exp( -6880 / (T+273.15) )
 | 4.5 | Doped Layer Calculations | emitter J0e, IQE 계산. cmd-PC1D-6.2 호출 방식이며 EDNA2와 벤치마킹됨 (Appendix C) | C | ? |
 | 4.6 | Transfer to Simulation Page | 계산된 항들을 시뮬레이션 페이지로 전달 | C | ? |
 
-**⚠️ 용어 정정**: 랩미팅에서 언급된 "레이 플레이어"는 매뉴얼상 **PV Lighthouse의 wafer ray tracer**다 (음성 인식 오류). OPAL2, cmd PC1D 6-2와 함께 §4.4에서 연동된다.
+**⚠️ 용어 정정**: 랩미팅에서 언급된 "레이 플레이어"는 매뉴얼상 **PV Lighthouse의 wafer ray tracer**다 (음성 인식 오류). 2026-08-14 확인: 이 표현은 Appendix A 도입부(p.106)에 나오며, cmd PC1D 6-2 · OPAL2와 함께 "외부 계산기"로 묶여 언급된다. 다만 **§4.4 본문에 단계별 워크플로가 실린 것은 OPAL2 하나뿐**이다.
+
+**❌ RayFlare는 이 매뉴얼에 없다** (2026-08-14 전문 검색, 대소문자 무관 0건). 마찬가지로 "Griddler Lock"이라는 기능명도 없다. 혼동하기 쉬운 실제 기능은 아래 **Apply lock**이다. 외부 광학 연동 대상으로 매뉴얼이 명시하는 것은 OPAL2 / wafer ray tracer / cmd PC1D 6-2 셋뿐이다.
+
+**§4.4 워크플로 (2026-08-14 본문 확인)**
+
+1. 셀 단면 다이어그램에서 `Front/Rear Illumination Optics`를 눌러 광학 페이지를 연다
+2. 이 페이지는 입력 두 가지를 요구한다 — **300–1200 nm 실리콘 영역 흡수율**과 **같은 구간의 조도 스펙트럼**. 기본값은 임의의 PERC 실리콘 흡수율 곡선 + AM1.5G(정규화 발전 전류밀도 46.3 mA/cm²)이며 둘 다 import/붙여넣기로 교체 가능
+3. `OPAL (free)` 버튼 → PV Lighthouse의 OPAL2로 이동 → 표면 형상과 반사방지막을 정의해 입사면 광학을 계산 → `RAT data` 탭의 열 전체를 복사 → Griddler 광학 페이지 상단 박스에 붙여넣기. Griddler가 `Transmission` 열을 자동 인식한다
+4. `Light Trapping` 버튼으로 부위별 internal reflectance와 doped layer별 free carrier absorption 반영 여부를 조정
+5. 셀 단면 창에서 `Apply All`을 눌러야 비차폐 영역의 J_L이 실제로 반영된다
+
+**Apply lock (자동 재계산 잠금)**
+
+`Apply lock`을 켜두면 **metallization pattern이 바뀔 때마다** Griddler가 light trapping과 J0 계산을 자동으로 다시 돌리고, 갱신된 비차폐 영역 J_L을 자동 적용한다. 자물쇠 아이콘을 눌러 강제 적용도 가능하다. 이것이 §4.4를 단순한 "값 입력"이 아니라 **설계 변경에 연동되는 계산 경로**로 만드는 장치다.
+
+**탠덤과의 관계 — 매뉴얼은 연결하지 않는다**
+
+2026-08-14 확인: `tandem`이라는 단어는 목차를 빼면 **p.99–105(§7)에만** 등장하고, 그 7페이지 안에는 `absorptance` / `Optics` / `spectrum` / `OPAL` / `light trapping` 중 **어느 것도 나오지 않는다.** 즉 매뉴얼상 §4.4 광학 페이지는 **단일 셀 모델에 붙는 기능**이며, tandem에서 top cell이 bottom cell의 스펙트럼을 걸러내는 **서브셀 간 광학 결합은 서술되지 않는다.** tandem의 조도는 §7에서 영역별 조도·Jsc 값을 **직접 입력**받는 방식이다.
+> 따라서 "top cell을 통과한 스펙트럼으로 bottom cell 광학을 푸는" 처리는 Griddler에도 없다 — 우리가 구현한다면 Griddler 대비 우위 항목이 된다.
 
 **Illumination Optics 핵심 로직 (연동 없이도 구현 가능한 부분)**
 
@@ -268,7 +288,9 @@ Griddler는 MATLAB 기반이라 자체 커맨드 언어를 제공한다. 확인�
 
 ### 2.12 2J Tandem Solar Cell Simulation (§7)
 
-> ⚠️ **버전 구분 미확인**: 매뉴얼 목차에서 §7에는 다른 PRO 기능들과 달리 "(PRO version)" 표기가 **없다.** 무료판 포함 여부는 본문에서 재확인이 필요하다. 박사님께 보고 시 이 불확실성을 명시할 것.
+> ✅ **버전 구분 — 2026-08-14 본문 확인 결과 PRO 전용이 아니다.**
+> 근거 두 가지. (1) 목차에서 `3.2`, `4`, `4.2`~`4.6`, `5`, `5.1`, `5.2`는 모두 제목에 `(PRO version)`이 붙어 있고 `6`은 헤더 자체가 "Other Usages of Griddler 2.5 **PRO**"인데, **§7만 표기가 없다.** (2) 본문 p.99–105 어디에도 PRO 한정이라는 서술이 없다.
+> 매뉴얼이 "무료판 포함"이라고 적극적으로 명시하지는 않으므로, 표기 체계상 PRO 전용이 아니라는 것까지가 확인 가능한 범위다.
 
 **Griddler의 tandem 모델 구조**
 
@@ -284,8 +306,13 @@ Griddler는 MATLAB 기반이라 자체 커맨드 언어를 제공한다. 확인�
 | Enable Tandem | 기본 체크됨. 해제하면 현재 로드된 모델을 **단일 셀로 해석**하여 시뮬레이션 |
 | Load top / bottom cell | 각각 별도의 Griddler 모델 파일을 로드 |
 | Edit Top/Bottom Cell | 메인 시뮬레이션 화면에서 top/bottom을 토글하며 개별 편집 (편집 후 저장 필수) |
+| **Top Cell Position** | top cell이 bottom cell보다 작을 때 **겹쳐지는 상대 위치**를 고른다. top cell이 bottom cell 면적 안에 온전히 들어가는지 보장하는 것은 **사용자 책임**이라고 매뉴얼이 못박는다 |
 | Illumination 입력 위치 이동 | tandem 모드에서는 조도 입력이 메인 화면에서 **tandem 설정 화면으로 이동** |
+| **조도 3영역 분리** | 조도를 **top cell / bottom cell / top과 겹치지 않는 bottom cell 영역** 세 곳에 따로 정의한다. 세 값이 서로 다르면 "Make Equal" 체크를 먼저 해제해야 한다 |
 | **Non-overlapping area Jsc** | 메인 화면의 조도 입력란 자리에, **top cell이 bottom cell보다 작은 경우** 겹치지 않는 영역에서의 bottom cell 1-Sun Jsc를 별도로 정의하는 박스가 생김 |
+| **Interlayer Sheet R + Contact R** | interlayer의 면저항과, 두 interlayer가 서로 맞닿는 접촉저항을 tandem 설정 화면에서 정의. 두 값 모두 blue N 버튼으로 **비균일 공간 패턴** 지정 가능 |
+| **Photon Coupling J01** | luminescence coupling / photon recycling. top cell의 복사 재결합이 만든 광자가 bottom cell에 흡수되어 광전류가 되는 현상. Griddler는 단순형으로 처리한다:<br>`광자속 [cm⁻²s⁻¹] = (Photon coupling J01) × (exp(qV_Jtop/kT) − 1)` |
+| Current Extraction Method 이동 | tandem 모드에서 전면·후면 extraction method 팝업이 tandem 설정 화면으로 옮겨가고, 메인 시뮬레이션 화면에서는 **회색 처리**된다 |
 | Session 저장 | tandem 세션 전체를 **zip**으로 저장·복원 |
 
 | Pri | 구현상태 |
@@ -294,7 +321,16 @@ Griddler는 MATLAB 기반이라 자체 커맨드 언어를 제공한다. 확인�
 
 > **우리에게 유리한 점**: 2L-FEST는 이미 2-layer 구조이므로 골격이 존재한다.
 >
-> **Non-overlapping area Jsc는 특히 실용적이다.** 실험용 tandem 셀에서 top cell 면적이 bottom cell보다 작은 경우가 흔하며, 이를 반영하지 않으면 Jsc가 과대평가된다.
+> **⚠ 이 절만 예외적으로 구현상태를 병기한다** (§0 규칙의 예외 — 2026-08-14 사용자 지시). 근거는 `docs/audit_2026-08-13.md`.
+> - **Photon Coupling J01 — 이미 구현됨.** 2L-FEST의 `J01_coupling`이 같은 함수형을 쓰며, 소스 주석이 이 절(v7.0 §7 item 7)을 이미 인용하고 있다. 솔버 3개 경로에서 야코비안 항까지 포함해 처리한다.
+> - **Interlayer Sheet R / Contact R — 이미 구현됨.** `Rs_junction`(횡전도 평면)과 `Rc_junction`(수직 접촉)이 대응하고, 비균일 패턴은 `SpatialMap`이 담당한다.
+>
+> **미구현 격차는 "non-overlapping area Jsc" 하나가 아니라 세 가지 묶음이다.** 감사 보고서가 이 항목을 Jsc 입력 하나로 축소해 기록했는데, 실제로는:
+> 1. **Top Cell Position** — 두 셀의 상대 위치라는 기하 자유도 자체가 없다
+> 2. **조도 3영역 분리** — 현재는 top/bottom에 각각 하나의 조도만 줄 수 있고, "겹치지 않는 영역"이라는 제3영역 개념이 없다
+> 3. **Non-overlapping area Jsc** — 위 2번의 입력에 해당
+>
+> 실험용 tandem 셀에서 top cell 면적이 bottom보다 작은 경우가 흔하며, 이를 반영하지 않으면 Jsc가 과대평가된다.
 
 ---
 
