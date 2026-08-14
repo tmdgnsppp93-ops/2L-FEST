@@ -264,3 +264,91 @@ def test_finger_transparency_does_not_conflict(fest, monkeypatch):
         scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.25,
         mode="tandem", npts=NPTS, axis_segments_override=AX)
     assert out["results"]["shading_optical"] < out["results"]["shading_physical"]
+
+
+# ---------------------------------------------------------------------------
+# 스윕 축
+# ---------------------------------------------------------------------------
+from front_electrode import (  # noqa: E402
+    COMBO_CONFIRM_THRESHOLD,
+    optimize_grid,
+)
+
+_SWEEP_BASE = dict(cell_mm=20.0, finger_widths_um=[50.0],
+                   finger_pitches_mm=[1.8], n_busbars_list=[2],
+                   busbar_widths_mm=[0.2], scenario=SCENARIO_MEASURED,
+                   axis_segments_override=AX, npts=NPTS)
+
+
+def test_transparency_sweep_axis(fest, monkeypatch):
+    """T가 축이 되면 조합 수가 늘고 각 조합에 값이 실린다."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    opt = optimize_grid(fest, transparency_finger_list=[0.0, 0.4],
+                        **_SWEEP_BASE)
+    assert opt["n_combos"] == 2
+    sh = [r["results"]["shading_optical"] for r in opt["results"]]
+    assert max(sh) > min(sh), "T를 바꿨는데 광학 shading이 그대로다"
+
+
+def test_sweep_axis_order_is_preserved(fest, monkeypatch):
+    """★ itertools.product 언패킹 순서 대조 — 7축이 9축이 되며 자리가 밀리면
+    조용히 잘못된 조합이 만들어진다.
+
+    transparency 2축은 **맨 뒤에** 붙이므로 기존 7개 자리는 그대로여야 한다.
+    여러 축에 서로 구별되는 값을 주고, 각 값이 원래 자리에 도착했는지 본다.
+    자리가 밀리면 예컨대 T가 edge_margin에 들어가 아래 단언이 깨진다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    opt = optimize_grid(
+        fest, cell_mm=20.0,
+        finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+        n_busbars_list=[2], busbar_widths_mm=[0.2],
+        rho_contact_list=[10.0], edge_margins_mm=[0.0],
+        transparency_finger_list=[0.0, 0.4],
+        scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS)
+
+    assert opt["n_combos"] == 2
+    for r in opt["results"]:
+        p = r["parameters"]
+        assert p["finger_width_um"] == pytest.approx(50.0), "finger 폭 자리 밀림"
+        assert p["busbar_number"] == 2, "busbar 개수 자리 밀림"
+        assert p["busbar_width_mm"] == pytest.approx(0.2), "busbar 폭 자리 밀림"
+        assert p["rho_contact_mohm_cm2"] == pytest.approx(10.0), "접촉저항 자리 밀림"
+        assert p["edge_margin_mm"] == pytest.approx(0.0), "edge margin 자리 밀림"
+
+
+def test_combo_confirm_threshold_value():
+    """임계 50 — M10 1조합 약 17분이므로 50조합이면 약 14시간이다."""
+    assert COMBO_CONFIRM_THRESHOLD == 50
+
+
+def test_combo_confirm_can_cancel(fest, monkeypatch):
+    """임계를 넘고 confirm이 False를 주면 FEM을 돌리기 전에 취소된다.
+
+    confirm=None(기본)이면 이 경로에 들어가지 않는다 — 라이브러리 안에서
+    input()을 부르면 pytest와 백그라운드 실행이 멈추기 때문이다.
+    """
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.setattr("front_electrode.optimizer.COMBO_CONFIRM_THRESHOLD", 1)
+    calls = []
+
+    def _deny(n):
+        calls.append(n)
+        return False
+
+    with pytest.raises(RuntimeError, match="취소"):
+        optimize_grid(fest, cell_mm=20.0, finger_widths_um=[50.0, 60.0],
+                      finger_pitches_mm=[1.8], n_busbars_list=[2],
+                      busbar_widths_mm=[0.2], scenario=SCENARIO_MEASURED,
+                      axis_segments_override=AX, npts=NPTS, confirm=_deny)
+    assert calls == [2], "confirm이 조합 수와 함께 정확히 한 번 불려야 한다"
+
+
+def test_combo_confirm_not_called_below_threshold(fest, monkeypatch):
+    """임계 이하면 confirm을 주더라도 부르지 않는다."""
+    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    calls = []
+    opt = optimize_grid(fest, confirm=lambda n: calls.append(n) or True,
+                        **_SWEEP_BASE)
+    assert calls == [], "임계 이하인데 확인을 물었다"
+    assert opt["n_combos"] == 1

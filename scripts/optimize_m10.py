@@ -45,6 +45,7 @@ from front_electrode import (  # noqa: E402
     optimize_fingers, roundtrip_check, export_csv,
     evaluate_existing_simulation,
     SCENARIO_MEASURED, SCENARIO_AS_CURED, SCENARIO_ENGINE_DEFAULT,
+    COMBO_CONFIRM_THRESHOLD,
 )
 
 fest = conftest._load_fest()
@@ -320,7 +321,7 @@ def _grid_sweep_key(wf, pitch, n_bb, w_bb, edge, rho=None):
 
 def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
              resume=False, csv_path=None, workers=1, target_nodes=82000, npts=14,
-             rho_list=None, edge_list=None):
+             rho_list=None, edge_list=None, confirm=None):
     """결합 스윕 — 풀 M10에서 finger pitch/width와 busbar를 **동시에** 스윕.
 
     필요성(docs §5): 기존 2단계 분리는 Stage 1(39mm 소셀, 3BB)에서 정한 finger
@@ -387,6 +388,14 @@ def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
               f"| Pf_finger={float(row['Pf_finger']):.4f} Pf_busbar={float(row['Pf_busbar']):.4f} "
               f"P_shade={float(row['P_shade']):.4f} → CSV append", flush=True)
 
+    # v28.55: 장시간 실행 전 확인. resume으로 건너뛴 분을 뺀 **실제 실행 수**를
+    #   기준으로 묻는다. 프롬프트는 여기(CLI)에만 둔다 — 라이브러리 안에서
+    #   input()을 부르면 pytest와 백그라운드 실행이 멈춘다.
+    if confirm is not None and len(pending) > COMBO_CONFIRM_THRESHOLD:
+        if not confirm(len(pending)):
+            print("    사용자가 실행을 취소했다.", flush=True)
+            return csv_path
+
     n_workers = max(1, int(workers))
     if n_workers <= 1 or len(pending) <= 1:
         for task in pending:
@@ -429,6 +438,21 @@ def run_grid(scenario, wf_list, pitch_list, nbb_list, wbb_list, edge_margin,
     return csv_path
 
 
+_MIN_PER_COMBO_M10 = 17.0   # 실측 기준 (풀 M10 1조합)
+
+
+def _confirm_combos(n):
+    """대화형 확인. 비대화형(EOF)이면 취소로 간주한다 — --yes로 건너뛸 수 있다."""
+    hours = n * _MIN_PER_COMBO_M10 / 60.0
+    print(f"\n⚠ {n}개 조합 — 풀 M10 1조합 ≈{_MIN_PER_COMBO_M10:.0f}분 기준 "
+          f"예상 {hours:.1f}시간", flush=True)
+    try:
+        return input("  진행할까요? [y/N] ").strip().lower() in ("y", "yes")
+    except EOFError:
+        print("  (비대화형 입력 — 취소한다. --yes 로 건너뛸 수 있다.)", flush=True)
+        return False
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--stage", choices=["fingers", "busbars", "grid", "both"],
@@ -469,6 +493,9 @@ def main():
                     help="엣지 실버-프리 마진[mm] (v28.45 랩미팅 지시; GUI 기본 1.0). "
                          "0=기존 결과와 비트 동일. >0이면 CSV 파일명에 태그가 붙어 "
                          "마진이 다른 실행끼리 --resume이 섞이지 않는다.")
+    ap.add_argument("--yes", action="store_true",
+                    help=f"조합 수 확인 프롬프트를 건너뛴다 (조합 "
+                         f"{COMBO_CONFIRM_THRESHOLD}개 초과 시 뜬다). 자동화용.")
     args = ap.parse_args()
     nbb_list = [int(x) for x in args.nbb.split(",")] if args.nbb else None
     wbb_list = [float(x) for x in args.wbb.split(",")] if args.wbb else None
@@ -499,7 +526,8 @@ def main():
                      rho_list=([float(x) for x in args.rho_list.split(",")]
                                if args.rho_list else None),
                      edge_list=([float(x) for x in args.edge_margin_list.split(",")]
-                                if args.edge_margin_list else None))
+                                if args.edge_margin_list else None),
+                     confirm=(None if args.yes else _confirm_combos))
 
 
 if __name__ == "__main__":
