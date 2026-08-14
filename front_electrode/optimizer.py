@@ -30,6 +30,11 @@ import itertools
 
 from .adapter import evaluate_existing_simulation
 
+# 조합 수가 이 값을 넘으면 호출자에게 확인을 요청한다. 풀 M10은 1조합 ≈17분이라
+# 50조합이면 약 14시간이다. 프롬프트 자체는 CLI가 담당한다 — 라이브러리 안에서
+# input()을 부르면 pytest와 백그라운드 드라이버가 멈춘다.
+COMBO_CONFIRM_THRESHOLD = 50
+
 
 # ── 물성 시나리오 ────────────────────────────────────────────────────
 # 헤드라인: 본 연구 실측 전극 비저항 (저온 가압소결 90°C/30min/5MPa).
@@ -125,13 +130,16 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
                   n_busbars_list, busbar_widths_mm, rho_bulk_list=(None,),
                   rho_contact_list=(None,), edge_margin_mm=0.0,
                   edge_margins_mm=None, n_probe_points=0,
+                  transparency_finger_list=(0.0,), transparency_busbar_list=(0.0,),
+                  confirm=None,
                   scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
                   axis_segments_override=None, target_nodes=None,
                   objective="efficiency", progress=None):
     """전 축 Cartesian 스윕 (v28.45, 2026.08.06 랩미팅).
 
     축: finger_width × finger_pitch × busbar_number × busbar_width ×
-        rho_bulk × rho_contact (× edge_margin). 각 축은 리스트.
+        rho_bulk × rho_contact (× edge_margin)
+        (× optical_transparency_finger × optical_transparency_busbar). 각 축은 리스트.
         rho_bulk_list/rho_contact_list의 None 항목은 override 없음(scenario/엔진
         기본값) → 기본 상태 비트 동일.
     물성(rho_bulk/rho_contact)과 edge_margin은 grid dict로 넘겨 adapter 초크포인트가
@@ -145,12 +153,31 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
     argmax를 취하면 **항상 가장 작은 마진**이 뽑혀 무의미하다. 그래서 마진을 여러 개
     준 경우 `best`(전역 최적) 대신 **`best_by_edge`(마진별 최적)** 를 보라. 답해야 할
     질문은 "어떤 마진을 고를까"가 아니라 "이 마진의 대가가 얼마인가"다.
+
+    metal optical transparency 스윕(v28.55): `transparency_finger_list` /
+    `transparency_busbar_list`로 T = 1 − optical/physical을 축으로 쓸 수 있다.
+    기본 (0.0,)이라 주지 않으면 조합 수와 grid dict가 기존과 동일하다.
+    ⚠ busbar T와 `recovery_factor`는 같은 물리를 두 번 계산하므로 adapter가
+    동시 지정을 ValueError로 막는다.
+
+    조합 수가 COMBO_CONFIRM_THRESHOLD를 넘고 `confirm`이 주어지면 실행 전에
+    `confirm(n_combos) -> bool`로 확인을 요청한다. `confirm=None`(기본)이면
+    묻지 않는다 — pytest와 백그라운드 드라이버가 멈추지 않게 하기 위해서다.
     """
     edges = list(edge_margins_mm) if edge_margins_mm else [edge_margin_mm]
     grid_list = []
-    for wf, pitch, nbb, wbb, rho_l, rho_c, edge in itertools.product(
+    # ⚠ 언패킹 자리 대조 (v28.55에서 7축 → 9축):
+    #     1 wf     ← finger_widths_um          6 rho_c ← rho_contact_list
+    #     2 pitch  ← finger_pitches_mm         7 edge  ← edges
+    #     3 nbb    ← n_busbars_list            8 t_f   ← transparency_finger_list
+    #     4 wbb    ← busbar_widths_mm          9 t_b   ← transparency_busbar_list
+    #     5 rho_l  ← rho_bulk_list
+    #   신규 2축은 **맨 뒤에** 붙여 기존 1~7 자리를 건드리지 않는다. 중간에
+    #   끼워 넣으면 값이 조용히 다른 파라미터로 들어간다.
+    for wf, pitch, nbb, wbb, rho_l, rho_c, edge, t_f, t_b in itertools.product(
             finger_widths_um, finger_pitches_mm, n_busbars_list,
-            busbar_widths_mm, rho_bulk_list, rho_contact_list, edges):
+            busbar_widths_mm, rho_bulk_list, rho_contact_list, edges,
+            transparency_finger_list, transparency_busbar_list):
         d = dict(cell_w_mm=cell_mm, cell_h_mm=cell_mm,
                  finger_spacing_mm=pitch, w_finger_um=wf,
                  n_busbars=nbb, w_busbar_mm=wbb,
@@ -159,7 +186,18 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
             d["rho_bulk_uohm_cm"] = rho_l
         if rho_c is not None:
             d["rho_contact_mohm_cm2"] = rho_c
+        # 0.0이면 키를 넣지 않는다 — 기본 실행의 grid dict를 기존과 동일하게 유지.
+        if t_f:
+            d["optical_transparency_finger"] = t_f
+        if t_b:
+            d["optical_transparency_busbar"] = t_b
         grid_list.append(d)
+
+    if len(grid_list) > COMBO_CONFIRM_THRESHOLD and confirm is not None:
+        if not confirm(len(grid_list)):
+            raise RuntimeError(
+                f"{len(grid_list)}개 조합 실행이 사용자에 의해 취소되었다")
+
     out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
                  target_nodes=target_nodes, objective=objective, progress=progress,

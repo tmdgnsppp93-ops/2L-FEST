@@ -273,6 +273,10 @@ def build_row(case, out, sc, env, elapsed_s):
     for key in ENGINE_RAW_KEYS:
         row[key] = er[key]
     row["total_loss"] = out["results"]["total_loss"]
+    # 금속이 덮은 면적 vs 빛을 잃은 면적. T=0이면 같은 값이지만 항상 둘 다 남긴다
+    # — 이 CSV가 논문 figure의 데이터 원장이고, 두 값을 구분해 설명해야 한다.
+    row["shading_physical"] = out["results"]["shading_physical"]
+    row["shading_optical"] = out["results"]["shading_optical"]
 
     prov = sc.get("provenance", {})
     for key in sorted(case["grid_params"]):

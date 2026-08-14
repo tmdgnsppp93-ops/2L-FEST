@@ -432,6 +432,34 @@ v28.54: [ui] Current Extraction의 Method / R-Method 드롭다운 비활성화 �
          되돌리기: 솔버 연결 시 values 복원 + state 제거 + 라벨 삭제.
          근거: docs/audit_2026-08-13.md §4 "Current extraction mode".
 
+v28.55: [feat] Metal Optical Transparency — 금속의 물리 폭과 광학 폭 분리.
+         T = 1 − optical/physical (Manual v7.0 §2.7), finger·busbar 각각 지정.
+         physical width는 contact area와 금속 저항에, optical width는 shading에
+         쓴다. 배선은 _build의 _sh_case와 losses의 shade_frac 두 곳뿐이며
+         _sh_geo는 물리 폭 기준으로 남겨 _gen_s = (1−sh_case)/(1−sh_geo)가
+         T=0에서 정확히 1이 되게 했다 → **기존 결과 비트 동일**(회귀 테스트로
+         증명). optical_widths()는 곱셈만 쓴다 — IEEE 754에서 w*1.0 == w이므로.
+         보고 경로 11곳은 optical_shading_fraction()으로 통일했다(화면의
+         "Shading"은 실제로 잃는 빛이어야 한다). T=0에서는 값이 같아 테스트로
+         안 잡히므로 T=0.4로 직접 돌려 모든 보고 경로가 같은 숫자를 내는지
+         교차확인했다(물리 3.96% / 광학 2.39%, 물리값을 내는 경로 0곳).
+         rear T는 배선하지 않고 경고만 낸다 — 후면 입사광 차폐 자체가 모델에
+         없어서이며, v28.54에서 막은 extraction_method 같은 조용한 no-op을
+         새로 만들지 않기 위해서다.
+         busbar recovery factor와는 상호 배타(ValueError) — 같은 물리(busbar
+         반사광 회수)를 두 계층에서 모델링해 이중계산이 된다. recovery가 기본,
+         T는 opt-in이다(T 값의 문헌/측정 근거 미확보). 에러 메시지에 어느 쪽을
+         0으로 둘지 양쪽 안내를 넣었다.
+         CSV에 shading_physical / shading_optical 병기(adapter·roadmap 양쪽).
+         optimize_grid 스윕 축 7→9개, 조합 수 50 초과 시 확인 콜백(프롬프트는
+         CLI의 run_grid에 두고 라이브러리는 콜백만 받는다 — 라이브러리에서
+         input()을 부르면 pytest와 백그라운드 실행이 멈춘다). --yes로 건너뛴다.
+         GUI에 Finger/Busbar optical T 입력란(0 ≤ T < 1)과 DESIGN 탭 광학 폭
+         점선 오버레이 추가.
+         주의: 불변이어야 하는 것은 모델(_Gc/_Km/metal_frac)이지 소산 전력이
+         아니다. Pc는 전력이라 T가 발전량을 늘리면 당연히 오른다(실측 발전량비
+         1.0164, Pc비 1.0332 = 1.0164²).
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -529,7 +557,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.54",
+    "version": "v28.55",
     "date": "2026-08-14",
 }
 _BUILD_SHA_CACHE = None
@@ -967,7 +995,21 @@ class GridDesign:
                  input_mode="n_fingers", finger_spacing_mm=1.5,
                  n_probe_points=0, extraction_method="probe_point",
                  pattern_style="h_pattern",
-                 taper_factor=1.0, taper_dist_mm=0.0):
+                 taper_factor=1.0, taper_dist_mm=0.0,
+                 optical_transparency_f=0.0, optical_transparency_b=0.0):
+        # Metal optical transparency (Manual v7.0 §2.7).
+        #   T = 1 − optical_width / physical_width,  기본 0 (광학폭 == 물리폭)
+        #   physical width → contact area / 금속 저항
+        #   optical  width → shading
+        # 빛이 금속 facet에서 셀로 산란해 들어오므로 통상 optical < physical이다.
+        for _n, _t in (("optical_transparency_f", optical_transparency_f),
+                       ("optical_transparency_b", optical_transparency_b)):
+            if not (0.0 <= float(_t) < 1.0):
+                raise ValueError(
+                    f"{_n}는 0 이상 1 미만이어야 한다 (받은 값 {_t!r}). "
+                    "T=1은 광학 폭 0을 뜻해 물리적으로 무의미하다.")
+        self.optical_transparency_f = float(optical_transparency_f)
+        self.optical_transparency_b = float(optical_transparency_b)
         # pad_size default 0 으로 변경.
         #   이전: 0.030 cm (300×300 μm 사각형 contact pad) — 옛날 v1-v3 잔재
         #   현재: 0 (pad 제거) — Griddler 표준, 통상적 셀에 맞음
@@ -1043,6 +1085,15 @@ class GridDesign:
         if self.n_f >= 1:
             return L_mm / (self.n_f + 1)
         return L_mm
+
+    def optical_widths(self, w_f, w_b):
+        """물리 폭 → 광학 폭. T=0이면 입력을 그대로 반환한다.
+
+        곱셈만 쓴다 — IEEE 754에서 w*1.0 == w 이므로 T=0 경로가 비트 동일이다.
+        반올림이나 클램프를 넣으면 그 성질이 깨진다.
+        """
+        return (w_f * (1.0 - self.optical_transparency_f),
+                w_b * (1.0 - self.optical_transparency_b))
 
     def compute_positions(self, W, H):
         """Compute finger/busbar/terminal positions for a given wafer size.
@@ -1322,6 +1373,19 @@ class CellGeometry:
         # divide by ACTUAL wafer area (square/pseudo/circular)
         return (A_f + A_b + A_p - A_ov) / self.wafer_area()
 
+    def optical_shading_fraction(self, w_f=None, w_b=None):
+        """광학 폭 기준 shading. 인자를 생략하면 설계 폭을 쓴다.
+
+        보고 경로는 전부 이 메서드를 쓴다 — 사용자가 화면에서 읽는 "Shading"은
+        금속이 덮은 면적이 아니라 실제로 잃는 빛이어야 한다.
+        T=0이면 shading_fraction()과 비트 동일하다.
+        """
+        if w_f is None:
+            w_f = self.w_f
+        if w_b is None:
+            w_b = self.w_b
+        return self.shading_fraction(*self.front.optical_widths(w_f, w_b))
+
     def metal_rects_front(self):
         """Return list of (x, y, w, h) rectangles for front metal.
 
@@ -1470,7 +1534,7 @@ class CellGeometry:
             f"Front: {self.n_f}F + {self.n_b}BB",
             f"  Finger: {self.w_f*1e4:.0f} um x {fg_len*10:.1f} mm, gap={self.front.edge_gap*10:.1f} mm",
             f"  Busbar: {self.w_b*1e4:.0f} um x {bb_len*10:.1f} mm",
-            f"  Shading: {self.shading_fraction()*100:.2f}%",
+            f"  Shading: {self.optical_shading_fraction()*100:.2f}%",
             f"  Terminals: {len(self.front_terminals)}",
         ]
         if self.rear_mode == 'full_area':
@@ -3971,12 +4035,26 @@ class FESTSolver:
         #   s = (1 - shade_case) / (1 - shade_design) 을 곱한다. ±10μm급 폭
         #   변화의 공간 재분배는 노드 간격(수백 μm)보다 한참 작아 전역 스케일이
         #   일관된 1차 처리다. illum_frac은 항상 원본 base에서 재계산(중첩 방지).
+        # v28.55: rear T는 배선하지 않는다 — shading_fraction()이 전면 기하만
+        #   계산하고, 후면 입사광 차폐 자체가 현 모델에 없다. 조용한 no-op으로
+        #   두면 v28.54에서 막은 extraction_method와 같은 함정이 되므로 경고한다.
+        #   솔버 인스턴스당 1회만 출력한다(_build는 solve마다 호출된다).
+        _rear = getattr(self.geo, "rear", None)
+        if (_rear is not None and not getattr(self, "_rear_T_warned", False)
+                and (getattr(_rear, "optical_transparency_f", 0.0) > 0.0
+                     or getattr(_rear, "optical_transparency_b", 0.0) > 0.0)):
+            print("  ⚠ rear optical transparency는 현재 모델에 반영되지 않는다 "
+                  "(후면 입사광 차폐 미모델링). 값은 무시된다.", flush=True)
+            self._rear_T_warned = True
+
         _gen_s = 1.0
         if getattr(self.geo, '_dxf_finger_rects', None) is None:
             try:
+                # v28.55: 케이스 shading은 **광학 폭** 기준이다 (Manual §2.7).
+                #   _sh_geo는 물리 폭 그대로 두어야 _gen_s의 분모 기준이 유지된다.
+                #   T=0이면 두 값이 같아 _gen_s == 1 → 기존 경로와 비트 동일.
                 _sh_geo = float(self.geo.shading_fraction())
-                _sh_case = float(self.geo.shading_fraction(w_f_opt=wf,
-                                                           w_b_opt=wb_case))
+                _sh_case = float(self.geo.optical_shading_fraction(wf, wb_case))
                 _gen_s = (1.0 - _sh_case) / max(1.0 - _sh_geo, 1e-9)
             except Exception:
                 _gen_s = 1.0
@@ -6910,7 +6988,8 @@ class FESTSolver:
 
         # Shading loss — v28.18: wb도 케이스별(이전엔 설계 폭 고정이라 분해 내부조차 비일관).
         wb_eff = self.geo.w_b if wb is None else float(wb)
-        shade_frac = self.geo.shading_fraction(wf, wb_eff)
+        # v28.55: 광학 폭 기준 — 실제로 잃는 빛이 곧 shading 손실이다.
+        shade_frac = self.geo.optical_shading_fraction(wf, wb_eff)
         if Vmpp is not None and Jmpp is not None:
             P_shade = shade_frac * Jmpp * Vmpp
         else:
@@ -7531,7 +7610,7 @@ def _rpt_p6(f, d):
          ['DOF',f'{2*len(pts)+np.sum(ism):,}'],
          ['Mode',mode_label],
          ['Cell',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'],
-         ['Shading',f'{GEO.shading_fraction()*100:.2f}%'],
+         ['Shading',f'{GEO.optical_shading_fraction()*100:.2f}%'],
          ['Temp.','25\u00b0C (298.15 K)']],
         [0.02,0.45])
 
@@ -8364,14 +8443,19 @@ class FESTProApp(ctk.CTk):
             return entry
 
         # tb_hpat keeps original layout: [0]=N Fingers, [1]=Spacing, [2]=N Busbars,
-        # [3]=Finger Length, [4]=Busbar Length, [5]=Edge Gap
+        # [3]=Finger Length, [4]=Busbar Length, [5]=Edge Gap,
+        # [6]=Finger optical T, [7]=Busbar optical T   (v28.55, append만 — 0~5 불변)
         e1 = _make_entry_row2(grid_card, "N Fingers",      f"{GEO.n_f}", "#",  0)
         e2 = _make_entry_row2(grid_card, "Finger Spacing", "1.50",       "mm", 1)
         e3 = _make_entry_row2(grid_card, "N Busbars",      f"{GEO.n_b}", "#",  2)
         e4 = _make_entry_row2(grid_card, "Finger Length",  "100",        "%",  3)
         e5 = _make_entry_row2(grid_card, "Busbar Length",  "100",        "%",  4)
         e6 = _make_entry_row2(grid_card, "Edge Gap",       "0",          "mm", 5)
-        self.tb_hpat = [e1, e2, e3, e4, e5, e6]
+        # Metal optical transparency (Manual v7.0 §2.7): T = 1 − optical/physical.
+        #   물리 폭은 접촉·저항에, 광학 폭은 shading에 쓰인다. 0 = 차폐 감소 없음.
+        e7 = _make_entry_row2(grid_card, "Finger optical T", "0.0",      "0~1", 6)
+        e8 = _make_entry_row2(grid_card, "Busbar optical T", "0.0",      "0~1", 7)
+        self.tb_hpat = [e1, e2, e3, e4, e5, e6, e7, e8]
         self._sidebar_labels_hp = []  # backward compat
 
         # DXF button inside GRID DESIGN card
@@ -8769,7 +8853,7 @@ class FESTProApp(ctk.CTk):
                f"Grid: {GEO.n_f}F + {GEO.n_b}BB | {GEO.W*10:.0f}x{GEO.H*10:.0f} mm\n"
                f"Finger: {GEO.w_f*1e4:.0f}um x {fg_len*10:.1f}mm\n"
                f"Busbar: {GEO.w_b*1e4:.0f}um x {bb_len*10:.1f}mm\n"
-               f"Shading: {GEO.shading_fraction()*100:.2f}%")
+               f"Shading: {GEO.optical_shading_fraction()*100:.2f}%")
         self._info_label.configure(text=txt)
         # Update Rs_rear auto-display
         if hasattr(self, '_rs_rear_label'):
@@ -8911,6 +8995,14 @@ class FESTProApp(ctk.CTk):
             if edge_gap >= ch / 2.0:
                 raise ValueError("Edge Gap must be smaller than half the cell height")
 
+            # Metal optical transparency (v28.55). T=1은 광학 폭 0이라 배제한다.
+            t_finger = _parse_gui_float(self.tb_hpat[6].get(), "Finger optical T")
+            t_busbar = _parse_gui_float(self.tb_hpat[7].get(), "Busbar optical T")
+            _require_range("Finger optical T", t_finger, min_value=0.0,
+                           max_value=1.0, max_inclusive=False)
+            _require_range("Busbar optical T", t_busbar, min_value=0.0,
+                           max_value=1.0, max_inclusive=False)
+
             # FRONT CURRENT EXTRACTION card reads
             n_probe_points = _parse_gui_int(
                 self.tb_extract[0].get(), "Front Probe Pts/BB",
@@ -8952,7 +9044,9 @@ class FESTProApp(ctk.CTk):
                                finger_spacing_mm=spacing_mm,
                                n_probe_points=n_probe_points,
                                extraction_method=extract_method,
-                               pattern_style=pattern_style)
+                               pattern_style=pattern_style,
+                               optical_transparency_f=t_finger,
+                               optical_transparency_b=t_busbar)
 
             # Rear design (v28.7: bifacial-focused per Dr. Kim directive)
             rear = None
@@ -9862,7 +9956,7 @@ class FESTProApp(ctk.CTk):
             S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
             triang = mtri.Triangulation(pts[:, 0] * 10, pts[:, 1] * 10, tri.simplices)
 
-            shading_pct = GEO.shading_fraction() * 100
+            shading_pct = GEO.optical_shading_fraction() * 100
             avg_mfrac = float(np.mean(S.metal_frac)) * 100
             nF = len(g.finger_rects); nB = len(g.busbar_rects); nT = len(g.terminals)
 
@@ -11173,8 +11267,8 @@ class FESTProApp(ctk.CTk):
         wf_b = bp[2]; wb_b = bp[3]  # finger/busbar width BEFORE [cm]
         wf_a = ap[2]; wb_a = ap[3]  # finger/busbar width AFTER [cm]
         try:
-            sh_b = GEO.shading_fraction(w_f_opt=wf_b, w_b_opt=wb_b) * 100
-            sh_a = GEO.shading_fraction(w_f_opt=wf_a, w_b_opt=wb_a) * 100
+            sh_b = GEO.optical_shading_fraction(wf_b, wb_b) * 100
+            sh_a = GEO.optical_shading_fraction(wf_a, wb_a) * 100
         except Exception:
             sh_b = sh_a = 0.0
         rows=[['Parameter','Before','After','D'],
@@ -12002,6 +12096,27 @@ class FESTProApp(ctk.CTk):
             ax1.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
                                      fc='#5D4037', ec='none', alpha=0.85, zorder=4))
 
+        # v28.55: 광학 폭 오버레이 (T > 0일 때만). 물리 폭 사각형 위에 광학 폭을
+        #   노란 점선으로 겹쳐 그려 T가 실제로 반영되고 있음을 눈으로 확인시킨다.
+        #   v28.54에서 막은 extraction_method처럼 "GUI에 있는데 아무 일도 안 하는"
+        #   상태를 만들지 않기 위한 장치다. 표시 전용 — FEM은 항상 실제 폭을 쓴다.
+        _t_f = GEO.front.optical_transparency_f
+        _t_b = GEO.front.optical_transparency_b
+        if _t_f > 0:
+            for rx, ry, rw, rh in fingers:
+                h = rh * (1.0 - _t_f)
+                ax1.add_patch(Rectangle((rx * 10, (ry + (rh - h) / 2) * 10),
+                                         rw * 10, h * 10,
+                                         fc='none', ec='#FFEB3B', lw=0.8,
+                                         ls='--', zorder=6))
+        if _t_b > 0:
+            for rx, ry, rw, rh in busbars:
+                w = rw * (1.0 - _t_b)
+                ax1.add_patch(Rectangle(((rx + (rw - w) / 2) * 10, ry * 10),
+                                         w * 10, rh * 10,
+                                         fc='none', ec='#FFEB3B', lw=1.2,
+                                         ls='--', zorder=6))
+
         # Contact/probe points (v28.12: zorder 강화)
         if GEO.front_terminals:
             tx = [t[0] * 10 for t in GEO.front_terminals]
@@ -12119,12 +12234,12 @@ class FESTProApp(ctk.CTk):
             wf_a_um = ap[2] * 1e4
             wb_b_um = bp[3] * 1e4
             wb_a_um = ap[3] * 1e4
-            sh_b = GEO.shading_fraction(w_f_opt=bp[2], w_b_opt=bp[3]) * 100
-            sh_a = GEO.shading_fraction(w_f_opt=ap[2], w_b_opt=ap[3]) * 100
+            sh_b = GEO.optical_shading_fraction(bp[2], bp[3]) * 100
+            sh_a = GEO.optical_shading_fraction(ap[2], ap[3]) * 100
         except Exception:
             wf_b_um = wf_a_um = GEO.w_f * 1e4
             wb_b_um = wb_a_um = GEO.w_b * 1e4
-            sh_b = sh_a = GEO.shading_fraction() * 100
+            sh_b = sh_a = GEO.optical_shading_fraction() * 100
 
         finger_pitch_mm = GEO.front.get_finger_pitch_mm(GEO.W, GEO.H)
         rows = [
@@ -12778,14 +12893,14 @@ class FESTProApp(ctk.CTk):
                 ('V_emitter',f'{len(pts):,} unknowns'),('V_metal',f'{Nm:,} unknowns'),
                 ('V_top',f'{len(pts):,} unknowns'),('Total DOF',f'{Nt:,}'),
                 ('Cell',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
-                ('Shading',f'{GEO.shading_fraction()*100:.2f}%')]
+                ('Shading',f'{GEO.optical_shading_fraction()*100:.2f}%')]
         else:
             st=[('\uba54\uc2dc','Constrained Delaunay Triangulation'),('\ub178\ub4dc',f'{len(pts):,}'),
                 ('\uc694\uc18c',f'{len(tri.simplices):,} \uc0bc\uac01\ud615'),
                 ('V_emitter',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('V_metal',f'{Nm:,} \ubbf8\uc9c0\uc218'),
                 ('V_top',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('Total DOF',f'{Nt:,}'),
                 ('\uc140',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
-                ('\uc74c\uc601',f'{GEO.shading_fraction()*100:.2f}%')]
+                ('\uc74c\uc601',f'{GEO.optical_shading_fraction()*100:.2f}%')]
         ax_s.add_patch(Rectangle((0.06,0.10), 0.88, 0.85, fc='#F8FAFC', ec=CLR_CARD_BD, lw=1, transform=ax_s.transAxes))
         y0=0.88
         for i,(k,v) in enumerate(st):
