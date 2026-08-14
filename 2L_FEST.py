@@ -967,7 +967,21 @@ class GridDesign:
                  input_mode="n_fingers", finger_spacing_mm=1.5,
                  n_probe_points=0, extraction_method="probe_point",
                  pattern_style="h_pattern",
-                 taper_factor=1.0, taper_dist_mm=0.0):
+                 taper_factor=1.0, taper_dist_mm=0.0,
+                 optical_transparency_f=0.0, optical_transparency_b=0.0):
+        # Metal optical transparency (Manual v7.0 §2.7).
+        #   T = 1 − optical_width / physical_width,  기본 0 (광학폭 == 물리폭)
+        #   physical width → contact area / 금속 저항
+        #   optical  width → shading
+        # 빛이 금속 facet에서 셀로 산란해 들어오므로 통상 optical < physical이다.
+        for _n, _t in (("optical_transparency_f", optical_transparency_f),
+                       ("optical_transparency_b", optical_transparency_b)):
+            if not (0.0 <= float(_t) < 1.0):
+                raise ValueError(
+                    f"{_n}는 0 이상 1 미만이어야 한다 (받은 값 {_t!r}). "
+                    "T=1은 광학 폭 0을 뜻해 물리적으로 무의미하다.")
+        self.optical_transparency_f = float(optical_transparency_f)
+        self.optical_transparency_b = float(optical_transparency_b)
         # pad_size default 0 으로 변경.
         #   이전: 0.030 cm (300×300 μm 사각형 contact pad) — 옛날 v1-v3 잔재
         #   현재: 0 (pad 제거) — Griddler 표준, 통상적 셀에 맞음
@@ -1043,6 +1057,15 @@ class GridDesign:
         if self.n_f >= 1:
             return L_mm / (self.n_f + 1)
         return L_mm
+
+    def optical_widths(self, w_f, w_b):
+        """물리 폭 → 광학 폭. T=0이면 입력을 그대로 반환한다.
+
+        곱셈만 쓴다 — IEEE 754에서 w*1.0 == w 이므로 T=0 경로가 비트 동일이다.
+        반올림이나 클램프를 넣으면 그 성질이 깨진다.
+        """
+        return (w_f * (1.0 - self.optical_transparency_f),
+                w_b * (1.0 - self.optical_transparency_b))
 
     def compute_positions(self, W, H):
         """Compute finger/busbar/terminal positions for a given wafer size.
@@ -1321,6 +1344,19 @@ class CellGeometry:
 
         # divide by ACTUAL wafer area (square/pseudo/circular)
         return (A_f + A_b + A_p - A_ov) / self.wafer_area()
+
+    def optical_shading_fraction(self, w_f=None, w_b=None):
+        """광학 폭 기준 shading. 인자를 생략하면 설계 폭을 쓴다.
+
+        보고 경로는 전부 이 메서드를 쓴다 — 사용자가 화면에서 읽는 "Shading"은
+        금속이 덮은 면적이 아니라 실제로 잃는 빛이어야 한다.
+        T=0이면 shading_fraction()과 비트 동일하다.
+        """
+        if w_f is None:
+            w_f = self.w_f
+        if w_b is None:
+            w_b = self.w_b
+        return self.shading_fraction(*self.front.optical_widths(w_f, w_b))
 
     def metal_rects_front(self):
         """Return list of (x, y, w, h) rectangles for front metal.
