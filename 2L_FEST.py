@@ -432,6 +432,34 @@ v28.54: [ui] Current Extraction의 Method / R-Method 드롭다운 비활성화 �
          되돌리기: 솔버 연결 시 values 복원 + state 제거 + 라벨 삭제.
          근거: docs/audit_2026-08-13.md §4 "Current extraction mode".
 
+v28.55: [feat] Metal Optical Transparency — 금속의 물리 폭과 광학 폭 분리.
+         T = 1 − optical/physical (Manual v7.0 §2.7), finger·busbar 각각 지정.
+         physical width는 contact area와 금속 저항에, optical width는 shading에
+         쓴다. 배선은 _build의 _sh_case와 losses의 shade_frac 두 곳뿐이며
+         _sh_geo는 물리 폭 기준으로 남겨 _gen_s = (1−sh_case)/(1−sh_geo)가
+         T=0에서 정확히 1이 되게 했다 → **기존 결과 비트 동일**(회귀 테스트로
+         증명). optical_widths()는 곱셈만 쓴다 — IEEE 754에서 w*1.0 == w이므로.
+         보고 경로 11곳은 optical_shading_fraction()으로 통일했다(화면의
+         "Shading"은 실제로 잃는 빛이어야 한다). T=0에서는 값이 같아 테스트로
+         안 잡히므로 T=0.4로 직접 돌려 모든 보고 경로가 같은 숫자를 내는지
+         교차확인했다(물리 3.96% / 광학 2.39%, 물리값을 내는 경로 0곳).
+         rear T는 배선하지 않고 경고만 낸다 — 후면 입사광 차폐 자체가 모델에
+         없어서이며, v28.54에서 막은 extraction_method 같은 조용한 no-op을
+         새로 만들지 않기 위해서다.
+         busbar recovery factor와는 상호 배타(ValueError) — 같은 물리(busbar
+         반사광 회수)를 두 계층에서 모델링해 이중계산이 된다. recovery가 기본,
+         T는 opt-in이다(T 값의 문헌/측정 근거 미확보). 에러 메시지에 어느 쪽을
+         0으로 둘지 양쪽 안내를 넣었다.
+         CSV에 shading_physical / shading_optical 병기(adapter·roadmap 양쪽).
+         optimize_grid 스윕 축 7→9개, 조합 수 50 초과 시 확인 콜백(프롬프트는
+         CLI의 run_grid에 두고 라이브러리는 콜백만 받는다 — 라이브러리에서
+         input()을 부르면 pytest와 백그라운드 실행이 멈춘다). --yes로 건너뛴다.
+         GUI에 Finger/Busbar optical T 입력란(0 ≤ T < 1)과 DESIGN 탭 광학 폭
+         점선 오버레이 추가.
+         주의: 불변이어야 하는 것은 모델(_Gc/_Km/metal_frac)이지 소산 전력이
+         아니다. Pc는 전력이라 T가 발전량을 늘리면 당연히 오른다(실측 발전량비
+         1.0164, Pc비 1.0332 = 1.0164²).
+
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
 import numpy as np
@@ -529,7 +557,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.54",
+    "version": "v28.55",
     "date": "2026-08-14",
 }
 _BUILD_SHA_CACHE = None
@@ -8415,14 +8443,19 @@ class FESTProApp(ctk.CTk):
             return entry
 
         # tb_hpat keeps original layout: [0]=N Fingers, [1]=Spacing, [2]=N Busbars,
-        # [3]=Finger Length, [4]=Busbar Length, [5]=Edge Gap
+        # [3]=Finger Length, [4]=Busbar Length, [5]=Edge Gap,
+        # [6]=Finger optical T, [7]=Busbar optical T   (v28.55, append만 — 0~5 불변)
         e1 = _make_entry_row2(grid_card, "N Fingers",      f"{GEO.n_f}", "#",  0)
         e2 = _make_entry_row2(grid_card, "Finger Spacing", "1.50",       "mm", 1)
         e3 = _make_entry_row2(grid_card, "N Busbars",      f"{GEO.n_b}", "#",  2)
         e4 = _make_entry_row2(grid_card, "Finger Length",  "100",        "%",  3)
         e5 = _make_entry_row2(grid_card, "Busbar Length",  "100",        "%",  4)
         e6 = _make_entry_row2(grid_card, "Edge Gap",       "0",          "mm", 5)
-        self.tb_hpat = [e1, e2, e3, e4, e5, e6]
+        # Metal optical transparency (Manual v7.0 §2.7): T = 1 − optical/physical.
+        #   물리 폭은 접촉·저항에, 광학 폭은 shading에 쓰인다. 0 = 차폐 감소 없음.
+        e7 = _make_entry_row2(grid_card, "Finger optical T", "0.0",      "0~1", 6)
+        e8 = _make_entry_row2(grid_card, "Busbar optical T", "0.0",      "0~1", 7)
+        self.tb_hpat = [e1, e2, e3, e4, e5, e6, e7, e8]
         self._sidebar_labels_hp = []  # backward compat
 
         # DXF button inside GRID DESIGN card
@@ -8962,6 +8995,14 @@ class FESTProApp(ctk.CTk):
             if edge_gap >= ch / 2.0:
                 raise ValueError("Edge Gap must be smaller than half the cell height")
 
+            # Metal optical transparency (v28.55). T=1은 광학 폭 0이라 배제한다.
+            t_finger = _parse_gui_float(self.tb_hpat[6].get(), "Finger optical T")
+            t_busbar = _parse_gui_float(self.tb_hpat[7].get(), "Busbar optical T")
+            _require_range("Finger optical T", t_finger, min_value=0.0,
+                           max_value=1.0, max_inclusive=False)
+            _require_range("Busbar optical T", t_busbar, min_value=0.0,
+                           max_value=1.0, max_inclusive=False)
+
             # FRONT CURRENT EXTRACTION card reads
             n_probe_points = _parse_gui_int(
                 self.tb_extract[0].get(), "Front Probe Pts/BB",
@@ -9003,7 +9044,9 @@ class FESTProApp(ctk.CTk):
                                finger_spacing_mm=spacing_mm,
                                n_probe_points=n_probe_points,
                                extraction_method=extract_method,
-                               pattern_style=pattern_style)
+                               pattern_style=pattern_style,
+                               optical_transparency_f=t_finger,
+                               optical_transparency_b=t_busbar)
 
             # Rear design (v28.7: bifacial-focused per Dr. Kim directive)
             rear = None
@@ -12052,6 +12095,27 @@ class FESTProApp(ctk.CTk):
         for rx, ry, rw, rh in pads:
             ax1.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
                                      fc='#5D4037', ec='none', alpha=0.85, zorder=4))
+
+        # v28.55: 광학 폭 오버레이 (T > 0일 때만). 물리 폭 사각형 위에 광학 폭을
+        #   노란 점선으로 겹쳐 그려 T가 실제로 반영되고 있음을 눈으로 확인시킨다.
+        #   v28.54에서 막은 extraction_method처럼 "GUI에 있는데 아무 일도 안 하는"
+        #   상태를 만들지 않기 위한 장치다. 표시 전용 — FEM은 항상 실제 폭을 쓴다.
+        _t_f = GEO.front.optical_transparency_f
+        _t_b = GEO.front.optical_transparency_b
+        if _t_f > 0:
+            for rx, ry, rw, rh in fingers:
+                h = rh * (1.0 - _t_f)
+                ax1.add_patch(Rectangle((rx * 10, (ry + (rh - h) / 2) * 10),
+                                         rw * 10, h * 10,
+                                         fc='none', ec='#FFEB3B', lw=0.8,
+                                         ls='--', zorder=6))
+        if _t_b > 0:
+            for rx, ry, rw, rh in busbars:
+                w = rw * (1.0 - _t_b)
+                ax1.add_patch(Rectangle(((rx + (rw - w) / 2) * 10, ry * 10),
+                                         w * 10, rh * 10,
+                                         fc='none', ec='#FFEB3B', lw=1.2,
+                                         ls='--', zorder=6))
 
         # Contact/probe points (v28.12: zorder 강화)
         if GEO.front_terminals:
