@@ -1506,7 +1506,7 @@ class CellGeometry:
             f"Front: {self.n_f}F + {self.n_b}BB",
             f"  Finger: {self.w_f*1e4:.0f} um x {fg_len*10:.1f} mm, gap={self.front.edge_gap*10:.1f} mm",
             f"  Busbar: {self.w_b*1e4:.0f} um x {bb_len*10:.1f} mm",
-            f"  Shading: {self.shading_fraction()*100:.2f}%",
+            f"  Shading: {self.optical_shading_fraction()*100:.2f}%",
             f"  Terminals: {len(self.front_terminals)}",
         ]
         if self.rear_mode == 'full_area':
@@ -7582,7 +7582,7 @@ def _rpt_p6(f, d):
          ['DOF',f'{2*len(pts)+np.sum(ism):,}'],
          ['Mode',mode_label],
          ['Cell',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'],
-         ['Shading',f'{GEO.shading_fraction()*100:.2f}%'],
+         ['Shading',f'{GEO.optical_shading_fraction()*100:.2f}%'],
          ['Temp.','25\u00b0C (298.15 K)']],
         [0.02,0.45])
 
@@ -8820,7 +8820,7 @@ class FESTProApp(ctk.CTk):
                f"Grid: {GEO.n_f}F + {GEO.n_b}BB | {GEO.W*10:.0f}x{GEO.H*10:.0f} mm\n"
                f"Finger: {GEO.w_f*1e4:.0f}um x {fg_len*10:.1f}mm\n"
                f"Busbar: {GEO.w_b*1e4:.0f}um x {bb_len*10:.1f}mm\n"
-               f"Shading: {GEO.shading_fraction()*100:.2f}%")
+               f"Shading: {GEO.optical_shading_fraction()*100:.2f}%")
         self._info_label.configure(text=txt)
         # Update Rs_rear auto-display
         if hasattr(self, '_rs_rear_label'):
@@ -9913,7 +9913,7 @@ class FESTProApp(ctk.CTk):
             S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
             triang = mtri.Triangulation(pts[:, 0] * 10, pts[:, 1] * 10, tri.simplices)
 
-            shading_pct = GEO.shading_fraction() * 100
+            shading_pct = GEO.optical_shading_fraction() * 100
             avg_mfrac = float(np.mean(S.metal_frac)) * 100
             nF = len(g.finger_rects); nB = len(g.busbar_rects); nT = len(g.terminals)
 
@@ -11224,8 +11224,8 @@ class FESTProApp(ctk.CTk):
         wf_b = bp[2]; wb_b = bp[3]  # finger/busbar width BEFORE [cm]
         wf_a = ap[2]; wb_a = ap[3]  # finger/busbar width AFTER [cm]
         try:
-            sh_b = GEO.shading_fraction(w_f_opt=wf_b, w_b_opt=wb_b) * 100
-            sh_a = GEO.shading_fraction(w_f_opt=wf_a, w_b_opt=wb_a) * 100
+            sh_b = GEO.optical_shading_fraction(wf_b, wb_b) * 100
+            sh_a = GEO.optical_shading_fraction(wf_a, wb_a) * 100
         except Exception:
             sh_b = sh_a = 0.0
         rows=[['Parameter','Before','After','D'],
@@ -12170,12 +12170,12 @@ class FESTProApp(ctk.CTk):
             wf_a_um = ap[2] * 1e4
             wb_b_um = bp[3] * 1e4
             wb_a_um = ap[3] * 1e4
-            sh_b = GEO.shading_fraction(w_f_opt=bp[2], w_b_opt=bp[3]) * 100
-            sh_a = GEO.shading_fraction(w_f_opt=ap[2], w_b_opt=ap[3]) * 100
+            sh_b = GEO.optical_shading_fraction(bp[2], bp[3]) * 100
+            sh_a = GEO.optical_shading_fraction(ap[2], ap[3]) * 100
         except Exception:
             wf_b_um = wf_a_um = GEO.w_f * 1e4
             wb_b_um = wb_a_um = GEO.w_b * 1e4
-            sh_b = sh_a = GEO.shading_fraction() * 100
+            sh_b = sh_a = GEO.optical_shading_fraction() * 100
 
         finger_pitch_mm = GEO.front.get_finger_pitch_mm(GEO.W, GEO.H)
         rows = [
@@ -12829,14 +12829,14 @@ class FESTProApp(ctk.CTk):
                 ('V_emitter',f'{len(pts):,} unknowns'),('V_metal',f'{Nm:,} unknowns'),
                 ('V_top',f'{len(pts):,} unknowns'),('Total DOF',f'{Nt:,}'),
                 ('Cell',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
-                ('Shading',f'{GEO.shading_fraction()*100:.2f}%')]
+                ('Shading',f'{GEO.optical_shading_fraction()*100:.2f}%')]
         else:
             st=[('\uba54\uc2dc','Constrained Delaunay Triangulation'),('\ub178\ub4dc',f'{len(pts):,}'),
                 ('\uc694\uc18c',f'{len(tri.simplices):,} \uc0bc\uac01\ud615'),
                 ('V_emitter',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('V_metal',f'{Nm:,} \ubbf8\uc9c0\uc218'),
                 ('V_top',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('Total DOF',f'{Nt:,}'),
                 ('\uc140',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
-                ('\uc74c\uc601',f'{GEO.shading_fraction()*100:.2f}%')]
+                ('\uc74c\uc601',f'{GEO.optical_shading_fraction()*100:.2f}%')]
         ax_s.add_patch(Rectangle((0.06,0.10), 0.88, 0.85, fc='#F8FAFC', ec=CLR_CARD_BD, lw=1, transform=ax_s.transAxes))
         y0=0.88
         for i,(k,v) in enumerate(st):
