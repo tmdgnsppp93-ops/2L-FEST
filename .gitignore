@@ -16,3 +16,9 @@ solcore_xval/compare_iv.png
 # scripts/scenarios/_smoke.csv 로 쓴다). 실제 시나리오 결과는 _ 없는 이름을 쓸 것.
 scripts/scenarios/_*.csv
 scripts/scenarios/_*.png
+
+# 루트 실험 산출물 중 보존 가치가 없는 것.
+#   실험 결과 CSV(_*_results.csv)는 반대로 **추적한다** — 조건은
+#   _experiments_README.md에 기록되어 있다.
+2L-FEST_Results.csv
+_edgeopt_out.txt
