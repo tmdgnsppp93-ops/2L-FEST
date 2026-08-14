@@ -11,3 +11,8 @@ solcore_xval/*.npz
 solcore_xval/__pycache__/
 solcore_xval/compare_iv.png
 .pytest_cache/
+
+# roadmap 러너 스모크 산출물 (scripts/run_roadmap.py docstring의 권장 명령이
+# scripts/scenarios/_smoke.csv 로 쓴다). 실제 시나리오 결과는 _ 없는 이름을 쓸 것.
+scripts/scenarios/_*.csv
+scripts/scenarios/_*.png

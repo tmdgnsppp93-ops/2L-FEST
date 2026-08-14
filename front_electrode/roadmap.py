@@ -48,6 +48,27 @@ SCENARIO_MAP = {
 # baseline 블록에서 grid_params가 아닌 키 (엔진에 넘기면 안 된다).
 _RESERVED = ("label", "note")
 
+# 4-panel y축 "평평하게 보이기" 임계값 — 이 폭보다 작은 총 변화는 자동 스케일이
+# 화면 전체로 확대해 무의미한 변화를 극적으로 보이게 만든다(실측: rho_c 변경 시
+# Jsc가 +0.0008인데 패널이 가득 찼다). 총 변화가 임계 미만이면 y축을
+# baseline ± 임계로 고정해 실제로 평평하게 그린다.
+# 시나리오의 plot.flat_thresholds로 항목별 override 가능.
+DEFAULT_FLAT_THRESHOLDS = {
+    "Jsc": 0.05,     # mA/cm2
+    "Voc": 0.002,    # V
+    "FF": 0.1,       # %
+    "Eff": 0.05,     # %abs
+}
+
+
+def flat_thresholds(sc):
+    """시나리오의 plot.flat_thresholds override를 기본값 위에 얹어 반환한다."""
+    over = (sc.get("plot") or {}).get("flat_thresholds") or {}
+    out = dict(DEFAULT_FLAT_THRESHOLDS)
+    for key, val in over.items():
+        out[key] = float(val)
+    return out
+
 
 def _grid_keys(baseline):
     return {k for k in baseline if k not in _RESERVED}
@@ -131,6 +152,22 @@ def validate_scenario(sc):
             raise ValueError(
                 f"provenance[{key}].tag 불량: {entry!r} "
                 f"(허용: {list(PROV_TAGS)})")
+
+    plot = sc.get("plot", {})
+    if not isinstance(plot, dict):
+        raise ValueError("plot 블록은 object여야 한다")
+    thr = plot.get("flat_thresholds", {})
+    if not isinstance(thr, dict):
+        raise ValueError("plot.flat_thresholds는 object여야 한다")
+    unknown_thr = sorted(set(thr) - set(DEFAULT_FLAT_THRESHOLDS))
+    if unknown_thr:
+        raise ValueError(
+            f"plot.flat_thresholds 알 수 없는 패널 {unknown_thr} "
+            f"(허용: {sorted(DEFAULT_FLAT_THRESHOLDS)})")
+    for key, val in thr.items():
+        if not isinstance(val, (int, float)) or isinstance(val, bool) or val < 0:
+            raise ValueError(
+                f"plot.flat_thresholds[{key}]는 0 이상의 수여야 한다: {val!r}")
 
 
 def load_scenario(path):
@@ -240,6 +277,11 @@ def build_row(case, out, sc, env, elapsed_s):
     prov = sc.get("provenance", {})
     for key in sorted(case["grid_params"]):
         row["prov_" + key] = prov.get(key, {}).get("tag", "unspecified")
+
+    # 조건 2 (1/2): 사용된 임계값을 매 행에 기록한다. 적용 여부는 전 케이스의
+    # 총 변화를 봐야 정해지므로 작도 시점에 plot_roadmap이 덧붙인다.
+    for key, val in flat_thresholds(sc).items():
+        row["flat_thresh_" + key] = val
 
     row.update(env)
     meta = out["meta"]

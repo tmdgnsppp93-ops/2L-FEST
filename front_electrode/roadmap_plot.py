@@ -14,6 +14,8 @@ import os
 
 import matplotlib.pyplot as plt
 
+from .roadmap import DEFAULT_FLAT_THRESHOLDS
+
 # (CSV 컬럼, 축 라벨, 소수 자릿수)
 PANELS = (
     ("Jsc", "Jsc [mA/cm$^2$]", 2),
@@ -35,9 +37,47 @@ def _read_rows(csv_path):
     return rows
 
 
+def _thresholds_from_rows(rows):
+    """CSV의 flat_thresh_* 컬럼에서 임계값을 읽는다. 없으면 기본값."""
+    out = dict(DEFAULT_FLAT_THRESHOLDS)
+    for key in out:
+        raw = rows[0].get("flat_thresh_" + key)
+        if raw not in (None, ""):
+            out[key] = float(raw)
+    return out
+
+
+def _record_applied(csv_path, rows, applied):
+    """조건 2 (2/2): 임계 적용 여부를 CSV에 덧쓴다 (원자적 재작성).
+
+    적용 여부는 전 케이스의 총 변화를 봐야 정해지므로 append 시점에는 알 수
+    없다. 실행이 끝난 뒤 한 번 다시 쓰는 것은 optimize_m10.py의 _sort_csv와
+    같은 패턴이며, append+flush의 크래시 안전성을 해치지 않는다.
+    """
+    for row in rows:
+        for key, is_flat in applied.items():
+            row["flat_applied_" + key] = is_flat
+    tmp = csv_path + ".tmp"
+    with open(tmp, "w", newline="", encoding="utf-8-sig") as fh:
+        writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+        fh.flush()
+    os.replace(tmp, csv_path)
+
+
 def plot_roadmap(csv_path, png_path=None):
-    """roadmap CSV → 2×2 패널 PNG. 저장 경로를 반환한다."""
+    """roadmap CSV → 2×2 패널 PNG. 저장 경로를 반환한다.
+
+    총 변화가 패널별 임계(flat_thresh_*) 미만이면 y축을 baseline ± 임계로
+    고정해 **실제로 평평하게** 그린다. 자동 스케일에 맡기면 +0.0008 같은
+    무의미한 변화가 화면을 가득 채워 독자를 오도한다.
+
+    부작용: 임계 적용 여부를 flat_applied_* 컬럼으로 CSV에 덧쓴다.
+    """
     rows = _read_rows(csv_path)
+    thresholds = _thresholds_from_rows(rows)
+    applied = {}
     if png_path is None:
         png_path = os.path.splitext(csv_path)[0] + ".png"
 
@@ -65,9 +105,17 @@ def plot_roadmap(csv_path, png_path=None):
                             ha="center", fontsize=8,
                             color=("#1b5e20" if d >= 0 else "#b71c1c"))
 
+        # 임계 미만이면 y축을 baseline ± 임계로 고정 → 실제로 평평하게 보인다.
+        thr = thresholds[col]
+        is_flat = (max(y) - min(y)) < thr
+        applied[col] = is_flat
+        if is_flat:
+            lo, hi = base - thr, base + thr
+        else:
+            lo, hi = min(y), max(y)
+
         # 세로 여백. baseline 점은 정의상 기준선 위에 놓이므로, 자동 스케일에
         # 맡기면 그 값 라벨이 파선과 겹치고 델타 라벨이 연결선에 얹힌다.
-        lo, hi = min(y), max(y)
         span = (hi - lo) or (abs(hi) * 0.01 or 1.0)
         ax.set_ylim(lo - span * 0.35, hi + span * 0.30)
 
@@ -82,10 +130,16 @@ def plot_roadmap(csv_path, png_path=None):
         title = ylabel.split(" [")[0]
         if col == "Eff":
             title += f"   (total {y[-1] - base:+.{ndigits}f})"
+        if is_flat:
+            # 축이 데이터가 아니라 임계로 정해졌음을 밝힌다. 숨기면 독자가
+            # "왜 이 축만 이렇게 넓지"를 알 수 없다.
+            title += f"   [flat: |Δ| < {thr:g}]"
         ax.set_title(title, fontweight="bold", fontsize=11)
 
     fig.suptitle("Efficiency improvement roadmap", fontweight="bold", fontsize=13)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(png_path, dpi=150)
     plt.close(fig)
+
+    _record_applied(csv_path, rows, applied)
     return png_path

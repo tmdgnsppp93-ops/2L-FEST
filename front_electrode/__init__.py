@@ -42,6 +42,8 @@ from .roadmap import (
     completed_labels,
     unspecified_provenance_keys,
     run_roadmap,
+    DEFAULT_FLAT_THRESHOLDS,
+    flat_thresholds,
 )
 from .roadmap_plot import plot_roadmap
 from .presets import PRESETS, MAINSTREAM_PRESETS, get_preset
@@ -82,6 +84,8 @@ __all__ = [
     "completed_labels",
     "unspecified_provenance_keys",
     "run_roadmap",
+    "DEFAULT_FLAT_THRESHOLDS",
+    "flat_thresholds",
     "plot_roadmap",
     "PRESETS",
     "MAINSTREAM_PRESETS",

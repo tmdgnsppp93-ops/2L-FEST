@@ -436,3 +436,118 @@ def test_shipped_example_declares_all_provenance():
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     path = os.path.join(root, "scripts", "scenarios", "unist_tco.json")
     assert _unspec(load_scenario(path)) == []
+
+
+# ---------------------------------------------------------------------------
+# 4-panel 평평화 임계 (FEM 없음)
+# ---------------------------------------------------------------------------
+from front_electrode import (  # noqa: E402
+    DEFAULT_FLAT_THRESHOLDS,
+    flat_thresholds,
+)
+
+
+def test_flat_thresholds_defaults():
+    assert flat_thresholds(_min_scenario()) == DEFAULT_FLAT_THRESHOLDS
+    assert set(DEFAULT_FLAT_THRESHOLDS) == {"Jsc", "Voc", "FF", "Eff"}
+
+
+def test_flat_thresholds_override_from_scenario():
+    """조건 1 — 시나리오에서 항목별 override."""
+    sc = _min_scenario()
+    sc["plot"] = {"flat_thresholds": {"Jsc": 0.5}}
+    thr = flat_thresholds(sc)
+    assert thr["Jsc"] == 0.5
+    assert thr["Voc"] == DEFAULT_FLAT_THRESHOLDS["Voc"], "나머지는 기본값 유지"
+
+
+def test_flat_thresholds_rejects_unknown_panel():
+    sc = _min_scenario()
+    sc["plot"] = {"flat_thresholds": {"Jmpp": 0.5}}
+    with pytest.raises(ValueError, match="Jmpp"):
+        validate_scenario(sc)
+
+
+def test_flat_thresholds_rejects_negative():
+    sc = _min_scenario()
+    sc["plot"] = {"flat_thresholds": {"Jsc": -1.0}}
+    with pytest.raises(ValueError, match="0 이상"):
+        validate_scenario(sc)
+
+
+def test_build_row_records_thresholds(tmp_path):
+    """조건 2 (1/2) — 사용된 임계값이 매 행에 남는다."""
+    sc = _min_scenario()
+    sc["plot"] = {"flat_thresholds": {"Jsc": 0.5}}
+    sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
+    row = build_row(expand_cases(sc)[0], _fake_out(), sc,
+                    provenance_env(_FakeFest, sc), 1.0)
+    assert row["flat_thresh_Jsc"] == 0.5
+    assert row["flat_thresh_Eff"] == DEFAULT_FLAT_THRESHOLDS["Eff"]
+
+
+def _write_csv_with_deltas(tmp_path, jsc_delta, eff_delta):
+    """baseline과 1케이스만 있는 CSV. Jsc/Eff 변화폭을 지정한다."""
+    sc = _min_scenario()
+    sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
+    env = provenance_env(_FakeFest, sc)
+    csv_path = str(tmp_path / "r.csv")
+    written = False
+    for i, c in enumerate(expand_cases(sc)):
+        o = _fake_out(31.0 + eff_delta * i)
+        o["engine_raw"]["Jsc"] = 39.42 + jsc_delta * i
+        written = append_row(csv_path, build_row(c, o, sc, env, 1.0), written)
+    return csv_path
+
+
+def _applied(csv_path):
+    import csv as _csv
+    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
+        rows = list(_csv.DictReader(fh))
+    return {k[len("flat_applied_"):]: v for k, v in rows[0].items()
+            if k.startswith("flat_applied_")}, rows
+
+
+def test_plot_records_applied_flags(tmp_path):
+    """조건 2 (2/2) — 무의미한 Jsc 변화는 평평 처리되고, 유의한 Eff는 아니다."""
+    # Jsc +0.0008 (임계 0.05 미만) / Eff +0.5 (임계 0.05 초과)
+    csv_path = _write_csv_with_deltas(tmp_path, jsc_delta=0.0008, eff_delta=0.5)
+    plot_roadmap(csv_path)
+
+    applied, rows = _applied(csv_path)
+    assert applied["Jsc"] == "True", "미미한 Jsc 변화가 평평 처리되지 않았다"
+    assert applied["Eff"] == "False", "유의한 Eff 변화까지 평평해지면 안 된다"
+    assert len(rows) == 2, "재작성이 행을 잃거나 늘리면 안 된다"
+    # 기존 컬럼이 보존되는지
+    assert rows[0]["label"] == "base"
+    assert float(rows[1]["Jsc"]) == 39.42 + 0.0008
+
+
+def test_plot_threshold_override_changes_flatness(tmp_path):
+    """조건 1이 실제 작도에 먹히는지 — 임계를 키우면 Eff도 평평해진다."""
+    csv_path = _write_csv_with_deltas(tmp_path, jsc_delta=0.0008, eff_delta=0.5)
+    # flat_thresh_Eff 컬럼을 크게 바꿔 쓴다 (시나리오 override와 동등한 경로)
+    import csv as _csv
+    with open(csv_path, encoding="utf-8-sig", newline="") as fh:
+        rows = list(_csv.DictReader(fh))
+    for r in rows:
+        r["flat_thresh_Eff"] = "10.0"
+    with open(csv_path, "w", newline="", encoding="utf-8-sig") as fh:
+        w = _csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+        w.writeheader()
+        w.writerows(rows)
+
+    plot_roadmap(csv_path)
+    applied, _ = _applied(csv_path)
+    assert applied["Eff"] == "True", "임계를 10%로 키웠는데 평평해지지 않았다"
+
+
+def test_plot_is_idempotent(tmp_path):
+    """--plot-only로 여러 번 그려도 CSV가 오염되지 않는다."""
+    csv_path = _write_csv_with_deltas(tmp_path, jsc_delta=0.0008, eff_delta=0.5)
+    plot_roadmap(csv_path)
+    _, rows1 = _applied(csv_path)
+    plot_roadmap(csv_path)
+    _, rows2 = _applied(csv_path)
+    assert list(rows1[0].keys()) == list(rows2[0].keys()), "재작도에 컬럼이 늘었다"
+    assert rows1 == rows2
