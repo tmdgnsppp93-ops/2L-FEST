@@ -179,7 +179,17 @@ if self._cache_hash == h: return        # 3902-3904
 
 ---
 
-### 단위 2 — txt/csv 로더 (순수 함수, GUI 없음)
+### 단위 2 — txt/csv 로더 (순수 함수, GUI 없음) ✅ 완료 (2026-08-18, v28.57)
+
+> `load_spatial_map_txt(path, *, delimiter=None) -> SpatialMap` 신설. 테스트 26건 먼저 작성해 전부 실패시킨 뒤 구현했다. **호출처는 아직 없다** — 앱 동작은 이전과 완전히 같다.
+>
+> - **절대값 규약을 테스트로 고정**: `10,20 / 30,40` → 평균 25가 그대로 남는다(1로 정규화되지 않음). 여기서 정규화하면 Griddler 교차검증이 무의미해진다.
+> - **값 제약은 로드 시점에 끝낸다.** 0·음수·NaN·inf(±) 각각 거부하며 메시지에 **파일명·데이터 행·열·값**을 담는다. 클램프·치환 없음. 열 개수 불일치, 숫자 아님, 2×2 미만, 빈 파일도 같은 방식.
+> - 관용 입력 흡수: BOM(utf-8-sig, v28.20 전례) · CRLF · 빈 줄 · `#` 주석 · 줄 끝 구분자. 구분자는 콤마 유무로 자동 판별하고 인자로 강제 가능.
+> - `load_report`(경로·형상·구분자·건너뛴 줄·경고)를 맵에 붙인다 — DXF 로더의 `report` 관용구. 큰 행렬(`SPATIAL_MAP_LARGE_DIM=512` 초과)은 **거부하지 않고** 보간 비용만 알린다.
+> - 2단계 대비: 이미지는 규약이 달라(상대값·평균 1) **별도 함수**로 두고 이 함수에 확장자 분기를 넣지 않는다는 것을 도크스트링에 못 박았다.
+>
+> 결과: `tests/test_spatial_map.py` 80 passed (단위 0의 30 + 단위 1의 24 + 단위 2의 26).
 
 - 신규 함수: `load_spatial_map_txt(path, *, delimiter=None) -> SpatialMap` (`2L_FEST.py`, `SpatialMap` 정의 바로 뒤)
 - `np.loadtxt`/`np.genfromtxt`로 2D 행렬 읽기 → `SpatialMap(mode='csv', matrix=M)` 반환

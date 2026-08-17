@@ -535,3 +535,197 @@ def test_no_map_build_still_short_circuits(fest, make_mono):
     first = m.S._Gc
     _build(m, dp)
     assert m.S._Gc is first
+
+
+# =============================================================================
+# 9. txt/csv 로더 (계획 단위 2)
+# =============================================================================
+#
+# 규약: **txt/csv는 절대값이다.** 읽은 수가 그대로 배율이 된다 — 정규화하지
+# 않는다(이미지는 2단계에서 평균 1 정규화, 근거 매뉴얼 §3.1). 같은 파일을
+# Griddler에도 넣어 교차검증할 수 있어야 하므로 여기서 값을 건드리면 안 된다.
+#
+# 값 제약은 **파일을 읽는 시점에** 검사한다. evaluate()가 솔버 실행 중에
+# 던지면 사용자는 어느 파일의 어느 칸이 문제인지 알 수 없다.
+
+def _write(tmp_path, text, name="map.txt"):
+    p = tmp_path / name
+    p.write_text(text, encoding="utf-8")
+    return str(p)
+
+
+# --- 9-1. 정상 경로 -----------------------------------------------------------
+
+def test_loader_reads_comma_matrix(fest, tmp_path):
+    path = _write(tmp_path, "1.0,2.0\n3.0,4.0\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert isinstance(sm, fest.SpatialMap)
+    assert sm.mode == "csv"
+    assert np.array_equal(sm.matrix, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+def test_loader_reads_whitespace_matrix(fest, tmp_path):
+    path = _write(tmp_path, "1.0 2.0\n3.0 4.0\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert np.array_equal(sm.matrix, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+def test_loader_reads_tab_matrix(fest, tmp_path):
+    path = _write(tmp_path, "1.0\t2.0\n3.0\t4.0\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert np.array_equal(sm.matrix, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+def test_loader_explicit_delimiter_override(fest, tmp_path):
+    path = _write(tmp_path, "1.0;2.0\n3.0;4.0\n")
+    sm = fest.load_spatial_map_txt(path, delimiter=";")
+    assert np.array_equal(sm.matrix, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+def test_loader_keeps_absolute_values_no_normalization(fest, tmp_path):
+    """**절대값 규약** — 평균이 1이 아니어도 그대로 둔다.
+
+    이미지(2단계)만 평균 1로 정규화한다. 여기서 정규화하면 같은 파일을
+    Griddler에 넣었을 때와 값이 달라져 교차검증이 무의미해진다.
+    """
+    path = _write(tmp_path, "10,20\n30,40\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert np.array_equal(sm.matrix, np.array([[10.0, 20.0], [30.0, 40.0]]))
+    assert sm.matrix.mean() == pytest.approx(25.0)   # 1로 정규화되지 않았다
+
+
+def test_loader_non_square_shape_is_ny_nx(fest, tmp_path):
+    """행이 y, 열이 x — evaluate()의 (ny, nx) 해석과 일치해야 한다."""
+    path = _write(tmp_path, "1,2,3\n4,5,6\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert sm.matrix.shape == (2, 3)
+    out = sm.evaluate(_pts((0.0, 0.0), (W, 0.0), (W, H)), W, H)
+    assert out[0] == pytest.approx(1.0)
+    assert out[1] == pytest.approx(3.0)
+    assert out[2] == pytest.approx(6.0)
+
+
+def test_loader_first_row_is_y_zero(fest, tmp_path):
+    """파일 첫 줄 = matrix[0] = y=0. 단위 3 Griddler 대조의 기준."""
+    path = _write(tmp_path, "1,1\n2,2\n")
+    sm = fest.load_spatial_map_txt(path)
+    out = sm.evaluate(_pts((0.5, 0.0), (0.5, H)), W, H)
+    assert out[0] == pytest.approx(1.0)
+    assert out[1] == pytest.approx(2.0)
+
+
+def test_loader_tolerates_bom_blank_lines_crlf_and_comments(fest, tmp_path):
+    """BOM·빈 줄·CRLF·'#' 주석은 데이터가 아니다 (v28.20 utf-8-sig 전례)."""
+    p = tmp_path / "m.txt"
+    p.write_bytes("# 주석\r\n1,2\r\n\r\n3,4\r\n\r\n".encode("utf-8-sig"))
+    sm = fest.load_spatial_map_txt(str(p))
+    assert np.array_equal(sm.matrix, np.array([[1.0, 2.0], [3.0, 4.0]]))
+
+
+def test_loader_result_equals_in_memory_map(fest, tmp_path):
+    """파일로 만든 맵과 직접 만든 맵이 **내용상 같다** (content_key 일치)."""
+    path = _write(tmp_path, "1,2\n3,4\n")
+    a = fest.load_spatial_map_txt(path)
+    b = fest.SpatialMap(mode="csv", matrix=np.array([[1.0, 2.0], [3.0, 4.0]]))
+    assert a.content_key() == b.content_key()
+
+
+def test_loader_report_records_provenance(fest, tmp_path):
+    """DXF 로더의 report 관용구 — 무엇을 어떻게 읽었는지 남긴다."""
+    path = _write(tmp_path, "1,2\n3,4\n")
+    sm = fest.load_spatial_map_txt(path)
+    rep = sm.load_report
+    assert rep["path"] == path
+    assert rep["shape"] == (2, 2)
+    assert rep["delimiter"] == ","
+    assert rep["warnings"] == []
+
+
+def test_loader_warns_on_large_matrix_but_loads(fest, tmp_path):
+    """큰 행렬은 거부하지 않고 보간 비용만 알린다."""
+    n = fest.SPATIAL_MAP_LARGE_DIM + 1
+    row = ",".join(["1.0"] * n)
+    path = _write(tmp_path, "\n".join([row] * 2) + "\n")
+    sm = fest.load_spatial_map_txt(path)
+    assert sm.matrix.shape == (2, n)
+    assert any("보간" in w or "large" in w.lower() for w in sm.load_report["warnings"])
+
+
+# --- 9-2. 형식 오류 -----------------------------------------------------------
+
+def test_loader_rejects_missing_file(fest, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        fest.load_spatial_map_txt(str(tmp_path / "nope.txt"))
+
+
+def test_loader_rejects_empty_file(fest, tmp_path):
+    path = _write(tmp_path, "\n\n")
+    with pytest.raises(ValueError, match="비어"):
+        fest.load_spatial_map_txt(path)
+
+
+def test_loader_rejects_ragged_rows(fest, tmp_path):
+    path = _write(tmp_path, "1,2\n3,4,5\n")
+    with pytest.raises(ValueError) as exc:
+        fest.load_spatial_map_txt(path)
+    msg = str(exc.value)
+    assert "2" in msg          # 문제가 된 데이터 행
+    assert "3" in msg and "2" in msg   # 열 개수 불일치(3 vs 2)
+
+
+def test_loader_rejects_non_numeric_token(fest, tmp_path):
+    path = _write(tmp_path, "1,2\n3,abc\n")
+    with pytest.raises(ValueError) as exc:
+        fest.load_spatial_map_txt(path)
+    assert "abc" in str(exc.value)
+
+
+@pytest.mark.parametrize("text", [
+    "1.0\n",              # 1 x 1
+    "1.0,2.0\n",          # 1 x 2
+    "1.0\n2.0\n",         # 2 x 1
+])
+def test_loader_rejects_too_small(fest, tmp_path, text):
+    """evaluate()가 요구하는 최소 2x2를 로드 시점에 먼저 막는다."""
+    path = _write(tmp_path, text)
+    with pytest.raises(ValueError, match="2x2"):
+        fest.load_spatial_map_txt(path)
+
+
+# --- 9-3. 값 제약 — 조용히 고치지 말고 거부 -----------------------------------
+
+@pytest.mark.parametrize("bad,label", [
+    ("0", "0"),
+    ("0.0", "0"),
+    ("-1.5", "-1.5"),
+    ("nan", "nan"),
+    ("inf", "inf"),
+    ("-inf", "inf"),
+])
+def test_loader_rejects_non_positive_or_non_finite(fest, tmp_path, bad, label):
+    """0·음수·NaN·inf는 거부한다. 클램프·치환하지 않는다."""
+    path = _write(tmp_path, f"1.0,2.0\n3.0,{bad}\n")
+    with pytest.raises(ValueError) as exc:
+        fest.load_spatial_map_txt(path)
+    msg = str(exc.value)
+    assert "2" in msg              # 데이터 행 2
+    assert label.lower() in msg.lower()
+
+
+def test_loader_error_names_the_file(fest, tmp_path):
+    """오류 메시지에 경로가 있어야 어느 파일인지 안다."""
+    path = _write(tmp_path, "1,2\n3,-1\n")
+    with pytest.raises(ValueError) as exc:
+        fest.load_spatial_map_txt(path)
+    assert os.path.basename(path) in str(exc.value)
+
+
+def test_loader_rejects_before_solver_runs(fest, tmp_path, make_mono):
+    """검사는 **로드 시점**에 끝난다 — 솔버에 들어가서 터지지 않는다."""
+    path = _write(tmp_path, "1,2\n3,0\n")
+    with pytest.raises(ValueError):
+        fest.load_spatial_map_txt(path)
+    # 맵이 만들어지지 않았으므로 dp는 여전히 무맵이고 솔버는 정상이다
+    m = make_mono()
+    dp = fest.DiodeParams()
+    assert m.S._spatial_mult(dp, "rc") is None

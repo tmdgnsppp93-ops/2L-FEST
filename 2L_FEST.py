@@ -468,6 +468,26 @@ v28.56: [fix] SpatialMap 캐시 무효화를 id() → 내용 기반으로 정정
          배열이 (spec 내용, 노드 좌표)에만 의존하므로 빗나감만 유발한다.
          공간 분포 입력 인터페이스 계획의 단위 1
          (docs/superpowers/plans/2026-08-17-spatial-map-io.md). 물리식 무변경.
+v28.57: [feat] 공간 분포 txt/csv 로더 — load_spatial_map_txt(path, delimiter=None)이
+         2D 행렬 파일을 SpatialMap(mode='csv')로 만든다. 지금까지 사용자는 맵을
+         넣을 방법이 없었다(SpatialMap 생성처가 _audit.py 스모크뿐).
+         **절대값 규약**: 읽은 수가 그대로 배율이다 — 정규화하지 않는다
+         (Griddler 매뉴얼 §3.1). 같은 파일을 Griddler에도 넣어 교차검증해야 하므로
+         값을 건드리면 안 된다. 이미지는 상대값(평균 1 정규화)이라 규약이 달라
+         **별도 함수**로 둘 것이며, 이 함수에 확장자 분기를 넣지 않는다(2단계).
+         행이 y, 열이 x — 첫 데이터 줄이 matrix[0]이고 evaluate()에서 y=0 경계에
+         놓인다(Griddler와 같은지는 단위 3에서 대조).
+         빈 줄·'#' 주석은 건너뛰고, 구분자는 콤마 유무로 자동 판별하며 인자로
+         강제할 수 있다. BOM은 utf-8-sig로 흡수(v28.20 전례).
+         **값 제약을 로드 시점에 끝낸다** — evaluate()가 솔버 실행 중에 던지면
+         어느 파일의 어느 칸이 문제인지 알 수 없다. 0·음수·NaN·inf는 클램프·치환
+         없이 파일명·행·열·값을 적어 ValueError로 거부한다. 열 개수 불일치,
+         숫자 아님, 2x2 미만도 같은 방식으로 막는다.
+         반환된 맵에 load_report(경로·형상·구분자·건너뛴 줄·경고)를 붙인다 —
+         DXF 로더의 report 관용구와 같다. 큰 행렬은 거부하지 않고 보간 비용만
+         알린다(SPATIAL_MAP_LARGE_DIM=512 초과).
+         **호출처는 아직 없다** — GUI 배선은 단위 4다. 따라서 앱 동작은 이전과
+         완전히 같다. 물리식 무변경.
          CSV에 shading_physical / shading_optical 병기(adapter·roadmap 양쪽).
          optimize_grid 스윕 축 7→9개, 조합 수 50 초과 시 확인 콜백(프롬프트는
          CLI의 run_grid에 두고 라이브러리는 콜백만 받는다 — 라이브러리에서
@@ -575,7 +595,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.56",
+    "version": "v28.57",
     "date": "2026-08-18",
 }
 _BUILD_SHA_CACHE = None
@@ -3380,6 +3400,126 @@ SPATIAL_TARGETS = ("j01", "j02", "gen", "rc")
 def make_uniform(n):
     """All-ones multiplier (no-op), length n."""
     return np.ones(n)
+
+
+# 이 크기를 넘으면 보간 비용을 안내한다(거부하지 않는다).
+SPATIAL_MAP_LARGE_DIM = 512
+
+
+def load_spatial_map_txt(path, *, delimiter=None):
+    """txt/csv 2D 행렬 파일 → ``SpatialMap(mode='csv')``.
+
+    **절대값 규약**: 읽은 수가 그대로 배율이 된다. 정규화하지 않는다
+    (Griddler 매뉴얼 §3.1). 같은 파일을 Griddler에도 넣어 교차검증할 수 있어야
+    하므로 여기서 값을 건드리면 안 된다. 이미지는 상대값(평균 1 정규화)이라
+    규약이 다르므로 **별도 함수**로 두고 이 함수에 확장자 분기를 넣지 않는다.
+
+    행이 y, 열이 x다 — 파일의 첫 데이터 줄이 ``matrix[0]``이고 ``evaluate()``에서
+    ``y=0`` 경계에 놓인다. 이 규약이 Griddler와 같은지는 별도 대조 대상이다
+    (docs/superpowers/plans/2026-08-17-spatial-map-io.md 단위 3).
+
+    빈 줄과 ``#`` 주석 줄은 데이터가 아니다. 구분자는 콤마가 있으면 콤마,
+    없으면 공백(탭 포함)으로 자동 판별하며 ``delimiter``로 강제할 수 있다.
+
+    **값 제약은 여기서 끝낸다.** ``evaluate()``가 솔버 실행 중에 던지면 사용자는
+    어느 파일의 어느 칸이 문제인지 알 수 없다. 0·음수·NaN·inf는 클램프하거나
+    치환하지 않고 위치와 값을 적어 ``ValueError``로 거부한다.
+
+    Returns
+    -------
+    SpatialMap
+        ``load_report`` 속성이 붙는다 (경로·형상·구분자·건너뛴 줄 수·경고 목록).
+        DXF 로더의 ``report`` 관용구와 같다.
+
+    Raises
+    ------
+    FileNotFoundError
+        경로가 없을 때.
+    ValueError
+        비었거나, 열 개수가 어긋나거나, 숫자가 아니거나, 2x2 미만이거나,
+        유한하고 양수가 아닌 값이 있을 때.
+    """
+    with open(path, "r", encoding="utf-8-sig") as fh:
+        raw = fh.read()
+
+    name = os.path.basename(path)
+
+    lines = []
+    n_skipped = 0
+    for line in raw.splitlines():
+        s = line.strip()
+        if not s or s.startswith("#"):
+            n_skipped += 1
+            continue
+        lines.append(s)
+
+    if not lines:
+        raise ValueError(f"{name}: 공간 분포 파일이 비어 있다 (데이터 줄 0개).")
+
+    if delimiter is None and any("," in s for s in lines):
+        delimiter = ","   # None으로 남으면 공백 분할(탭 포함)
+
+    rows = []
+    for i, s in enumerate(lines, start=1):
+        if delimiter is None:
+            toks = s.split()
+        else:
+            toks = s.split(delimiter)
+            if toks and toks[-1].strip() == "":
+                toks = toks[:-1]          # 줄 끝 구분자 허용
+        vals = []
+        for j, t in enumerate(toks, start=1):
+            t = t.strip()
+            if t == "":
+                raise ValueError(
+                    f"{name}: 데이터 행 {i}, 열 {j}가 비어 있다.")
+            try:
+                vals.append(float(t))
+            except ValueError:
+                raise ValueError(
+                    f"{name}: 데이터 행 {i}, 열 {j}의 값 {t!r}을 숫자로 읽을 수 "
+                    f"없다.") from None
+        rows.append(vals)
+
+    ncol = len(rows[0])
+    for i, r in enumerate(rows, start=1):
+        if len(r) != ncol:
+            raise ValueError(
+                f"{name}: 데이터 행 {i}의 열 개수가 {len(r)}인데 첫 행은 {ncol}이다. "
+                f"행마다 열 수가 같아야 한다.")
+
+    M = np.asarray(rows, dtype=float)
+    if M.ndim != 2 or M.shape[0] < 2 or M.shape[1] < 2:
+        raise ValueError(
+            f"{name}: 공간 분포는 최소 2x2 행렬이어야 한다 "
+            f"(읽은 형상 {tuple(int(v) for v in M.shape)}). "
+            f"보간이 두 점 이상을 요구한다.")
+
+    bad = ~np.isfinite(M)
+    if not bad.any():
+        bad = (M <= 0.0)
+    if bad.any():
+        iy, ix = (int(v) for v in np.argwhere(bad)[0])
+        raise ValueError(
+            f"{name}: 데이터 행 {iy + 1}, 열 {ix + 1}의 값이 "
+            f"{float(M[iy, ix])!r}이다. 배율은 유한하고 양수여야 한다 — "
+            f"0·음수·NaN·inf는 자동으로 고치지 않고 거부한다.")
+
+    warns = []
+    if max(M.shape) > SPATIAL_MAP_LARGE_DIM:
+        warns.append(
+            f"행렬이 크다 {tuple(int(v) for v in M.shape)} — 노드마다 쌍선형 "
+            f"보간을 하므로 실행이 느려질 수 있다.")
+
+    sm = SpatialMap(mode="csv", matrix=M)
+    sm.load_report = {
+        "path": path,
+        "shape": tuple(int(v) for v in M.shape),
+        "delimiter": delimiter,      # None = 공백 분할
+        "skipped_lines": n_skipped,
+        "warnings": warns,
+    }
+    return sm
 
 
 def solve_0d_subcell_current(V, dp, cell='top'):
