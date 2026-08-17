@@ -348,3 +348,190 @@ def test_j01_map_raises_recombination_and_lowers_current(fest, make_mono):
     J_hi = _solve_current(fest, m, dp, Vb)
 
     assert J_hi < J0
+
+
+# =============================================================================
+# 8. 캐시 무효화 — 내용 기반이어야 한다 (계획 단위 1)
+# =============================================================================
+#
+# `_build`의 캐시 태그 `_sm_tag`(2L_FEST.py:3897-3901)는 원래 맵의 **id()**로
+# 변경을 감지했다. 앱이 맵을 생성·소멸시킨 적이 없어 지금까지 드러나지 않았으나,
+# 파일 로더·GUI가 생기면 두 경로로 깨진다:
+#
+#   (a) 같은 맵 객체를 **제자리 수정** — id 불변 → 태그 불변 → _Gc 재빌드 안 됨.
+#       GUI가 target당 맵 하나를 두고 필드만 갱신하면 **100 % 발생**한다.
+#   (b) 맵 A 해제 후 B 생성 — CPython이 A의 주소를 B에 재사용하면 역시 태그 불변.
+#
+# `_sm_tag`는 `_build` 안의 지역 변수라 직접 못 읽는다. 그래서 태그의 재료인
+# `SpatialMap.content_key()` 계약을 결정론적으로 검사하고(§8-1), 결과에 미치는
+# 영향은 `_Gc`로 확인한다(§8-2).
+
+# --- 8-1. content_key() 계약: 같은 내용 → 같은 키, 다른 내용 → 다른 키 --------
+
+def test_content_key_equal_for_equal_content(fest):
+    """서로 다른 객체라도 내용이 같으면 키가 같다.
+
+    id() 기반 태그는 이 성질을 **결정론적으로** 위반한다 — 별개 객체는 항상
+    다른 id를 갖기 때문이다. 정정 전에는 이 테스트가 실패해야 한다.
+    """
+    a = fest.SpatialMap(mode="uniform", background=1.5)
+    b = fest.SpatialMap(mode="uniform", background=1.5)
+    assert a is not b
+    assert a.content_key() == b.content_key()
+
+
+def test_content_key_equal_for_equal_matrix_distinct_arrays(fest):
+    """행렬도 내용으로 비교한다 — 배열 객체가 달라도 값이 같으면 같은 키."""
+    M1 = np.array([[1.0, 2.0], [3.0, 4.0]])
+    M2 = np.array([[1.0, 2.0], [3.0, 4.0]])
+    a = fest.SpatialMap(mode="csv", matrix=M1)
+    b = fest.SpatialMap(mode="csv", matrix=M2)
+    assert M1 is not M2
+    assert a.content_key() == b.content_key()
+
+
+def test_content_key_differs_on_matrix_value(fest):
+    a = fest.SpatialMap(mode="csv", matrix=np.array([[1.0, 2.0], [3.0, 4.0]]))
+    b = fest.SpatialMap(mode="csv", matrix=np.array([[1.0, 2.0], [3.0, 4.5]]))
+    assert a.content_key() != b.content_key()
+
+
+def test_content_key_differs_on_matrix_shape(fest):
+    """같은 값의 나열이라도 형상이 다르면 다른 맵이다."""
+    a = fest.SpatialMap(mode="csv", matrix=np.array([[1.0, 2.0], [3.0, 4.0]]))
+    b = fest.SpatialMap(mode="csv",
+                        matrix=np.array([[1.0, 2.0, 3.0, 4.0],
+                                         [1.0, 2.0, 3.0, 4.0]]))
+    assert a.content_key() != b.content_key()
+
+
+@pytest.mark.parametrize("field,value", [
+    ("mode", "rectangle"),
+    ("background", 9.0),
+    ("feature", 9.0),
+    ("x_min", 9.0), ("x_max", 9.0), ("y_min", 9.0), ("y_max", 9.0),
+    ("cx", 9.0), ("cy", 9.0), ("sigma_x", 9.0), ("sigma_y", 9.0),
+    ("cells_x", 9), ("cells_y", 9),
+])
+def test_content_key_differs_on_each_field(fest, field, value):
+    """어떤 필드를 바꿔도 키가 달라져야 한다 — 빠뜨린 필드가 있으면 잡힌다."""
+    a = fest.SpatialMap(mode="uniform")
+    b = fest.SpatialMap(mode="uniform")
+    setattr(b, field, value)
+    assert a.content_key() != b.content_key()
+
+
+def test_content_key_is_hashable(fest):
+    """`_spatial_cache`의 dict 키로 쓰이므로 해시 가능해야 한다."""
+    sm = fest.SpatialMap(mode="csv", matrix=np.array([[1.0, 2.0], [3.0, 4.0]]))
+    assert hash(sm.content_key()) == hash(sm.content_key())
+
+
+# --- 8-2. 결과에 미치는 영향 --------------------------------------------------
+
+def _build(m, dp):
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    return m.S._Gc[m.S.ism].copy()
+
+
+def test_inplace_map_edit_invalidates_build_cache(fest, make_mono):
+    """맵을 **제자리 수정**하면 _Gc가 재빌드되어야 한다.
+
+    id() 태그에서는 결정론적으로 실패한다(id가 안 변하므로 캐시 적중).
+    GUI가 target당 맵 하나를 두고 필드만 갱신하는 구조면 항상 이 경로다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    sm = fest.SpatialMap(mode="uniform", background=1.0)
+    dp.spatial_rc = sm
+
+    g1 = _build(m, dp)
+    sm.background = 2.0            # 제자리 수정 — id 불변
+    g2 = _build(m, dp)
+
+    # rc 배율 2배 -> 접촉저항 2배 -> Gc 절반
+    assert np.allclose(g2, g1 / 2.0, rtol=0, atol=0)
+
+
+def test_matrix_inplace_edit_invalidates_build_cache(fest, make_mono):
+    """행렬 내용만 바꿔치기해도 재빌드되어야 한다 (파일 재로드 경로)."""
+    m = make_mono()
+    dp = fest.DiodeParams()
+    sm = fest.SpatialMap(mode="csv", matrix=np.ones((2, 2)))
+    dp.spatial_rc = sm
+
+    g1 = _build(m, dp)
+    sm.matrix = np.full((2, 2), 2.0)
+    g2 = _build(m, dp)
+
+    assert np.allclose(g2, g1 / 2.0, rtol=0, atol=0)
+
+
+def test_map_replacement_after_free_invalidates_cache(fest, make_mono):
+    """맵 A 해제 → B 생성. A의 주소가 재사용돼도 B가 반영되어야 한다.
+
+    주소 재사용은 CPython 구현에 의존하므로 이 테스트만으로는 정정 전 실패가
+    보장되지 않는다(재사용이 안 일어나면 그냥 통과한다). 결정론적 재현은
+    위의 제자리 수정 테스트와 content_key 계약이 담당하고, 이 테스트는
+    GUI 실사용 시나리오에 대한 회귀 가드다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+
+    A = fest.SpatialMap(mode="uniform", background=1.0)
+    dp.spatial_rc = A
+    g1 = _build(m, dp)
+
+    dp.spatial_rc = None
+    del A
+    B = fest.SpatialMap(mode="uniform", background=2.0)
+    dp.spatial_rc = B
+    g2 = _build(m, dp)
+
+    assert np.allclose(g2, g1 / 2.0, rtol=0, atol=0)
+
+
+def test_spatial_mult_cache_follows_content(fest, make_mono):
+    """`_spatial_mult`의 배열 캐시도 내용을 따라야 한다.
+
+    이 캐시는 `(id(dp), which, id(spec))`을 키로 썼다 — 같은 결함이다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    sm = fest.SpatialMap(mode="uniform", background=1.0)
+    dp.spatial_j01 = sm
+
+    a = m.S._spatial_mult(dp, "j01")
+    assert np.all(a == 1.0)
+
+    sm.background = 3.0
+    b = m.S._spatial_mult(dp, "j01")
+    assert np.all(b == 3.0)
+
+
+def test_unchanged_build_still_short_circuits(fest, make_mono):
+    """바뀐 게 없으면 여전히 캐시로 빠져나가야 한다 (성능 회귀 방지).
+
+    `_build`는 재빌드 시 `self._Gc = np.zeros(N)`으로 **새 객체**를 만든다.
+    따라서 같은 객체가 유지되면 조기 반환이 일어났다는 뜻이다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    dp.spatial_rc = fest.SpatialMap(mode="uniform", background=1.5)
+
+    _build(m, dp)
+    first = m.S._Gc
+    _build(m, dp)
+    assert m.S._Gc is first
+
+
+def test_no_map_build_still_short_circuits(fest, make_mono):
+    """맵이 없을 때도 캐시 거동이 그대로여야 한다 (비트 동일 경로 불변)."""
+    m = make_mono()
+    dp = fest.DiodeParams()
+
+    _build(m, dp)
+    first = m.S._Gc
+    _build(m, dp)
+    assert m.S._Gc is first

@@ -450,6 +450,24 @@ v28.55: [feat] Metal Optical Transparency — 금속의 물리 폭과 광학 폭
          반사광 회수)를 두 계층에서 모델링해 이중계산이 된다. recovery가 기본,
          T는 opt-in이다(T 값의 문헌/측정 근거 미확보). 에러 메시지에 어느 쪽을
          0으로 둘지 양쪽 안내를 넣었다.
+v28.56: [fix] SpatialMap 캐시 무효화를 id() → 내용 기반으로 정정.
+         _build의 _sm_tag와 _spatial_mult의 배열 캐시가 맵의 **주소**로 변경을
+         감지했다. 앱 코드가 SpatialMap을 만든 적이 없어(생성처는 _audit.py
+         스모크뿐) 드러나지 않았을 뿐, 두 경로로 옛 결과를 **조용히** 재사용한다:
+         (a) 같은 맵 객체를 제자리 수정하면 id가 안 변해 캐시가 그대로 적중 —
+         GUI가 target당 맵 하나를 두고 필드만 갱신하면 100 % 발생. (b) 맵 A를
+         해제하고 B를 만들면 CPython이 A의 주소를 재사용해 역시 적중(단독 실행
+         20/20 재현, pytest 안에서는 할당 패턴이 달라 재현되지 않음 — 그래서
+         회귀 감시는 (a)와 content_key 계약이 담당한다). 오류도 경고도 없다.
+         SpatialMap.content_key()를 신설해 mode+스칼라 13개+행렬(형상 + 바이트
+         sha256)로 태그를 만든다. 행렬은 커질 수 있어 바이트 대신 다이제스트를
+         쓰고, 형상을 함께 넣어 같은 바이트열의 다른 형상을 구분한다.
+         **맵이 없으면 예전과 같이 0으로 태그**하므로 무맵 경로는 캐시 거동·
+         비트 동일·비용 모두 불변이다(content_key 호출 자체가 없다).
+         부수: _spatial_cache 키의 id(dp)는 이제 잘못된 적중을 만들 수 없다 —
+         배열이 (spec 내용, 노드 좌표)에만 의존하므로 빗나감만 유발한다.
+         공간 분포 입력 인터페이스 계획의 단위 1
+         (docs/superpowers/plans/2026-08-17-spatial-map-io.md). 물리식 무변경.
          CSV에 shading_physical / shading_optical 병기(adapter·roadmap 양쪽).
          optimize_grid 스윕 축 7→9개, 조합 수 50 초과 시 확인 콜백(프롬프트는
          CLI의 run_grid에 두고 라이브러리는 콜백만 받는다 — 라이브러리에서
@@ -557,8 +575,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.55",
-    "date": "2026-08-14",
+    "version": "v28.56",
+    "date": "2026-08-18",
 }
 _BUILD_SHA_CACHE = None
 
@@ -3274,6 +3292,31 @@ class SpatialMap:
         self.cells_x = int(cells_x); self.cells_y = int(cells_y)
         self.matrix = None if matrix is None else np.asarray(matrix, dtype=float)
 
+    def content_key(self):
+        """Hashable identity based on CONTENT, not object address.
+
+        캐시 무효화(`_build`의 `_sm_tag`, `_spatial_mult`의 배열 캐시)가 원래
+        `id()`를 썼다. 앱이 맵을 만든 적이 없어 드러나지 않았을 뿐, 파일 로더·
+        GUI가 생기면 두 경로로 깨진다:
+          (a) 같은 객체를 **제자리 수정** — id가 안 변해 캐시가 그대로 적중.
+              GUI가 target당 맵 하나를 두고 필드만 갱신하면 100 % 발생한다.
+          (b) 맵 A 해제 후 B 생성 — CPython이 A의 주소를 재사용하면 역시 적중.
+        둘 다 오류·경고 없이 **옛 결과를 조용히 재사용**한다.
+
+        행렬은 크기가 커질 수 있어 바이트를 그대로 넣지 않고 sha256 다이제스트를
+        쓴다. 형상·dtype도 함께 넣어 같은 바이트열의 다른 형상을 구분한다.
+        """
+        if self.matrix is None:
+            mat = None
+        else:
+            m = np.ascontiguousarray(self.matrix, dtype=float)
+            mat = (m.shape,
+                   hashlib.sha256(m.tobytes()).hexdigest())
+        return (self.mode, self.background, self.feature,
+                self.x_min, self.x_max, self.y_min, self.y_max,
+                self.cx, self.cy, self.sigma_x, self.sigma_y,
+                self.cells_x, self.cells_y, mat)
+
     def evaluate(self, points_cm, W_cm, H_cm):
         """Return length-N positive multiplier array at node coords.
 
@@ -3844,7 +3887,10 @@ class FESTSolver:
         spec = getattr(dp, f"spatial_{which}", None)
         if spec is None:
             return None  # caller treats None as all-ones (skips the multiply)
-        key = (id(dp), which, id(spec))
+        # 내용 기반 키. 배열은 (spec 내용, 이 솔버의 노드 좌표)에만 의존하므로
+        # spec을 내용으로 키잉하면 id(dp)는 잘못된 적중을 만들 수 없다(빗나감만
+        # 유발). 예전의 id(spec)은 제자리 수정·주소 재사용에서 오답을 줬다.
+        key = (id(dp), which, spec.content_key())
         cached = self._spatial_cache.get(key)
         if cached is not None and cached.shape[0] == self.N:
             return cached
@@ -3893,12 +3939,15 @@ class FESTSolver:
         if not _legacy_local_match_enabled() and (Rs_j is None or Rs_j <= 0):
             Rs_j = RS_JUNCTION_MIN
         # (③): include spatial-map identities so changing a map (esp. the
-        # rc map, which feeds Gc built here) invalidates the build cache. Use a
-        # cheap id()-based tag; None maps tag as 0.
-        _sm_tag = (id(dp.spatial_j01) if dp.spatial_j01 is not None else 0,
-                   id(dp.spatial_j02) if dp.spatial_j02 is not None else 0,
-                   id(dp.spatial_gen) if dp.spatial_gen is not None else 0,
-                   id(dp.spatial_rc)  if dp.spatial_rc  is not None else 0)
+        # rc map, which feeds Gc built here) invalidates the build cache.
+        # **내용 기반**이어야 한다 — 예전의 id() 태그는 맵을 제자리 수정하거나
+        # 해제 후 같은 주소에 새로 만들면 변하지 않아, 옛 _Gc를 조용히 재사용했다
+        # (SpatialMap.content_key 도크스트링 참조). 맵이 없으면 예전과 같이 0으로
+        # 태그해 무맵 경로의 캐시 거동·비트 동일을 유지한다.
+        _sm_tag = (dp.spatial_j01.content_key() if dp.spatial_j01 is not None else 0,
+                   dp.spatial_j02.content_key() if dp.spatial_j02 is not None else 0,
+                   dp.spatial_gen.content_key() if dp.spatial_gen is not None else 0,
+                   dp.spatial_rc.content_key()  if dp.spatial_rc  is not None else 0)
         h = (rm, hf, wf, wb_case, rc, rc_rear, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
         if self._cache_hash == h:
             return
