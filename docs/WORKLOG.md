@@ -393,6 +393,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check
 | `docs/front_electrode_model_scope.md` | 전면전극 모델 범위 |
 | `_experiments_README.md` | 루트 `_*_results.csv`의 실행 조건. **수치 인용 전 반드시 확인** |
 | `docs/superpowers/specs/` · `plans/` | 기능별 설계·구현 계획 |
+| `docs/sessions/` | 세션별 작업 기록 — **왜 그렇게 결정했는지**와 그 과정의 발견. 커밋 메시지(무엇을)·계획서(앞으로)와 역할이 다르다 |
 
 > 매뉴얼 PDF는 저작권 문제로 저장소에 없다. 별도 보관 중이며 필요 시
 > `--add-dir`로 접근한다. 이 저장소의 매뉴얼 관련 기술은 모두 **요약·재서술**이다.
