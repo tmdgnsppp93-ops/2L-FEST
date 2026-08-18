@@ -73,20 +73,34 @@ OS·BLAS/LAPACK 구현·SuperLU 빌드가 **기록되지 않는 축**으로 남�
 이번 실험에서 `PINNED_STACK`·`conftest.py`·핀 값은 **일절 수정하지 않았고**
 기준값 재캡처도 하지 않았다. venv는 저장소 밖에 있어 `git status`에 잡히지 않는다.
 
-### 1-1-a. 원 캡처 머신 환경 (2026-08-18 기록) — 편차 원인 규명됨
+### 1-1-a. 핀 스택 머신 환경 (2026-08-18 기록 · 2026-08-19 확장) — 편차 원인 규명됨
 
 > 위 실험 시점에는 "원 캡처 머신 정보가 저장소에 없어" 원인을 특정하지 못했다.
 > **2026-08-18 KIST PC에서 직접 수집해 아래에 기록했고, 그 결과 원인이 규명됐다.**
+>
+> **2026-08-19: 집 데스크톱 열을 추가했다.** 핀을 재현하는 머신이 하나가 아니라
+> **둘**이라는 것이 실측으로 확인됐다 — 아래 §1-2 참조.
 
-| 항목 | 원 캡처 PC (KIST) | 맥북 |
-|---|---|---|
-| OS | `Windows-11-10.0.26100-SP0` | darwin |
-| 아키텍처 | **x86-64** (`AMD64`)<br>Intel64 Family 6 Model 151 Stepping 5 | **aarch64** |
-| Python | `3.14.3` (`tags/v3.14.3:323c59a`, MSC v.1944 64-bit, 2026-02-03 빌드) | `3.14.3` (재현 venv) |
-| numpy | `2.4.3` | `2.4.3` (재현 venv) |
-| scipy | `1.17.1` | `1.17.1` (재현 venv) |
-| **numpy BLAS/LAPACK** | **scipy-openblas 0.3.31.dev** (detection: pkgconfig) | **Apple Accelerate** (detection: system) |
-| **scipy BLAS/LAPACK** | scipy-openblas 0.3.30 | 번들 OpenBLAS |
+| 항목 | 원 캡처 PC (KIST) | 집 데스크톱 (2026-08-19 추가) | 맥북 |
+|---|---|---|---|
+| OS | `Windows-11-10.0.26100-SP0` | `Windows-10-10.0.19045-SP0` | darwin |
+| 아키텍처 | **x86-64** (`AMD64`)<br>Intel64 Family 6 Model 151 Stepping 5 | **x86-64** (`AMD64`)<br>Intel64 Family 6 Model 158 Stepping 13 | **aarch64** |
+| Python | `3.14.3` (`tags/v3.14.3:323c59a`, MSC v.1944 64-bit, 2026-02-03 빌드) | `3.14.3` (`tags/v3.14.3:323c59a`, MSC v.1944 64-bit, 2026-02-03 빌드) — **빌드 문자열까지 동일** | `3.14.3` (재현 venv) |
+| numpy | `2.4.3` | `2.4.3` | `2.4.3` (재현 venv) |
+| scipy | `1.17.1` | `1.17.1` | `1.17.1` (재현 venv) |
+| **numpy BLAS/LAPACK** | **scipy-openblas 0.3.31.dev** (detection: pkgconfig) | **scipy-openblas 0.3.31.dev** (detection: pkgconfig) | **Apple Accelerate** (detection: system) |
+| **scipy BLAS/LAPACK** | scipy-openblas 0.3.30 | scipy-openblas 0.3.30 | 번들 OpenBLAS |
+| **핀 2건 재현** | 캡처 원본 | ✅ **strict 통과** (4.4 s, RTOL 1e-8) | ❌ 1.70e-7 / 9.75e-7 불일치 |
+
+**집 데스크톱은 OS 버전과 CPU 세대가 다른데도 핀이 재현된다.** 즉 위에서 규명된 두
+축(아키텍처 · BLAS 구현)이 실제로 판정 요인이고, Windows 빌드 번호나 CPU 스테핑은
+아니라는 것이 반증 사례로 확인됐다. 정리하면 **핀 재현의 실질 조건**은:
+
+1. x86-64 (AMD64)
+2. numpy BLAS = scipy-openblas
+3. python / numpy / scipy 버전 3종 (`PINNED_STACK`)
+
+세 조건이 맞으면 서로 다른 Windows·CPU에서도 RTOL 1e-8이 성립했다.
 
 **규명된 원인: 버전 3종은 같았지만 아키텍처와 BLAS 구현이 달랐다.**
 맥북 재현 venv는 python·numpy·scipy 버전을 완전히 맞췄으므로 `stack_mismatch()`가
@@ -110,15 +124,35 @@ OS·BLAS/LAPACK 구현·SuperLU 빌드가 **기록되지 않는 축**으로 남�
 
 ### 1-2. 머신 분담
 
+> **2026-08-19 갱신: "원 캡처 PC"는 KIST 하나가 아니다.** 집 데스크톱도
+> `PINNED_STACK`과 일치하고 **KIST에서 캡처한 핀 2건이 strict로 통과한다**(4.4 s).
+> 즉 **핀 스택 머신이 둘, 불일치는 맥북 하나뿐**이다. 근거 표는 §1-1-a.
+>
+> 그래서 이 절의 용어를 바꾼다 — 기준은 "어느 PC인가"가 아니라 **"핀 스택인가"**
+> 이고, 판정은 `conftest.stack_mismatch()`가 한다. 다만 그 게이트는 버전 3종만
+> 보므로 아키텍처·BLAS는 사람이 확인해야 한다(§1-1-a의 실질 조건 3개).
+
 | 머신 | 역할 | 비트 핀 |
 |---|---|---|
-| **맥북** (arm64, python 3.12.13) | 코딩 + 일반 회귀(**145 passed**)까지 | **감시 없음** — xfail로 내려감. 스택을 맞춰도 §1-1대로 통과하지 않는다 |
-| **원 캡처 PC** | **물리 변경 머지 전 핀 확인 필수** | strict fail로 강제됨 |
+| **KIST PC** (Win11 / AMD64 / scipy-openblas) | 원 캡처 · 물리 변경 검증 | ✅ strict — 캡처 원본 |
+| **집 데스크톱** (Win10 / AMD64 / scipy-openblas) | **코딩 + 회귀 + 핀 검증 전부 가능** | ✅ strict — 2026-08-19 재현 확인 |
+| **맥북** (darwin / aarch64 / Apple Accelerate) | 코딩 + 일반 회귀까지 | ❌ **감시 없음** — xfail로 내려감. 버전을 맞춰도 §1-1대로 통과하지 않는다 |
 
 **물리를 변경하는 작업 일반에 적용된다: 맥북에서 "통과"를 확인해도 검증이 끝난 것이
 아니다.** 이런 작업의 검증 조건은 대개 "기존 설정에서 결과 불변"이고, 그 판정을
-비트 핀이 담당하는데 맥북에서는 그 핀이 꺼져 있다. 반드시 원 캡처 PC에서 확인한 뒤
-머지할 것.
+비트 핀이 담당하는데 맥북에서는 그 핀이 꺼져 있다. **핀 스택 머신(KIST 또는 집
+데스크톱)에서 확인한 뒤** 머지할 것.
+
+> ⚠ **집 데스크톱에서 주의할 것 — 인터프리터를 잘못 고르면 핀이 꺼진다.**
+>
+> | 인터프리터 | 스택 | 비트 핀 |
+> |---|---|---|
+> | `python` (시스템, 3.14.3 / numpy 2.4.3) | ✅ 일치 | strict |
+> | `.venv/Scripts/python.exe` (3.11.9 / numpy 2.4.6) | ❌ 불일치 | 전부 xfail |
+>
+> `.venv`로 돌리면 오류도 실패도 없이 **핀만 조용히 xfail로 내려간다** — 이 저장소가
+> 계속 경계해 온 실패 유형이다. 테스트는 `python -m pytest`로 돌릴 것.
+> (시스템 Python에는 2026-08-19에 pytest만 설치했다. numpy·scipy는 건드리지 않았다.)
 
 §3의 구현 확정 3건 중 **우선순위 2(base lateral transport)와 우선순위 3(capacitive
 effects)이 여기 해당한다** — 둘 다 솔버의 물리 경로를 바꾼다. 우선순위 1(공간 분포
@@ -326,18 +360,54 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 
 ---
 
-## ▶ 다음 착수 지점 (2026-08-18 기준)
+## ▶ 다음 착수 지점 (2026-08-19 기준)
 
 > **여기서부터 이어서 하면 된다.**
 
-**착수 대상: 우선순위 0 — 공간 분포 맵 분기 커버리지 수정.**
+**착수 대상: 우선순위 0 — 공간 분포 맵 분기 커버리지 수정, `단위 1`.**
+**단위 0은 2026-08-19에 완료됐다.**
 
 | 항목 | 값 |
 |---|---|
 | 계획서 | `docs/superpowers/plans/2026-08-18-spatial-map-branch-coverage.md` |
-| 시작 단위 | **단위 0 (특성화, 프로덕션 0줄)** |
-| 새 파일 | `tests/test_spatial_branch_coverage.py` |
-| 재사용 | `tests/test_base_lateral.py`의 `BRANCH_CASES`를 **import** (복제 금지) |
+| 시작 단위 | **단위 1 (헬퍼 도입 + 배선)** |
+| 세션 기록 | `docs/sessions/2026-08-19-spatial-branch-coverage-unit0.md` |
+| 판정 기준 | `tests/test_spatial_branch_coverage.py` — 97건 (65 passed / 32 xfailed) |
+| 완료 조건 | `RESIDUAL_SEES_MAP`의 `False` **12개를 전부 `True`로** 바꾸고 그 파일이 초록불 |
+
+### 단위 1을 시작하기 전에 반드시 읽을 것 — 계획서 전제가 네 개 틀렸다
+
+단위 0이 실측으로 정정한 것들이다. 계획서 §1의 설계는 유효하지만 **범위가 넓어졌다.**
+
+| # | 계획서 | 실제 (2026-08-19 실측) |
+|---|---|---|
+| 1 | 결함 분기 **4개** | **5개** — `_solve_single_bifacial`(`:6513`) 추가 |
+| 2 | 소비 지점 **9곳** | **13개 함수 34줄** — `losses`·`recomb_currents`·`_tab_current` 추가 |
+| 3 | `J01_top_arr`가 스칼라 | **아니다.** `mf`가 배열이라 결함 분기에서도 `ndarray[N]` |
+| 4 | 결함 칸 **9개** | **12개** |
+
+**단위 1이 먼저 결정할 것**: 진단·GUI 소비 지점(`losses` · `recomb_currents` ·
+`_tab_current`)도 헬퍼로 배선할지. 남겨 두면 `cell_current`가 가졌던 **자기모순
+값** 문제(맵 없는 전압장 + 맵 있는 다이오드 식)가 그 셋에 그대로 남는다 —
+계획서가 `cell_current`를 고치는 근거로 든 논리가 그대로 적용된다.
+
+`tests/test_spatial_branch_coverage.py`의 `INLINE_ASSEMBLY_CENSUS`가 13개 함수를
+고정하고 있어, 배선할 때마다 그 dict를 갱신하며 진행 상황을 눈으로 확인할 수 있다.
+
+> **단위 1을 끝냈다는 신호**: 결함 칸 12개가 `XPASS → strict 실패`로 뜬다.
+> 그때 `RESIDUAL_SEES_MAP`을 True로 바꾸고 마커가 사라지면 초록불이 된다.
+> (`ΔJ ≠ 0`만 보고 판단하지 말 것 — 고치기 전에도 참이었다.
+> `test_cell_current_delta_is_not_evidence_of_working` 참조.)
+
+### 환경 — 이 항목은 해소됐다
+
+아래 "미해결 환경 결함" 블록(`import numpy.testing` 무한 대기)은 **2026-08-19에
+재현되지 않았다** (2.55 s / 4.14 s로 정상). 원인은 여전히 미규명이고 **머신 상태
+변화라는 진단만 확인됐다.** 재발하면 그 블록에 추가 기록할 것.
+
+또한 **집 데스크톱이 핀 스택임이 확인됐다** — §1-2 갱신 참조. 단위 1의 물리 검증
+(Phase A 비트 핀)을 KIST PC까지 가지 않고 여기서 할 수 있다.
+단, `python -m pytest`(시스템)로 돌릴 것 — `.venv`는 스택이 다르다.
 | 물리 변경 | 없음 (맵 없으면 비트 동일) |
 | 원 캡처 PC 필요 | **단위 1 이후에만** — 단위 0은 어디서 해도 된다 |
 | 현재 HEAD | `0d80ae5` v28.60 |

@@ -85,7 +85,44 @@ v28.60이 게이트와 조립을 `_rear_is_a_plane` boolean 하나로 묶은 것
 
 ---
 
-## 단위 0 — 특성화 (프로덕션 0줄) 🔒
+## 단위 0 — 특성화 (프로덕션 0줄) ✅ **완료 (2026-08-19)**
+
+> **아래 기술은 그대로 둔다** — 실측이 이 예상과 어떻게 달랐는지가 기록으로 남아야
+> 한다. 세션 기록: `docs/sessions/2026-08-19-spatial-branch-coverage-unit0.md`
+>
+> | | |
+> |---|---|
+> | 산출물 | `tests/test_spatial_branch_coverage.py` — **97건** |
+> | 결과 | 65 passed, **32 xfailed**(=결함 칸), 0 failed (97 s) |
+> | 부수 수정 | `tests/test_base_lateral.py` — `_NAMED_SOLVERS` + 케이스 7 기대 분기 |
+> | 환경 | 집 데스크톱 (Win10 / AMD64 / scipy-openblas), **핀 스택** — T3 strict 통과 |
+>
+> **예상과 달랐던 점 네 가지.**
+>
+> 1. **T2의 관측 지표가 성립하지 않았다.** 아래 *"`J01_top_arr`가 배열인지
+>    스칼라인지"* 는 틀렸다 — `mf`(`metal_frac`)가 이미 노드 길이 배열이라
+>    **결함 분기에서도 `ndarray[N]`이다.** dtype·shape로는 결함이 안 보인다.
+>    → **무맵/유맵 실행의 같은 지역 변수를 비트 비교**하는 것으로 대체했다.
+>    "해석의 여지가 없는 직접 관측"이라는 의도는 그대로다.
+> 2. **결함 분기가 4개가 아니라 5개다.** `_solve_single_bifacial`(`:6513`)이
+>    빠져 있었다 — `solve_single`이 `:6396`에서 그리로 빠져나가고, 그쪽엔
+>    `_spatial_mult` 호출이 없다. **결함 칸 9개 → 12개.**
+>    `tests/test_base_lateral.py`의 `_NAMED_SOLVERS`가 이 분기를 감시하지 않아
+>    `single_bifacial`이 `_INLINE`으로 판정돼 있었고, **그 원본 표를 고쳤다.**
+>    (벌크 횡전도 쪽에는 이 누락으로 인한 공백이 없었다 — `Rs_base`는 `_build`
+>    안이라 디스패치 앞이다. 라벨만 틀렸고 기능 커버리지는 온전했다.)
+> 3. **소비 지점이 9곳이 아니라 13개 함수 34줄이다.** 아래 §1 표에 없는 것:
+>    `_solve_single_bifacial`(잔차!) · `losses` · `recomb_currents` ·
+>    `_tab_current`(GUI). → **단위 1이 배선 범위를 정할 때 이 census를 볼 것.**
+> 4. **`J02_single_pass/metal`의 기본값이 0.0**이라 단일셀 `j02` 칸이 관측
+>    불가였다. 테스트 전용으로 `1e-9`를 넣어 칸을 갈랐다(탠덤은 기본값 유지).
+>
+> **빨간불 처리 방식**: 아래가 말한 *"빨간불이 정상"* 을 문자 그대로 하면
+> 단위 1·2가 회귀 게이트를 못 쓴다. 결함 칸마다 `xfail(strict=True)`를 붙여
+> **오늘은 xfail, 고치면 XPASS→strict 실패**가 되게 했다
+> (`test_junction_bf.py:42` 선례). 마커를 지우지 않으면 초록불이 안 된다.
+> `strict=True`가 조용히 뒤집히는 것은 `test_every_defect_marker_is_strict`가
+> 막는다 — 32/32 전부 strict임을 실측 확인했다.
 
 **결함을 테스트로 먼저 고정한다.** 수정 전에 빨간불이 뜨는 것을 확인하고, 수정 후
 초록불이 되는 것으로 고쳤음을 증명한다. `test_base_lateral.py` 단위 0과 같은 방식.

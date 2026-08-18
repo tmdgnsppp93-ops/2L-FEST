@@ -162,16 +162,55 @@ solve_tandem(:4828)
 네 분기는 `J01_top_arr`를 스칼라로만 만든다(`:5224` · `:5595` · `:5914` · `:6191`) —
 `_spatial_mult` 호출이 아예 없다.
 
-### 16칸 표 (호출 경로 기준)
+### 24칸 표 (2026-08-19 실측으로 정정)
+
+> **이 표는 원래 16칸이었고 "단일셀은 4종 모두 정상"으로 끝났다. 그것이 틀렸다.**
+> 단위 0의 실측이 **`_solve_single_bifacial`이라는 5번째 결함 분기**를 찾아냈다.
+> 원본 서술은 아래 §"정정 전 서술"에 보존한다.
+>
+> 근거: `tests/test_spatial_branch_coverage.py`의 `RESIDUAL_SEES_MAP` ·
+> `docs/sessions/2026-08-19-spatial-branch-coverage-unit0.md` §2.
+> 판정은 **수렴 전압장 비트 비교**로 했다 — `cell_current`가 아니다(아래 함정 절).
 
 | 조합 | 도달 분기 | `rc` | `j01` | `j02` | `gen` |
 |---|---|:---:|:---:|:---:|:---:|
-| Phase A / full_area | 인라인 `:4932` | ✅ | ✅ | ✅ | ✅ |
+| Phase A / full_area | 인라인 `solve_tandem :4932` | ✅ | ✅ | ✅ | ✅ |
 | **Phase B / full_area** | `_solve_tandem_junction` | ✅ | ❌ | ❌ | ❌ |
 | **Phase B / bifacial** | `_solve_tandem_junction_bf` | ✅ | ❌ | ❌ | ❌ |
 | **Phase A / bifacial** | `_solve_tandem_bifacial` | ✅ | ❌ | ❌ | ❌ |
+| 단일셀 / full_area | 인라인 `solve_single :6431` | ✅ | ✅ | ✅ | ✅ |
+| **단일셀 / bifacial** | **`_solve_single_bifacial` `:6513`** | ✅ | ❌ | ❌ | ❌ |
 
-단일셀(`solve_single` `:6431`)은 4종 모두 정상이다.
+**결함 칸은 9개가 아니라 12개다.**
+
+#### 정정 전 서술 (2026-08-18)
+
+> 단일셀(`solve_single` `:6431`)은 4종 모두 정상이다.
+
+`solve_single`은 rear가 `bifacial`/`patterned`이면 `:6396`에서
+`_solve_single_bifacial`로 **빠져나간다.** 그쪽은 `_spatial_mult` 호출이 없고
+`:6546-6547`에서 인라인으로 조립한다 — 탠덤 네 분기와 같은 구조의 결함이다.
+`solve_single` 본문만 읽으면 정상으로 보이는 것이 원인이었다.
+
+> **바로 위 "`J01_top_arr`를 스칼라로만 만든다"도 틀렸다.** `mf`(`metal_frac`)가
+> 이미 노드 길이 배열이라 **결함 분기에서도 `ndarray[N]`이다.** 스칼라인 것은
+> `J01_top_pass` 같은 *계수*다. dtype·shape로는 결함이 보이지 않으므로 관측은
+> **무맵/유맵 실행의 같은 지역 변수 비트 비교**로 해야 한다(계획서 단위 0의
+> 관측 지표도 이 때문에 교체됐다).
+
+#### 왜 테스트가 이 분기를 못 봤나
+
+`tests/test_base_lateral.py`의 `_NAMED_SOLVERS`에 `_solve_single_bifacial`이
+없어서 `single_bifacial` 케이스가 `_INLINE`으로 판정됐고,
+`test_case_table_covers_every_reachable_named_solver`도 그 분기를 세지 않아
+**통과했다.** 감시하지 않는 분기는 "도달했다"로 카운트되지 않는다.
+2026-08-19에 그 원본 표를 고쳤다.
+
+**벌크 횡전도(`Rs_base`)에는 같은 누락이 없었다** — `_build`(`:4396-4488`) 안의
+강성 조립이라 디스패치보다 앞이고, `spatial_rc`가 무사한 것과 같은 구조적 이유로
+모든 분기에 적용된다. 즉 **표가 틀렸을 때 실제로 다치는 것은 디스패치 뒤(A 계층)
+뿐이다.** 새 물성을 추가할 때 먼저 물어야 할 것은 "표를 통과시켰나"가 아니라
+**"이것이 `_build` 앞인가 뒤인가"** 다.
 
 `rc`가 무사한 이유는 **계층이 다르기 때문**이다 — `rc`는 `_build` 안에서 `_Gc`를
 고치는 강성 조립(B 계층)이고, `_build`는 디스패치보다 **앞**이라 모든 경로에서

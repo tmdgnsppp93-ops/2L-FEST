@@ -58,14 +58,39 @@ VB = 0.5   # 바이어스 지점. 분기 판정에는 값이 중요하지 않으
 
 # solve()가 도달할 수 있는 이름 있는 솔버 메서드 전부. 인라인 경로(solve_tandem /
 # solve_single 자체)는 여기 없으므로, 아무것도 안 잡히면 인라인이라는 뜻이다.
+#
+# ⚠ **2026-08-19 정정**: `_solve_single_bifacial`이 빠져 있었다. 그래서
+# `single_bifacial` 케이스가 `_INLINE`으로 판정됐고 — `solve_single`이
+# `2L_FEST.py:6396`에서 그리로 빠져나가는 것을 아무도 안 보고 있었다 —
+# `test_case_table_covers_every_reachable_named_solver`도 그 분기를 세지 않았다.
+# 감시하지 않는 분기는 "도달했다"로 카운트되지 않으므로 **통과했다.**
+#
+# 위 독스트링의 *"잔차 지점은 7곳"* 은 처음부터 맞았다(인라인 2 + 이름 있는 5).
+# 틀린 것은 이 tuple이었다.
+#
+# 발견 경위: 공간 분포 분기 커버리지 단위 0
+# (`tests/test_spatial_branch_coverage.py`,
+#  `docs/sessions/2026-08-19-spatial-branch-coverage-unit0.md` §2).
+# **벌크 횡전도(`Rs_base`)에는 이 누락으로 인한 공백이 없다** — `Rs_base`는
+# `_build`(`:4396-4488`) 안의 강성 조립이라 디스패치보다 **앞**이고, 분기 정체와
+# 무관하게 모든 경로에서 적용된다(`spatial_rc`가 무사한 것과 같은 이유).
+# `test_single_mode_bifacial_supports_base`와
+# `test_base_gate_follows_the_rear_plane_not_the_phase`가 이 분기를 실제로 푼다.
+# 즉 **표의 라벨이 틀렸을 뿐 기능 커버리지는 온전했다.**
 _NAMED_SOLVERS = (
     "_solve_tandem_junction",
     "_solve_tandem_junction_bf",
     "_solve_tandem_junction_bf_v29",
     "_solve_tandem_bifacial",
+    "_solve_single_bifacial",
 )
 
 _INLINE = "inline"   # solve_tandem / solve_single 본문이 직접 조립하는 경우
+
+# tandem 전용 분기. `_NAMED_SOLVERS`에 단일셀 솔버가 들어온 뒤로는 "이름 있는
+# 솔버가 아니다"와 "tandem 분기가 아니다"가 **다른 말**이므로 따로 둔다
+# (2026-08-19 — test_mode_single_never_reaches_tandem_branches 참조).
+_TANDEM_SOLVERS = tuple(n for n in _NAMED_SOLVERS if "tandem" in n)
 
 
 # =============================================================================
@@ -189,8 +214,14 @@ BRANCH_CASES = [
         _INLINE, lambda N, Nm, Nrm: 2 * N + Nm, id="single_full_area"),
     pytest.param(
         "7. 단일셀 / bifacial", "bifacial", None, False, "single",
-        _INLINE, lambda N, Nm, Nrm: 2 * N + Nm + Nrm, id="single_bifacial"),
+        "_solve_single_bifacial", lambda N, Nm, Nrm: 2 * N + Nm + Nrm,
+        id="single_bifacial"),
 ]
+
+# ⚠ 케이스 7의 기대 분기는 2026-08-19까지 `_INLINE`이었다 — `_NAMED_SOLVERS`에
+# `_solve_single_bifacial`이 없어서 그렇게 **보였을** 뿐이다. Ns 식(2N+Nm+Nrm)은
+# 그때도 맞았으므로 `test_unknown_vector_layout_is_pinned`는 영향이 없다.
+# 위 `_NAMED_SOLVERS` 주석 참조.
 
 # 분기 4(`_solve_tandem_junction_bf_v29`)는 이 표에 없다 — solve()로 도달하지
 # 않기 때문이다. 그 사실 자체를 test_v29_schur_branch_is_unreachable이 고정한다.
@@ -346,11 +377,23 @@ def test_mode_single_never_reaches_tandem_branches(fest, geo_factory,
 
     계획이 단일셀을 범위 밖으로 둔 근거다 — 잔차 지점이 완전히 별개라
     tandem 쪽 작업이 여기 닿지 않는다.
+
+    ⚠ **2026-08-19 정정.** 단언이 `target == _INLINE`이었다. 그때는 통과했으나
+    그것은 `_NAMED_SOLVERS`에 `_solve_single_bifacial`이 **빠져 있었기 때문**이고,
+    독스트링이 말하는 명제("tandem 분기에 가지 않는다")보다 **강한 주장**이었다.
+    단일셀 bifacial은 실제로 `_solve_single_bifacial`로 간다 — tandem 분기가
+    아니므로 명제는 여전히 참이다. 단언을 명제에 맞게 좁혔다.
     """
     for geo in ("mono", "bifacial"):
         target, _ = _probe(fest, geo_factory[geo](), _dp(fest), monkeypatch,
                            mode="single")
-        assert target == _INLINE
+        assert target not in _TANDEM_SOLVERS, (
+            f"단일셀({geo})이 tandem 분기 {target!r}로 갔다")
+        # 도달 지점 자체는 지오메트리로 갈린다 — full_area는 인라인,
+        # bifacial은 `_solve_single_bifacial`(`2L_FEST.py:6396` 디스패치).
+        expected = _INLINE if geo == "mono" else "_solve_single_bifacial"
+        assert target == expected, (
+            f"단일셀({geo}): {expected!r}로 가야 하는데 {target!r}로 갔다")
 
 
 # =============================================================================
