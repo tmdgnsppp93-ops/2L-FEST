@@ -357,13 +357,22 @@ def test_mode_single_never_reaches_tandem_branches(fest, geo_factory,
 # 3. 벌크 파라미터 도입 전 상태 — 단위 2가 뒤집을 기준선
 # =============================================================================
 
-def test_no_base_lateral_parameter_exists_yet(fest):
-    """아직 `Rs_base`가 없다. **단위 2에서 이 테스트를 뒤집는다.**
+def test_base_parameter_surface_is_exactly_one_field(fest):
+    """벌크 횡전도가 추가한 입력은 **`Rs_base` 하나뿐**이다.
 
-    기준선을 명시적으로 남겨, 단위 2가 무엇을 바꿨는지 diff로 드러나게 한다.
+    단위 0에서는 이 테스트가 `not hasattr(...)`였다(아직 없다는 기준선).
+    단위 2가 `Rs_base`를 신설하며 뒤집었다.
+
+    `Gv_base`가 **없어야 한다**는 쪽이 지금 더 중요하다 — 그것은 토폴로지 α
+    (새 평면 + 수직 결합)의 파라미터이고, β를 확정하면서 대상이 사라졌다.
+    생기면 `Rs_vert_bot`과의 이중 계산 판정이 되살아나야 하므로
+    (docs/base_lateral_convention.md §5) 여기서 감시한다.
     """
-    assert not hasattr(fest.DiodeParams, "Rs_base")
-    assert not hasattr(fest.DiodeParams, "Gv_base")
+    assert fest.DiodeParams.Rs_base is None
+    assert not hasattr(fest.DiodeParams, "Gv_base"), (
+        "Gv_base가 생겼다 — 토폴로지가 β에서 α로 돌아갔다는 뜻이다. "
+        "Rs_vert_bot 이중 계산 거부 판정을 되살릴 것 "
+        "(docs/base_lateral_convention.md §5)")
 
 
 def test_no_base_plane_on_solver_yet(fest, make_mono):
@@ -561,3 +570,358 @@ def test_hand_patched_plane_is_discarded_without_warmup(fest, make_bifacial):
 
     assert _patch_and_solve(warmup=False) is False, "램프가 재빌드하지 않았다"
     assert _patch_and_solve(warmup=True) is True, "warm 경로가 램프를 건너뛰지 않았다"
+
+
+# =============================================================================
+# 5. Rs_base 신설 + 후면 평면 병렬 합성 (계획 단위 2)
+# =============================================================================
+#
+# 벌크 횡전도를 **기존 후면 평면(_Kr)의 면전도에 병렬로 더한다.** 새 평면도
+# 새 미지수도 만들지 않는다(β) — docs/base_lateral_convention.md.
+#
+#     1/Rs_r_eff = 1/Rs_rear_tco + 1/Rs_base
+#
+# off(`Rs_base is None`)에서 **비트 동일**이어야 한다. 그 근거가 두 겹이다:
+#
+#   (a) assemble_K가 받는 인자가 예전과 같은 실수 → 행렬이 비트 동일
+#   (b) _build 캐시 해시의 hit/miss 판정이 예전과 동일
+#
+# (b)가 이 절의 핵심이다. 공간 분포에서 "맵이 없으면 0으로 태그"로 푼 것과
+# **같은 문제**다 — 새 슬롯이 off에서 상수가 아니면, 아무것도 안 바뀌었는데
+# 재빌드가 일어나거나(느려짐) 반대로 바뀌었는데 안 일어난다(옛 결과 재사용).
+
+
+def test_rs_base_defaults_to_none(fest):
+    """기본값은 off. 기존 사용자는 아무 영향을 받지 않는다."""
+    assert fest.DiodeParams.Rs_base is None
+    assert fest.DiodeParams().Rs_base is None
+
+
+# --- 5-a. 캐시 해시 — off에서 예전과 같은 거동인가 --------------------------
+
+def test_base_none_does_not_trigger_rebuild(fest, make_bifacial):
+    """`Rs_base = None`을 다시 넣어도 재빌드가 일어나지 않는다.
+
+    off 슬롯이 상수가 아니면(예: `None`을 그대로 넣거나 매번 다른 객체를 넣으면)
+    여기서 해시가 달라져 **아무것도 안 바뀌었는데 전체 재조립**이 일어난다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))
+    h0 = m.S._cache_hash
+    Kr0 = m.S._Kr
+
+    dp.Rs_base = None
+    m.S._build(**_build_args(dp))
+
+    assert m.S._cache_hash == h0
+    assert m.S._Kr is Kr0, "재빌드가 일어났다 — 조기 반환되지 않았다"
+
+
+def test_base_touches_exactly_one_hash_slot_and_off_is_a_constant(fest,
+                                                                  make_bifacial):
+    """**이 절의 핵심 테스트.**
+
+    `Rs_base`가 해시 튜플에서 **정확히 한 슬롯만** 건드리고, off일 때 그 슬롯이
+    **상수 0**이어야 한다. 그래야 off 경로의 hit/miss 판정이 예전 필드들만으로
+    결정된다 — 즉 캐시 거동이 이전과 완전히 같다.
+
+    공간 분포의 `_sm_tag`가 "맵 없으면 0"인 것과 같은 처리다(`2L_FEST.py:4314`
+    주석). 슬롯을 여러 개 건드리면 이 논증이 성립하지 않는다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+
+    m.S._build(**_build_args(dp))
+    h_off = m.S._cache_hash
+
+    dp.Rs_base = 500.0
+    m.S._build(**_build_args(dp))
+    h_on = m.S._cache_hash
+
+    assert len(h_off) == len(h_on), "슬롯 개수가 조건에 따라 달라진다"
+    diff = [i for i, (a, b) in enumerate(zip(h_off, h_on)) if a != b]
+    assert len(diff) == 1, f"Rs_base가 해시의 여러 슬롯을 건드린다: {diff}"
+
+    slot = diff[0]
+    assert h_off[slot] == 0, f"off 센티넬이 0이 아니다: {h_off[slot]!r}"
+    assert h_on[slot] == 500.0
+
+
+def test_off_hash_slot_stays_constant_across_other_parameter_changes(
+        fest, make_bifacial):
+    """다른 파라미터를 아무리 바꿔도 off 슬롯은 계속 0이다.
+
+    "off일 때 상수"가 실제로 상수인지 확인한다 — 다른 값에 연동되면 상수가
+    아니고, 그러면 캐시 거동이 예전과 같다는 논증이 무너진다.
+    """
+    m = make_bifacial()
+    seen = set()
+    for rs_front in (15.0, 20.0):
+        for rc in (5e-3, 6e-3):
+            for rs_j in (100.0, 300.0):
+                dp = _dp(fest, rs_j)
+                args = _build_args(dp)
+                args["Rs_front"] = rs_front
+                args["rc"] = rc
+                m.S._build(**args)
+                h = m.S._cache_hash
+                seen.add(h[_base_slot(fest, make_bifacial)])
+    assert seen == {0}, f"off 슬롯이 상수가 아니다: {seen}"
+
+
+def _base_slot(fest, make_bifacial):
+    """`Rs_base`가 차지하는 해시 슬롯 번호를 실측으로 찾는다.
+
+    인덱스를 테스트에 하드코딩하면 나중에 해시 튜플에 필드가 추가될 때 조용히
+    엉뚱한 슬롯을 보게 된다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))
+    off = m.S._cache_hash
+    dp.Rs_base = 777.0
+    m.S._build(**_build_args(dp))
+    on = m.S._cache_hash
+    (slot,) = [i for i, (a, b) in enumerate(zip(off, on)) if a != b]
+    return slot
+
+
+def test_base_change_invalidates_build_cache(fest, make_bifacial):
+    """`Rs_base`를 바꾸면 반드시 재빌드된다.
+
+    안 되면 **옛 `_Kr`이 조용히 재사용된다** — v28.56이 `id()` 캐시에서 겪은
+    실패와 같은 형태이고, 오류도 경고도 없이 옛 결과가 나온다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))
+    h0, Kr0 = m.S._cache_hash, m.S._Kr
+
+    dp.Rs_base = 500.0
+    m.S._build(**_build_args(dp))
+
+    assert m.S._cache_hash != h0
+    assert m.S._Kr is not Kr0
+    assert not np.array_equal(m.S._Kr.toarray(), Kr0.toarray())
+
+
+def test_base_on_then_off_restores_the_original_plane(fest, make_bifacial):
+    """켰다 끄면 후면 평면이 **비트 단위로** 원래대로 돌아온다."""
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))
+    Kr_ref = m.S._Kr.copy()
+
+    dp.Rs_base = 500.0
+    m.S._build(**_build_args(dp))
+    assert not np.array_equal(m.S._Kr.toarray(), Kr_ref.toarray())
+
+    dp.Rs_base = None
+    m.S._build(**_build_args(dp))
+    assert np.array_equal(m.S._Kr.toarray(), Kr_ref.toarray())
+
+
+# --- 5-b. 병렬 합성이 규약대로인가 ------------------------------------------
+
+def test_base_off_assembles_the_legacy_rear_plane_exactly(fest, make_bifacial):
+    """**off는 `assemble_K` 인자를 건드리지 않는다** — 산술적 비트 동일 근거.
+
+    `Rs_base is None`이면 `Rs_r_eff`가 `Rs_rear_tco` 그 자체이므로 부동소수점
+    연산이 하나도 추가되지 않는다(공간 분포의 "곱셈을 아예 하지 않음"과 같은
+    계열). 조립된 행렬을 직접 비교해 그것을 확인한다.
+
+    ⚠ 솔브 결과로 이걸 확인하려 하면 안 된다 — **같은 솔버로 두 번 풀면
+    warm-start 때문에 두 번째 답이 미세하게 다르다.** 이 파일을 쓰다 한 번
+    걸렸다. 비트 동일의 최종 확인은 `tests/test_default_pin.py` /
+    `test_legacy_pin.py`(변경 전 값을 들고 있다)가 한다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))
+    K_ref, _ = fest.assemble_K(m.pts, m.S.simp, dp.Rs_rear_tco, m.S.areas,
+                               m.S.b, m.S.c)
+    assert np.array_equal(m.S._Kr.toarray(), K_ref.toarray())
+
+
+def test_base_off_explicit_none_matches_unset(fest, make_bifacial):
+    """`Rs_base = None`을 명시해도 미지정과 같은 결과다 (별개 솔버 비교)."""
+    m1, m2 = make_bifacial(), make_bifacial()
+    dp1 = _dp(fest, 100.0)                      # 미지정
+    dp2 = _dp(fest, 100.0); dp2.Rs_base = None  # 명시적 None
+    assert _cell_current(m1, dp1) == _cell_current(m2, dp2)
+
+
+def test_base_plane_equals_parallel_sheet_resistance(fest, make_bifacial):
+    """벌크를 켠 후면 평면 == 병렬 합성 면저항으로 조립한 평면 (비트 동일).
+
+    규약 §1-4(병렬 합)를 행렬 수준에서 직접 고정한다. 솔브를 태우지 않으므로
+    연속법 램프·warm-start가 끼어들지 않는다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    m.S._build(**_build_args(dp))
+
+    eff = 1.0 / (1.0 / dp.Rs_rear_tco + 1.0 / 500.0)
+    K_ref, _ = fest.assemble_K(m.pts, m.S.simp, eff, m.S.areas, m.S.b, m.S.c)
+    assert np.array_equal(m.S._Kr.toarray(), K_ref.toarray())
+
+
+def test_base_does_not_mutate_user_rear_tco(fest, make_bifacial):
+    """`dp.Rs_rear_tco`는 사용자 입력 그대로 남는다.
+
+    병렬 합성은 `assemble_K` **호출 인자**에서만 한다. `dp`를 제자리 수정하면
+    GUI 표시와 캐시 해시가 사용자 입력과 어긋난다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    before = dp.Rs_rear_tco
+    m.S._build(**_build_args(dp))
+    _solve(m, dp)
+    assert dp.Rs_rear_tco == before
+
+
+def test_base_only_changes_the_rear_plane(fest, make_bifacial):
+    """벌크는 후면 평면에만 들어간다 — 다른 강성행렬은 불변이다.
+
+    특히 `_Ke`(전면 TCO)에 새어 들어가면 안 된다. 그것은 페로브스카이트
+    상부셀의 전극이라 실리콘 벌크와 무관하다(규약 §3-5).
+    """
+    m1, m2 = make_bifacial(), make_bifacial()
+    dp1 = _dp(fest, 100.0)
+    dp2 = _dp(fest, 100.0)
+    dp2.Rs_base = 500.0
+
+    m1.S._build(**_build_args(dp1))
+    m2.S._build(**_build_args(dp2))
+
+    assert not np.array_equal(m1.S._Kr.toarray(), m2.S._Kr.toarray())
+    for attr in ("_Ke", "_Krm", "_Km", "_K_junc"):
+        a, b = getattr(m1.S, attr), getattr(m2.S, attr)
+        assert np.array_equal(a.toarray(), b.toarray()), (
+            f"{attr}가 Rs_base에 반응한다 — 벌크가 후면 평면 밖으로 샜다")
+    assert np.array_equal(m1.S._Gc, m2.S._Gc)
+    assert np.array_equal(m1.S._Gc_rear, m2.S._Gc_rear)
+
+
+def test_unknown_layout_unchanged_by_base(fest, make_bifacial, monkeypatch):
+    """**β의 핵심** — 벌크를 켜도 미지 벡터가 변하지 않는다.
+
+    이것이 성립해야 잔차 분기 7곳을 손대지 않아도 된다.
+    """
+    m = make_bifacial()
+    N, Nm, Nrm = _plane_sizes(m)
+    dp = _dp(fest, 100.0)
+    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+    dp.Rs_base = 500.0
+    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+
+
+# --- 5-c. 값 제약 ------------------------------------------------------------
+
+@pytest.mark.parametrize("bad", [0.0, -1.0, -500.0,
+                                 float("nan"), float("inf"), float("-inf")])
+def test_base_rejects_non_positive_or_non_finite(fest, make_bifacial, bad):
+    """면저항은 유한하고 양수여야 한다.
+
+    0은 무한 컨덕턴스라 물리적으로 성립하지 않고, `assemble_K`의
+    `coeff = 1/(4·A·Rs)`가 0으로 나눈다(`2L_FEST.py:2649`). 조용히 고치지 않고
+    거부한다(v28.43·v28.54·v28.57 전례).
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = bad
+    with pytest.raises(ValueError) as exc:
+        m.S._build(**_build_args(dp))
+    msg = str(exc.value)
+    assert "Rs_base" in msg
+    assert "None" in msg          # 끄는 방법을 알려준다
+
+
+def test_base_rejects_non_numeric(fest, make_bifacial):
+    """숫자가 아니면 거부한다 — np.isfinite가 TypeError로 터지기 전에 잡는다.
+
+    숫자 문자열("500")은 float()이 받으므로 거부 대상이 아니다 —
+    `_parse_gui_float`가 GUI 입력을 문자열로 받는 것과 같은 관용이다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    for bad in ("abc", [500.0], {"Rs": 500}, object()):
+        dp.Rs_base = bad
+        with pytest.raises(ValueError) as exc:
+            m.S._build(**_build_args(dp))
+        assert "Rs_base" in str(exc.value)
+
+
+def test_zero_is_rejected_so_the_off_sentinel_cannot_collide(fest,
+                                                             make_bifacial):
+    """off 센티넬 0이 **유효한 값과 충돌하지 않음**을 보장한다.
+
+    0이 받아들여지면 "off"와 "Rs_base=0"이 같은 해시를 갖게 되어, 둘 사이를
+    오갈 때 재빌드가 일어나지 않는다. `_sm_tag`가 0을 센티넬로 쓸 수 있는 이유와
+    같다 — 유효한 content_key()는 절대 0이 아니다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 0.0
+    with pytest.raises(ValueError):
+        m.S._build(**_build_args(dp))
+
+
+def test_base_validation_runs_before_the_cache_early_return(fest,
+                                                            make_bifacial):
+    """잘못된 값은 **캐시 적중이어도** 거부한다.
+
+    검증이 조기 반환 뒤에 있으면, 같은 파라미터로 두 번째 호출할 때 잘못된 값이
+    그냥 통과한다. 값 제약은 v28.57 로더와 같이 **진입 시점에** 끝낸다.
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    m.S._build(**_build_args(dp))          # 캐시를 채운다
+    dp.Rs_base = -1.0
+    with pytest.raises(ValueError):
+        m.S._build(**_build_args(dp))
+
+
+def test_base_accepts_int_and_normalizes(fest, make_bifacial):
+    """정수 입력도 받되 해시는 float으로 정규화한다 — 500과 500.0이 같아야 한다."""
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500
+    m.S._build(**_build_args(dp))
+    h_int = m.S._cache_hash
+    dp.Rs_base = 500.0
+    m.S._build(**_build_args(dp))
+    assert m.S._cache_hash == h_int
+
+
+# --- 5-d. 물리 방향 ----------------------------------------------------------
+
+def test_base_lowers_effective_rear_sheet_resistance(fest, make_bifacial):
+    """벌크가 병렬로 붙으면 유효 면저항이 **내려간다** (전도가 좋아진다).
+
+    후면 평면 강성이 커지는 것으로 확인한다 — 값이 아니라 방향을 본다.
+    """
+    m1, m2 = make_bifacial(), make_bifacial()
+    dp1 = _dp(fest, 100.0)
+    dp2 = _dp(fest, 100.0)
+    dp2.Rs_base = 500.0
+    m1.S._build(**_build_args(dp1))
+    m2.S._build(**_build_args(dp2))
+    assert abs(m2.S._Kr).max() > abs(m1.S._Kr).max()
+
+
+def test_base_large_sheet_r_approaches_off(fest, make_bifacial):
+    """`Rs_base` → ∞ 이면 off에 수렴한다.
+
+    비트 동일은 기대하지 않는다 — `1/(1/Rs + 1e-12)`가 `Rs`와 비트 동일하지
+    않기 때문이다. 물리적 동등성 수준의 일치를 본다
+    (`docs/registration_material.md` §5-1의 두 층 구분).
+    """
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    j_off = _cell_current(m, dp)
+    dp.Rs_base = 1e12
+    assert _cell_current(m, dp) == pytest.approx(j_off, rel=1e-9)

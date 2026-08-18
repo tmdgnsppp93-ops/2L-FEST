@@ -548,6 +548,48 @@ v28.58: [feat] 공간 분포 맵 GUI 배선 (계획 단위 4) + 규약 확정 (�
          있었는데 CellGeometry의 속성명은 W/H다(생성자 인자 이름과 다르다).
          입력란이 비어 있을 때만 타는 경로라 눈으로는 안 보였다.
          **맵을 지정하지 않은 실행 경로는 완전히 불변이다.** 물리식 무변경.
+v28.59: [feat] 벌크 횡전도(base lateral transport) — DiodeParams.Rs_base [Ω/sq, ↔].
+         후면 평면(_Kr)의 면전도에 **병렬**로 더한다: 1/Rs_eff = 1/Rs_rear_tco +
+         1/Rs_base. **새 평면도 새 미지수도 만들지 않는다.**
+         근거: Griddler 매뉴얼 §4.3 항목 1 — Jn = q·μn·n·∇εfn,
+         Jp = q·μp·p·∇εfp, 근사 2개(μ 평형값 고정 / n·p 두께 방향 일정),
+         표현이 "add these bulk current **terms**"(terms이지 unknowns가 아니다).
+         근사 (2)가 벌크를 2D 시트로 환원한다 → σ_sheet = q(μn·n + μp·p)·w.
+         다수캐리어 항만 취해 전압 무관 상수 Ω/sq로 받는다.
+         ⚠ 매뉴얼 Appendix A.5는 이 기능의 수식이 **아니다** — Base Transport
+         Calculator(§4.3 box 4~7)의 해석식이고 출력 Rs,base는 Ω·cm² 집중정수
+         접촉저항이라 Rs_vert_bot과 같은 층위다. 계획 초안이 A.5를 근거로
+         지목했던 것을 정정했다(오독 기록은 계획서에 보존).
+         **미지 벡터 불변**: assemble_K가 1/Rs에 선형이라(coeff = 1/(4·A·Rs))
+         유효 면저항 하나로 환산해 기존 호출에 넘기면 되고, sparsity pattern이
+         면저항과 무관해 Ns·SuperLU 열 순열이 그대로다. 실측 확인 — 6개 잔차
+         분기 전부에서 Ns 불변, 분기 코드 무변경. WORKLOG §3이 경고한
+         "3개 분기" 함정(한 곳만 고치면 경로에 따라 결과가 갈림)이 발생하지
+         않는다. 손대야 할 곳 7 → 0.
+         **off(None)에서 비트 동일**: Rs_r_eff가 Rs_rear_tco 그 자체가 되어
+         assemble_K 인자가 예전과 완전히 같다 — 부동소수점 연산이 하나도
+         추가되지 않는다(공간 분포의 "곱셈을 아예 하지 않음"과 같은 계열).
+         두 번 조립해 더하는 구현은 금지한다(상대 3.5e-16 차이).
+         **캐시 해시**: 슬롯 하나를 추가하되 off에서는 **상수 0**이다. _sm_tag가
+         "맵 없으면 0"인 것과 같은 처리 — off 슬롯이 상수라야 hit/miss 판정이
+         예전 필드들만으로 결정되어 무벌크 경로의 캐시 거동이 이전과 같아진다.
+         0을 센티넬로 쓸 수 있는 이유는 Rs_base ≤ 0을 거부하기 때문이다.
+         값 제약(유한·양수·숫자)은 **해시와 조기 반환보다 먼저** 검사한다 —
+         뒤에 두면 같은 파라미터 두 번째 호출에서 잘못된 값이 캐시 적중으로
+         통과한다(v28.57 로더의 "값 제약은 읽는 시점에"와 같은 이유).
+         Rs_vert_bot(↕)과는 층위가 달라 동시에 켜도 이중 계산이 아니다.
+         한계: 소수캐리어의 전압 의존 기여를 모델링하지 않는다(Rs_base가 전압
+         무관 상수) → **저주입 극한에서만 Griddler와 대응**하며 집광 조건의
+         고주입 효과는 재현하지 않는다. 1 Sun에서 맞춘 값은 집광에서 벌크
+         전도를 과소평가한다(손실 과대평가, 보수적 방향).
+         ⚠ **full_area는 아직 조용히 무효다** — 그 모드의 _Kr은
+         assemble_K(0.001) 하드코딩이고 Vr ≡ 0(span 0.000e+00)이라 후면 평면을
+         바꿔도 결과가 수학적으로 불변이다(실측 Δ = 0.00e+00). 거부 게이트는
+         v28.60(계획 단위 3)에서 넣는다. 그 전까지 full_area + Rs_base는
+         오류 없이 아무 효과가 없다.
+         규약·근거·한계: docs/base_lateral_convention.md
+         계획: docs/superpowers/plans/2026-08-18-base-lateral-transport.md
+         테스트: tests/test_base_lateral.py 29 → 53.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -647,7 +689,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.58",
+    "version": "v28.59",
     "date": "2026-08-18",
 }
 _BUILD_SHA_CACHE = None
@@ -1785,6 +1827,30 @@ class DiodeParams:
     #     IZO ~15-80, BSF ~50-200 Ω/sq. Set ~0 for ideal equipotential rear.
     Rs_rear_tco = 50.0
     Rs_rear = 0.5  # deprecated
+
+    # --- Bulk lateral transport (base 횡전도, ↔) ---
+    # Rs_base [Ω/sq]: 웨이퍼 벌크의 다수캐리어 **횡방향** 시트 저항.
+    # None = 끔 (기존과 비트 동일 — assemble_K 인자를 건드리지 않는다).
+    #
+    # 새 평면·새 미지수를 만들지 않는다. 후면 평면(_Kr)의 면전도에 **병렬**로
+    # 더해질 뿐이다:  1/Rs_eff = 1/Rs_rear_tco + 1/Rs_base
+    # 근거: Griddler 매뉴얼 §4.3 항목 1 "add these bulk current terms"
+    #       (terms이지 unknowns가 아니다). 근사 (2)(n·p가 두께 방향 일정)가
+    #       벌크를 2D 시트로 환원한다 → σ_sheet = q(μn·n + μp·p)·w.
+    #       다수캐리어 항만 취해 전압 무관 상수로 받는다.
+    #
+    # ⚠ Rs_vert_bot(↕)과 **층위가 다르다** — 저쪽은 두께 방향 집중정수를 터미널
+    #   IR 강하로 사후 적용하는 것이고, 이쪽은 면내 분포 전도다. 방향이 다르므로
+    #   동시에 켜도 이중 계산이 아니다. (매뉴얼 Appendix A.5의 Rs,base는 Ω·cm²
+    #   집중정수라 이 파라미터가 아니라 Rs_vert_bot 쪽에 대응한다.)
+    #
+    # 규약·한계·적용 범위: docs/base_lateral_convention.md
+    #   - 한계: 소수캐리어의 전압 의존 기여를 모델링하지 않는다 → 저주입
+    #           극한에서만 Griddler와 대응한다.
+    #   - 범위: rear_mode가 bifacial/patterned일 때만 의미가 있다. full_area는
+    #           후면을 이상적 접촉(V_rear ≡ 0)으로 두므로 이 값이 결과를 바꾸지
+    #           않는다.
+    Rs_base = None
 
     # Rear metal–semiconductor contact resistivity [Ohm·cm²].
     # Real cells differ front vs rear (different doping polarity / paste /
@@ -4297,6 +4363,24 @@ class FESTSolver:
             Rs_rear_metal_auto = rm / hf if hf > 0 else dp.Rs_rear
         # Rear emitter/TCO sheet R — physical value from DiodeParams
         Rs_rear_tco = dp.Rs_rear_tco
+        # Bulk lateral transport (↔). None = 끔.
+        # **값 제약을 해시·조기 반환보다 먼저 끝낸다.** 검증이 뒤에 있으면 같은
+        # 파라미터로 두 번째 호출할 때 잘못된 값이 캐시 적중으로 조용히 통과한다
+        # (v28.57 로더가 "값 제약은 읽는 시점에"로 정리한 것과 같은 이유).
+        Rs_base = dp.Rs_base
+        if Rs_base is not None:
+            try:
+                Rs_base = float(Rs_base)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"Rs_base는 면저항 숫자여야 한다 [Ω/sq] "
+                    f"(받은 값 {dp.Rs_base!r}). 끄려면 None으로 둘 것.") from None
+            if not np.isfinite(Rs_base) or Rs_base <= 0.0:
+                raise ValueError(
+                    f"Rs_base는 유한하고 양수인 면저항이어야 한다 [Ω/sq] "
+                    f"(받은 값 {Rs_base!r}). 0은 무한 컨덕턴스라 물리적으로 "
+                    f"성립하지 않고 강성 계수 1/(4·A·Rs)가 0으로 나눈다. "
+                    f"끄려면 None으로 둘 것.")
         # Interlayer lateral sheet R (Phase B) — affects K_int matrix
         # Phase 1 (v28.33): unless the legacy local-matching flag is set, clamp
         # Rs_j ≤ 0 to RS_JUNCTION_MIN so _K_junc is always built (Phase B). Applied
@@ -4314,7 +4398,13 @@ class FESTSolver:
                    dp.spatial_j02.content_key() if dp.spatial_j02 is not None else 0,
                    dp.spatial_gen.content_key() if dp.spatial_gen is not None else 0,
                    dp.spatial_rc.content_key()  if dp.spatial_rc  is not None else 0)
-        h = (rm, hf, wf, wb_case, rc, rc_rear, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _sm_tag)
+        # 벌크 태그: 꺼져 있으면 **상수 0**. _sm_tag가 "맵 없으면 0"인 것과 같은
+        # 처리다(위 주석) — off 슬롯이 상수라야 캐시 hit/miss 판정이 예전
+        # 필드들만으로 결정되고, 무벌크 경로의 캐시 거동이 이전과 완전히 같아진다.
+        # 0을 센티넬로 쓸 수 있는 이유: 위에서 Rs_base <= 0을 거부하므로 유효한
+        # 값이 0이 되는 일이 없다(유효한 content_key()가 0일 수 없는 것과 같다).
+        _base_tag = Rs_base if Rs_base is not None else 0
+        h = (rm, hf, wf, wb_case, rc, rc_rear, Rs_front, cf, Rs_rear_metal_auto, Rs_rear_tco, Rs_j, _base_tag, _sm_tag)
         if self._cache_hash == h:
             return
         self._cache_hash = h
@@ -4337,8 +4427,17 @@ class FESTSolver:
             #   L4 (V_rear_metal):   rear metal grid, same paste/Rs as front
             #   Connected by Gc_rear at rear metal nodes. Rs_rear_tco ≈ 0 collapses
             #   to lumped-rear; realistic >0 essential for rear pattern analysis.
+            # 벌크 횡전도는 후면 평면의 면전도에 **병렬**로 더해진다.
+            # assemble_K가 1/Rs에 선형이므로(coeff = 1/(4·A·Rs)) 유효 면저항
+            # 하나로 환산해 **한 번만** 조립하면 K(TCO) + K(bulk)와 같다.
+            # 두 번 조립해 더하면 상대 3.5e-16 차이가 생겨 off 경로의 비트 동일
+            # 근거가 흐려진다(docs/base_lateral_convention.md §3-1).
+            # off일 때는 이 분기를 타지 않으므로 인자가 예전과 **같은 실수**다.
+            Rs_r_eff = Rs_rear_tco
+            if Rs_base is not None:
+                Rs_r_eff = 1.0 / (1.0 / Rs_rear_tco + 1.0 / Rs_base)
             self._Kr, _ = assemble_K(
-                self.pts, self.simp, Rs_rear_tco, self.areas, self.b, self.c)
+                self.pts, self.simp, Rs_r_eff, self.areas, self.b, self.c)
 
             # Rear metal grid stiffness. ASM-1 fix: use the mesh-convergent 1D
             # conductor model (assemble_K_met_1d, same as the front at L3246)
