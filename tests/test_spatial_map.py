@@ -15,9 +15,13 @@
   2. **행 방향** — `matrix[0]`이 `y=0`이다. 텍스트 파일의 첫 줄을 사람은 보통
      위쪽으로 읽으므로, Griddler와 대조할 때 상하 반전 위험이 여기서 나온다.
 
-두 규약이 Griddler와 같은지는 **단위 3에서 판정**한다. 이 파일은 "우리 쪽이
-무엇인지"만 못 박는다. 판정 결과 보정이 필요하면 보정은 로더 안에서 하고
-`evaluate()`는 건드리지 않는다 — 그러면 이 테스트들이 그대로 회귀 감시로 남는다.
+두 규약이 Griddler와 같은지는 **대조하지 못했다** — 무료판에 공간 분포 입력
+기능이 없다(PRO 전용, 2026-08-18 확인). 그래서 단위 3에서 **자체 규약으로 확정
+선언**했다: `docs/spatial_map_convention.md`. 이 파일은 그 규약의 회귀 감시다.
+
+PRO를 확보해 대조한 결과가 어긋나면 **보정은 로더 안에서** 하고 `evaluate()`는
+건드리지 않는다 — 그러면 이 테스트들이 그대로 회귀 감시로 남는다. §10이 대조
+절차서의 기준값을 코드에 묶어 둔다.
 
 계획: docs/superpowers/plans/2026-08-17-spatial-map-io.md
 """
@@ -729,3 +733,448 @@ def test_loader_rejects_before_solver_runs(fest, tmp_path, make_mono):
     m = make_mono()
     dp = fest.DiodeParams()
     assert m.S._spatial_mult(dp, "rc") is None
+
+
+# =============================================================================
+# 10. 규약 확정 기준선 (계획 단위 3 — 대조 불가, 자체 규약 채택)
+# =============================================================================
+#
+# Griddler 무료판에 공간 분포 입력이 없어(PRO 전용) 대조를 하지 못했다. 대신
+# 규약을 **자체 규약으로 확정 선언**했다 — docs/spatial_map_convention.md.
+#
+#   matrix[0] = y=0   (파일의 첫 데이터 줄이 셀의 아래쪽)
+#   꼭짓점 정렬        (linspace(0,H,ny) — 모서리 값이 셀 모서리에 정확히)
+#
+# 아래 테스트는 대조 절차서 §2의 기준값 8개를 **코드에 묶는다.** 그 표는 PRO를
+# 확보해 대조할 때 우리 쪽 기준선이 되는데, 그때까지 코드가 바뀌어 문서와
+# 어긋나면 대조 자체가 무의미해진다. 문서와 코드가 같이 움직이도록 한다.
+#
+# 시험 행렬을 임의로 바꾸면 안 된다 — 비대칭이라야 상하 반전과 반 칸 밀림이
+# 둘 다 드러난다(절차서 §1).
+
+_CROSSCHECK_TXT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "docs", "crosscheck", "spatial_4x4.txt")
+
+# 절차서 §2 표. 셀 30 x 30 mm 기준, (x_mm, y_mm) -> 기대 배율.
+_CROSSCHECK_POINTS = [
+    ((0.0, 0.0), 2.0, "좌하 모서리"),
+    ((10.0, 0.0), 7.0, "하변 1/3 — 스파이크"),
+    ((20.0, 0.0), 1.0, "하변 2/3"),
+    ((30.0, 0.0), 5.0, "우하 모서리"),
+    ((10.0, 10.0), 1.0, "내부 (1/3, 1/3)"),
+    ((15.0, 15.0), 1.0, "셀 중심"),
+    ((0.0, 30.0), 3.0, "좌상 모서리"),
+    ((30.0, 30.0), 9.0, "우상 모서리"),
+]
+
+
+def test_crosscheck_matrix_file_is_asymmetric(fest):
+    """시험 행렬은 **비대칭**이어야 한다 (절차서 §1).
+
+    대칭이면 상하 반전도 반 칸 밀림도 드러나지 않아 PRO 대조가 헛돈다.
+    """
+    M = fest.load_spatial_map_txt(_CROSSCHECK_TXT).matrix
+    assert M.shape == (4, 4)
+    # 상하 반전으로 자기 자신이 되면 행 방향을 구분할 수 없다
+    assert not np.allclose(M, M[::-1]), "상하 대칭 — 행 방향을 구분할 수 없다"
+    assert not np.allclose(M, M[:, ::-1]), "좌우 대칭 — 열 방향을 구분할 수 없다"
+    # 네 모서리가 전부 달라야 회전·반전이 구분된다
+    corners = {M[0, 0], M[0, -1], M[-1, 0], M[-1, -1]}
+    assert len(corners) == 4, f"네 모서리가 서로 달라야 한다: {corners}"
+
+
+def test_crosscheck_4x4_matches_documented_expectations(fest):
+    """절차서 §2 / 규약 문서의 기준값 8개를 고정한다.
+
+    실패하면 **문서와 코드가 어긋난 것**이다. 코드를 고칠지 문서를 고칠지는
+    바뀐 쪽이 정한다 — 다만 둘 중 하나는 반드시 갱신해야 한다. PRO 대조 때
+    이 값들이 우리 쪽 기준선이기 때문이다.
+    """
+    sm = fest.load_spatial_map_txt(_CROSSCHECK_TXT)
+    W_cm = H_cm = 3.0                      # 30 mm
+    pts = _pts(*[(x / 10.0, y / 10.0) for (x, y), _, _ in _CROSSCHECK_POINTS])
+    got = sm.evaluate(pts, W_cm, H_cm)
+    for value, (coord, expected, label) in zip(got, _CROSSCHECK_POINTS):
+        assert value == pytest.approx(expected, abs=1e-9), (
+            f"{label} {coord} mm: {value} != {expected} "
+            f"(docs/crosscheck/2026-08-18-spatial-map-griddler.md §2)")
+
+
+def test_crosscheck_distinguishes_vertex_from_cell_centered(fest):
+    """꼭짓점 정렬과 픽셀 중심이 **실제로 다른 값**을 주는지 확인한다.
+
+    절차서 §3의 전제다 — 내부 (1/3, 1/3)에서 1.000 vs 1.861. 두 규약이 같은
+    값을 주는 지점만 보고 있으면 대조가 아무것도 판정하지 못한다. 셀 중심이
+    바로 그런 지점이라 §3이 "판정에 쓸 수 없다"고 못 박았다.
+    """
+    M = fest.load_spatial_map_txt(_CROSSCHECK_TXT).matrix
+    W_cm = H_cm = 3.0
+    ny, nx = M.shape
+
+    from scipy.interpolate import RegularGridInterpolator
+    # 픽셀 중심 규약이라면 격자가 반 칸 안쪽에 놓인다.
+    dy, dx = H_cm / ny, W_cm / nx
+    centered = RegularGridInterpolator(
+        (np.linspace(dy / 2, H_cm - dy / 2, ny),
+         np.linspace(dx / 2, W_cm - dx / 2, nx)),
+        M, bounds_error=False, fill_value=None)
+
+    ours = fest.SpatialMap(mode="csv", matrix=M)
+    inner = _pts((1.0, 1.0))                       # (10, 10) mm
+    v_vertex = float(ours.evaluate(inner, W_cm, H_cm)[0])
+    v_center = float(centered(np.column_stack((inner[:, 1], inner[:, 0])))[0])
+
+    assert v_vertex == pytest.approx(1.0, abs=1e-9)
+    assert v_center == pytest.approx(1.8611, abs=1e-3)
+    assert abs(v_vertex - v_center) > 0.5, "두 규약이 구분되지 않는 지점이다"
+
+    # 셀 중심은 두 규약이 같다 — 판정에 쓰면 안 된다(절차서 §3의 경고).
+    mid = _pts((1.5, 1.5))
+    assert float(ours.evaluate(mid, W_cm, H_cm)[0]) == pytest.approx(
+        float(centered(np.column_stack((mid[:, 1], mid[:, 0])))[0]), abs=1e-9)
+
+
+# =============================================================================
+# 11. GUI 배선 진입점 (계획 단위 4)
+# =============================================================================
+#
+# GUI 콜백은 Tk 없이 못 돌리지만, **그 콜백이 부르는 로직은 전부 모듈 수준**에
+# 있다(set_spatial_map / clear_spatial_map / draw_spatial_map_preview / ...).
+# 여기서 검사하는 것이 그 로직이다. 콜백은 이들을 부르기만 하므로 얇다.
+#
+# 이 절이 지키는 계약 셋:
+#   1. **해제는 None이다** — uniform 맵 대체 금지(§7의 비트 동일 근거).
+#   2. **부착은 인스턴스에만** — 클래스에 붙이면 전역 누출.
+#   3. **미리보기는 origin='lower'** — matrix[0]이 y=0이므로.
+
+def test_spatial_target_info_covers_all_targets(fest):
+    """GUI 표시 메타데이터가 4종을 같은 순서로 덮는다."""
+    keys = tuple(k for k, _, _ in fest.SPATIAL_TARGET_INFO)
+    assert keys == fest.SPATIAL_TARGETS
+
+
+def test_spatial_target_info_keys_exist_in_translation_table(fest):
+    """라벨·힌트 키가 실제로 _TR에 있어야 한다 — 없으면 GUI에 키 이름이 뜬다."""
+    for target, label_key, hint_key in fest.SPATIAL_TARGET_INFO:
+        for key in (label_key, hint_key):
+            assert key in fest._TR, f"{target}: _TR에 {key!r}가 없다"
+
+
+def test_set_spatial_map_attaches_to_instance(fest):
+    dp = fest.DiodeParams()
+    sm = fest.SpatialMap(mode="uniform", background=2.0)
+    assert fest.set_spatial_map(dp, "j01", sm) is sm
+    assert dp.spatial_j01 is sm
+    # 다른 대상은 건드리지 않는다
+    assert dp.spatial_j02 is None
+    assert dp.spatial_gen is None
+    assert dp.spatial_rc is None
+
+
+def test_set_spatial_map_rejects_unknown_target(fest):
+    dp = fest.DiodeParams()
+    with pytest.raises(ValueError) as exc:
+        fest.set_spatial_map(dp, "rsheet", fest.SpatialMap())
+    assert "rsheet" in str(exc.value)
+
+
+def test_set_spatial_map_rejects_non_map(fest):
+    dp = fest.DiodeParams()
+    with pytest.raises(TypeError):
+        fest.set_spatial_map(dp, "j01", np.ones((2, 2)))
+
+
+def test_set_spatial_map_rejects_class_attachment(fest):
+    """클래스에 붙이면 **모든 인스턴스로 전역 누출**된다 — 즉시 막는다.
+
+    solve() 안의 폴백 `dp = DiodeParams()`까지 전부 그 맵을 물려받아,
+    "맵을 지웠는데 결과가 그대로"로 나타난다. 되돌리기도 어렵다.
+    """
+    with pytest.raises(TypeError):
+        fest.set_spatial_map(fest.DiodeParams, "j01", fest.SpatialMap())
+    with pytest.raises(TypeError):
+        fest.clear_spatial_map(fest.DiodeParams, "j01")
+    # 클래스 기본값은 손상되지 않았다
+    assert fest.DiodeParams.spatial_j01 is None
+
+
+def test_clear_spatial_map_sets_none_not_uniform(fest):
+    """**해제는 None이다.** uniform 맵으로 대체하면 안 된다.
+
+    값은 1.0으로 같아도 `_spatial_mult`가 노드 길이 배열을 만들어 실제 곱셈이
+    실행된다. 무맵 경로의 비트 동일 근거는 "1을 곱한다"가 아니라 "곱셈을 아예
+    하지 않는다"이므로(소비 지점이 전부 None 가드 안), uniform 대체는 그 근거를
+    없앤다. 계획 §비트 동일 근거 (1).
+    """
+    dp = fest.DiodeParams()
+    fest.set_spatial_map(dp, "rc", fest.SpatialMap(mode="uniform", background=2.0))
+    fest.clear_spatial_map(dp, "rc")
+    assert dp.spatial_rc is None
+    assert not isinstance(dp.spatial_rc, fest.SpatialMap)
+    assert fest.get_spatial_map(dp, "rc") is None
+
+
+def test_clear_is_idempotent_and_safe_when_unset(fest):
+    dp = fest.DiodeParams()
+    fest.clear_spatial_map(dp, "gen")
+    fest.clear_spatial_map(dp, "gen")
+    assert dp.spatial_gen is None
+
+
+def test_active_spatial_maps_follows_registry_order(fest):
+    dp = fest.DiodeParams()
+    assert fest.active_spatial_maps(dp) == ()
+    fest.set_spatial_map(dp, "rc", fest.SpatialMap())
+    fest.set_spatial_map(dp, "j01", fest.SpatialMap())
+    # 붙인 순서가 아니라 SPATIAL_TARGETS 순서로 나온다 (GUI 표시 순서와 일치)
+    assert fest.active_spatial_maps(dp) == ("j01", "rc")
+    fest.clear_spatial_map(dp, "j01")
+    assert fest.active_spatial_maps(dp) == ("rc",)
+
+
+def test_spatial_map_caption_reports_file_shape_and_range(fest, tmp_path):
+    path = _write(tmp_path, "1,2\n3,4\n", name="press.csv")
+    sm = fest.load_spatial_map_txt(path)
+    cap = fest.spatial_map_caption(sm)
+    assert "press.csv" in cap
+    assert "2x2" in cap
+    assert "1" in cap and "4" in cap
+    assert fest.spatial_map_caption(None) == ""
+
+
+def test_gui_load_clear_roundtrip_is_bit_identical(fest, make_mono, tmp_path):
+    """GUI가 하는 일(부착 → 해제)을 그대로 밟아도 원래 결과로 비트 복귀한다.
+
+    §7은 맵을 직접 대입했다. 여기서는 **파일 로더 + 부착/해제 진입점**을 거친다
+    — GUI가 실제로 타는 경로다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    Vb = 0.85 * dp.expected_voc()[2]
+    J0 = _solve_current(fest, m, dp, Vb)
+
+    path = _write(tmp_path, "2,2\n2,2\n")
+    fest.set_spatial_map(dp, "j01", fest.load_spatial_map_txt(path))
+    J_mapped = _solve_current(fest, m, dp, Vb)
+
+    fest.clear_spatial_map(dp, "j01")
+    J_restored = _solve_current(fest, m, dp, Vb)
+
+    assert J_mapped != J0, "맵이 실제로 결과를 바꿔야 이 테스트가 의미 있다"
+    assert J_restored == J0
+
+
+def test_preview_draws_with_y_up_and_cell_extent(fest, tmp_path):
+    """미리보기는 **origin='lower'** — matrix[0]이 y=0(셀의 아래쪽)이라서다.
+
+    그대로 그리면(imshow 기본 origin='upper') 화면이 규약과 정반대가 되고,
+    사용자는 파일을 거꾸로 만들게 된다.
+    """
+    from matplotlib.figure import Figure
+    path = _write(tmp_path, "9,1\n1,1\n")     # 좌하만 9 — 위아래를 구분한다
+    sm = fest.load_spatial_map_txt(path)
+    fig = Figure()
+    ax = fest.draw_spatial_map_preview(fig, sm, 3.0, 2.0, title="t")
+
+    (im,) = ax.get_images()
+    assert im.origin == "lower"
+    # extent는 mm — 셀 크기 그대로여야 좌표가 맞는다
+    assert tuple(im.get_extent()) == (0.0, 30.0, 0.0, 20.0)
+    # 컬러바가 붙는다 (배율 값을 읽을 수 있어야 한다)
+    assert len(fig.axes) == 2
+
+
+def test_preview_grid_dots_sit_on_cell_boundary(fest, tmp_path):
+    """격자점 오버레이가 **셀 경계까지** 간다 — 꼭짓점 정렬의 시각 확인.
+
+    픽셀 중심이면 점들이 반 칸 안쪽에 모인다. 그림만 봐도 규약이 보이게 한다.
+    """
+    from matplotlib.figure import Figure
+    path = _write(tmp_path, "1,2,3\n4,5,6\n7,8,9\n")
+    sm = fest.load_spatial_map_txt(path)
+    ax = fest.draw_spatial_map_preview(Figure(), sm, 3.0, 3.0)
+    (line,) = ax.get_lines()
+    xs, ys = line.get_xdata(), line.get_ydata()
+    assert min(xs) == 0.0 and max(xs) == 30.0
+    assert min(ys) == 0.0 and max(ys) == 30.0
+    assert len(xs) == 9
+
+
+def test_preview_handles_matrixless_map(fest):
+    """matrix 없는 모드(rectangle 등)를 넘겨도 죽지 않는다."""
+    from matplotlib.figure import Figure
+    fig = Figure()
+    fest.draw_spatial_map_preview(fig, fest.SpatialMap(mode="uniform"), 1.0, 1.0)
+    assert fig.axes                      # 축은 만들어졌다
+
+
+# --- 11-b. i18n --------------------------------------------------------------
+
+def _sp_keys(fest):
+    return [k for k in fest._TR if k.startswith("sp_")]
+
+
+def test_spatial_i18n_keys_have_both_languages(fest):
+    """EN/KR 한쪽만 넣고 잊으면 그 자리만 다른 언어로 뜬다 — 기계로 잡는다."""
+    keys = _sp_keys(fest)
+    assert keys, "sp_* 키가 하나도 없다"
+    for key in keys:
+        entry = fest._TR[key]
+        assert set(entry) == {"EN", "KR"}, f"{key}: {sorted(entry)}"
+        for lang, text in entry.items():
+            assert text.strip(), f"{key}[{lang}]가 비어 있다"
+
+
+def test_spatial_i18n_placeholders_match(fest):
+    """포맷 자리표시자가 언어마다 같아야 한다 — 한쪽만 KeyError가 난다."""
+    import re
+    for key in _sp_keys(fest):
+        entry = fest._TR[key]
+        holes = {lang: set(re.findall(r"\{(\w+)\}", text))
+                 for lang, text in entry.items()}
+        assert holes["EN"] == holes["KR"], f"{key}: {holes}"
+
+
+def test_rc_label_states_the_inverted_meaning(fest):
+    """rc는 의미가 반대다 — 맵이 접촉 저항 R을 곱한다(Gc를 나눈다).
+
+    "1.5 = 접촉이 1.5배 좋아짐"으로 읽는 오해를 라벨에서 막아야 한다
+    (계획 §대상 물성의 확정 문구). 방향 자체는
+    test_rc_map_multiplies_resistance_not_conductance가 고정한다.
+    """
+    hint = fest._TR["sp_rc_hint"]
+    assert "WORSE" in hint["EN"].upper()
+    assert "나쁨" in hint["KR"]
+
+
+def test_convention_note_states_first_row_is_bottom(fest):
+    """규약 안내가 **첫 줄 = 아래쪽**을 실제로 말하는지.
+
+    이 한 줄을 빼면 사용자가 파일을 거꾸로 만든다. 규약 문서와 화면이 같은
+    말을 하도록 묶어 둔다 — docs/spatial_map_convention.md §1.
+    """
+    note = fest._TR["sp_convention"]
+    assert "BOTTOM" in note["EN"].upper()
+    assert "y=0" in note["EN"]
+    assert "아래" in note["KR"]
+
+
+def test_gui_class_exposes_spatial_callbacks(fest):
+    """GUI 콜백이 실제로 존재해야 버튼 command가 살아 있다."""
+    for name in ("_open_spatial_maps", "_load_spatial_map", "_clear_spatial_map",
+                 "_refresh_spatial_row", "_refresh_spatial_summary",
+                 "_preview_spatial_map", "_spatial_status_text",
+                 "_cell_extent_cm"):
+        assert callable(getattr(fest.FESTProApp, name, None)), f"{name} 없음"
+
+
+def test_module_dp_starts_with_no_maps(fest):
+    """전역 DP는 맵 없이 시작한다 — 앱을 켜자마자 무맵 경로여야 한다."""
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+# --- 11-c. GUI 콜백 스모크 (Tk 목으로 실제 코드 경로를 밟는다) ----------------
+#
+# 창 빌더와 콜백은 위 계약 테스트가 닿지 않는 표면이다 — 거기 오타(NameError)가
+# 나면 버튼을 눌러야 발견된다. conftest가 customtkinter/tkinter를 목으로 갈아
+# 끼워 두었으므로, __init__을 건너뛴 인스턴스에 필요한 것만 붙여 **실제 메서드
+# 본문을 실행**한다. 위젯 호출은 목이 삼키고, 그 사이의 파이썬 코드는 진짜로
+# 돈다.
+
+
+class _Entry:
+    def __init__(self, text):
+        self._text = text
+
+    def get(self):
+        return self._text
+
+
+def _bare_app(fest, cell_mm=("30", "30")):
+    app = object.__new__(fest.FESTProApp)          # __init__(Tk) 우회
+    app._status_label = None                       # _status가 조용히 no-op
+    app.tb_grid = [_Entry(cell_mm[0]), _Entry(cell_mm[1])]
+    return app
+
+
+@pytest.fixture
+def clean_dp(fest):
+    """전역 DP를 건드리는 테스트용 — 끝나면 무맵으로 되돌린다."""
+    yield fest.DP
+    for t in fest.SPATIAL_TARGETS:
+        fest.clear_spatial_map(fest.DP, t)
+
+
+def test_open_spatial_maps_window_builds(fest, clean_dp):
+    """창 빌더가 끝까지 돈다 — 위젯 목이 삼켜도 파이썬 오타는 여기서 터진다."""
+    app = _bare_app(fest)
+    fest.FESTProApp._open_spatial_maps(app)
+    assert set(app._spatial_rows) == set(fest.SPATIAL_TARGETS)
+
+
+def test_gui_load_callback_attaches_to_module_dp(fest, clean_dp, tmp_path,
+                                                 monkeypatch):
+    """불러오기 콜백이 **전역 DP**에 붙인다 — GUI의 calc_iv가 넘기는 그 인스턴스."""
+    path = _write(tmp_path, "1,2\n3,4\n", name="gui.csv")
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", lambda **kw: path)
+
+    app = _bare_app(fest)
+    fest.FESTProApp._open_spatial_maps(app)
+    fest.FESTProApp._load_spatial_map(app, "gen")
+
+    sm = fest.get_spatial_map(fest.DP, "gen")
+    assert isinstance(sm, fest.SpatialMap)
+    assert sm.load_report["path"] == path
+    assert fest.active_spatial_maps(fest.DP) == ("gen",)
+
+
+def test_gui_clear_callback_restores_none(fest, clean_dp, tmp_path, monkeypatch):
+    path = _write(tmp_path, "1,2\n3,4\n")
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", lambda **kw: path)
+
+    app = _bare_app(fest)
+    fest.FESTProApp._open_spatial_maps(app)
+    fest.FESTProApp._load_spatial_map(app, "j02")
+    assert fest.get_spatial_map(fest.DP, "j02") is not None
+
+    fest.FESTProApp._clear_spatial_map(app, "j02")
+    assert fest.DP.spatial_j02 is None          # uniform 맵이 아니라 None
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+def test_gui_load_cancelled_leaves_dp_untouched(fest, clean_dp, monkeypatch):
+    """파일 선택을 취소하면(빈 문자열) 아무것도 바뀌지 않는다."""
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", lambda **kw: "")
+    app = _bare_app(fest)
+    fest.FESTProApp._load_spatial_map(app, "rc")
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+def test_gui_load_rejects_bad_file_without_attaching(fest, clean_dp, tmp_path,
+                                                     monkeypatch):
+    """검증 실패 시 DP를 건드리지 않는다 — 반쯤 적용된 상태가 남으면 안 된다."""
+    bad = _write(tmp_path, "1,2\n3,0\n")       # 0은 배율이 될 수 없다
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", lambda **kw: bad)
+    app = _bare_app(fest)
+    fest.FESTProApp._load_spatial_map(app, "j01")
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+def test_cell_extent_reads_gui_fields_in_cm(fest):
+    app = _bare_app(fest, cell_mm=("156.0", "78.0"))
+    assert fest.FESTProApp._cell_extent_cm(app) == (15.6, 7.8)
+
+
+def test_cell_extent_falls_back_to_geo_on_garbage(fest):
+    """입력란이 망가져 있어도 미리보기가 죽지 않고 현재 GEO로 그린다."""
+    app = _bare_app(fest, cell_mm=("", "abc"))
+    W, H = fest.FESTProApp._cell_extent_cm(app)
+    assert (W, H) == (float(fest.GEO.W), float(fest.GEO.H))
+
+
+def test_status_text_counts_active_maps(fest, clean_dp):
+    app = _bare_app(fest)
+    assert "0" in fest.FESTProApp._spatial_status_text(app)
+    fest.set_spatial_map(fest.DP, "rc", fest.SpatialMap())
+    assert "1" in fest.FESTProApp._spatial_status_text(app)

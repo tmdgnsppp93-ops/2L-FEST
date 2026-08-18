@@ -497,6 +497,58 @@ v28.57: [feat] 공간 분포 txt/csv 로더 — load_spatial_map_txt(path, delim
          주의: 불변이어야 하는 것은 모델(_Gc/_Km/metal_frac)이지 소산 전력이
          아니다. Pc는 전력이라 T가 발전량을 늘리면 당연히 오른다(실측 발전량비
          1.0164, Pc비 1.0332 = 1.0164²).
+v28.58: [feat] 공간 분포 맵 GUI 배선 (계획 단위 4) + 규약 확정 (단위 3 종결).
+         [GUI] STEP 3(Diode)에 SPATIAL MAPS 카드 신설 — 진입 버튼과 "4개 중 n개
+         적용" 요약만 사이드바에 두고, 실제 조작은 _open_spatial_maps 창에서
+         한다. 4종(j01/j02/gen/rc) 각각 불러오기 / 해제 / 미리보기.
+         4종 x 3버튼을 사이드바에 펼치면 세로가 넘치므로(_gui_i18n_check.py의
+         감시 항목) 별도 창으로 뺐다.
+         맵은 **전역 DP 인스턴스**에 붙인다 — GUI의 calc_iv 호출이 전부 DP를
+         넘긴다. DiodeParams 클래스에 붙이면 이후 만들어지는 모든 인스턴스로
+         전역 누출되므로(solve() 내부 폴백 dp=DiodeParams() 포함)
+         _check_spatial_dp가 TypeError로 막는다.
+         **해제는 반드시 None이다.** SpatialMap(mode='uniform')으로 대체하면 값은
+         1.0으로 같지만 _spatial_mult가 노드 길이 배열을 만들어 실제 곱셈이
+         실행된다. 무맵 경로의 비트 동일 근거는 "1을 곱한다"가 아니라 "곱셈을
+         아예 하지 않는다"(소비 지점이 전부 `if ... is not None:` 가드 안)이므로
+         uniform 맵은 그 근거를 없앤다. clear_spatial_map이 이 규칙을 강제한다.
+         rc 라벨에 **의미 반전**을 명시했다 — 맵이 접촉 저항 R을 곱한다(Gc를
+         나눈다). 값↑ = 접촉이 나빠짐. "1.5 = 접촉이 1.5배 좋아짐"으로 읽는
+         오해를 막기 위해 힌트를 앰버색으로 띄운다.
+         미리보기는 origin='lower' — matrix[0]이 y=0(셀의 아래쪽)이라 그대로
+         그리면 위아래가 뒤집힌다. 텍스트 편집기에서 본 파일과 화면이 반대로
+         보이는 것이 정상이라는 안내를 캡션에 붙였다.
+         신규 진입점(모듈 수준, Tk 비의존 — 헤드리스 테스트 가능):
+         set_spatial_map / clear_spatial_map / get_spatial_map /
+         active_spatial_maps / spatial_map_caption / draw_spatial_map_preview /
+         SPATIAL_TARGET_INFO. GUI 콜백은 이들을 부르기만 한다.
+         i18n 키 23개 추가(EN/KR 양쪽). SPATIAL MAPS 카드 헤더는 _card_headers
+         위치 zip에 넣지 않는다 — 그 zip은 4개 위치 고정 매핑이라 5번째를 넣으면
+         조용히 엇갈린다. _spatial_card_hdr로 따로 갱신한다.
+         [docs] 계획 단위 3(Griddler 대조) **보류 — 대조 불가.** 무료판에 공간
+         분포 입력 기능이 없다(PRO 전용: 벤더 비교표 "txt or TIFF → Free = NO",
+         매뉴얼 §3.1, 무료판 화면에 진입점 없음). 절차서·시험 행렬은 지우지 않고
+         보존한다 — PRO 확보 시 그대로 재개한다.
+         대신 규약을 **자체 규약으로 확정 선언**했다(docs/spatial_map_convention.md):
+         matrix[0] = y=0(첫 데이터 줄이 아래) · 꼭짓점 정렬(linspace(0,H,ny)).
+         이미 엔진이 하는 동작이고 단위 0의 특성화 테스트가 고정해 둔 것이므로,
+         확정은 새 동작이 아니라 있는 동작의 승격이다. 미판정으로 두면 이후 단위가
+         "규약 미정"을 이유로 계속 멈춘다.
+         ⚠ 이것은 "우리 규약을 선언했다"이지 "Griddler와 일치함을 확인했다"가
+         아니다 — 발표·보고에 교차검증으로 쓸 수 없다.
+         향후 대조에서 어긋나면 **보정은 load_spatial_map_txt 안에서만** 한다.
+         SpatialMap.evaluate()는 불변 — 엔진 규약을 바꾸면 회귀 감시 기준이 같이
+         움직여 무엇이 회귀인지 판정할 수 없게 된다.
+         [test] 대조 절차서 §2의 기준값 8개를 코드에 묶었다(§10, 3건). PRO 대조
+         때 우리 쪽 기준선이라 문서와 코드가 어긋나면 대조가 무의미해진다.
+         GUI 배선 회귀 28건 — 부착·해제 왕복 후 비트 동일, 클래스 부착 거부,
+         해제가 None인지(uniform 아님), rc 방향, i18n 키 EN/KR 쌍, 그리고 Tk 목
+         위에서 창 빌더·콜백 본문을 실제로 실행하는 스모크 8건.
+         그 스모크가 실제 버그를 잡았다 — 미리보기 폴백이 GEO.cell_w를 읽고
+         있었는데 CellGeometry의 속성명은 W/H다(생성자 인자 이름과 다르다).
+         입력란이 비어 있을 때만 타는 경로라 눈으로는 안 보였다.
+         **맵을 지정하지 않은 실행 경로는 완전히 불변이다.** 물리식 무변경.
+
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -595,7 +647,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.57",
+    "version": "v28.58",
     "date": "2026-08-18",
 }
 _BUILD_SHA_CACHE = None
@@ -938,6 +990,49 @@ _TR = {
     'eff_improve': {'EN': 'Efficiency Improvement (Hot Pressing)', 'KR': '효율 개선 (핫 프레싱)'},
     'before_sim': {'EN': 'Before (sim)', 'KR': '프레싱 전 (sim)'},
     'after_sim': {'EN': 'After (sim)', 'KR': '프레싱 후 (sim)'},
+    # Spatial distribution maps (v28.58 — 계획 단위 4)
+    'sp_card': {'EN': 'SPATIAL MAPS', 'KR': '공간 분포 맵'},
+    'sp_open': {'EN': 'Spatial Distribution Maps...', 'KR': '공간 분포 맵 설정...'},
+    'sp_title': {'EN': 'Spatial Distribution Maps (txt / csv)',
+                 'KR': '공간 분포 맵 (txt / csv)'},
+    'sp_none': {'EN': 'none (uniform)', 'KR': '없음 (균일)'},
+    'sp_load': {'EN': 'Load...', 'KR': '불러오기...'},
+    'sp_clear': {'EN': 'Clear', 'KR': '해제'},
+    'sp_preview': {'EN': 'Preview', 'KR': '미리보기'},
+    'sp_count': {'EN': '{n} of 4 active', 'KR': '4개 중 {n}개 적용'},
+    'sp_j01': {'EN': 'J01 multiplier', 'KR': 'J01 배율'},
+    'sp_j02': {'EN': 'J02 multiplier', 'KR': 'J02 배율'},
+    'sp_gen': {'EN': 'Photogeneration multiplier', 'KR': '광생성 배율'},
+    'sp_rc': {'EN': 'Contact ρ multiplier (rc)', 'KR': '접촉 비저항 배율 (rc)'},
+    'sp_j01_hint': {'EN': 'higher = more n1 recombination',
+                    'KR': '값이 클수록 n1 재결합이 큼'},
+    'sp_j02_hint': {'EN': 'higher = more n2 (SCR) recombination',
+                    'KR': '값이 클수록 n2(공핍층) 재결합이 큼'},
+    'sp_gen_hint': {'EN': 'higher = more photocurrent (1.0 = nominal)',
+                    'KR': '값이 클수록 광전류가 큼 (1.0 = 기준)'},
+    # rc는 의미가 반대다 — 맵이 접촉 저항 R을 곱한다(컨덕턴스 Gc를 나눈다).
+    # "1.5 = 접촉이 1.5배 좋아짐"으로 읽는 오해를 라벨에서 막는다(계획 §대상 물성).
+    'sp_rc_hint': {'EN': 'higher = WORSE contact  (0.5 = half R, well pressed; '
+                         '2.0 = double R, poorly pressed)',
+                   'KR': '값이 클수록 접촉이 나쁨  (0.5 = 접촉저항 절반, 잘 눌린 영역; '
+                         '2.0 = 두 배, 덜 눌린 영역)'},
+    'sp_convention': {
+        'EN': 'File convention: first data row = BOTTOM of the cell (y=0); '
+              'values are absolute multipliers (no normalization); grid is '
+              'vertex-aligned, so corner values sit exactly on cell corners.',
+        'KR': '파일 규약: 첫 데이터 줄 = 셀의 아래쪽(y=0) · 값은 절대 배율(정규화 '
+              '없음) · 꼭짓점 정렬이라 모서리 값이 셀 모서리에 정확히 놓인다.'},
+    'sp_flip_note': {
+        'EN': 'Shown with y up — a text editor displays the file upside down '
+              'relative to this. That is expected, not a bug.',
+        'KR': 'y가 위로 가도록 그린다 — 텍스트 편집기로 본 파일과 위아래가 반대로 '
+              '보이는 것이 정상이다.'},
+    'sp_loaded': {'EN': 'Spatial map loaded', 'KR': '공간 분포 맵 적용'},
+    'sp_cleared': {'EN': 'Spatial map cleared', 'KR': '공간 분포 맵 해제'},
+    'sp_load_fail': {'EN': 'Spatial Map Load Error', 'KR': '공간 분포 맵 로드 오류'},
+    'sp_no_map': {'EN': 'No map loaded for this target.',
+                  'KR': '이 대상에는 적용된 맵이 없다.'},
+    'sp_rerun': {'EN': 'Re-run COMPARE to apply.', 'KR': '적용하려면 COMPARE를 다시 실행하세요.'},
     # General
     'ready': {'EN': 'Ready. Click a tab.', 'KR': '준비 완료. 탭을 클릭하세요.'},
     'run_compare_first': {'EN': 'Run COMPARE first.', 'KR': 'COMPARE를 먼저 실행하세요.'},
@@ -3415,8 +3510,12 @@ def load_spatial_map_txt(path, *, delimiter=None):
     규약이 다르므로 **별도 함수**로 두고 이 함수에 확장자 분기를 넣지 않는다.
 
     행이 y, 열이 x다 — 파일의 첫 데이터 줄이 ``matrix[0]``이고 ``evaluate()``에서
-    ``y=0`` 경계에 놓인다. 이 규약이 Griddler와 같은지는 별도 대조 대상이다
-    (docs/superpowers/plans/2026-08-17-spatial-map-io.md 단위 3).
+    ``y=0`` 경계에 놓인다(첫 줄 = 셀의 **아래쪽**). 격자는 **꼭짓점 정렬**이라
+    모서리 값이 셀 모서리에 정확히 놓인다. **규약 확정 2026-08-18** —
+    ``docs/spatial_map_convention.md``. Griddler 대조는 무료판에 공간 분포 입력이
+    없어(PRO 전용) 하지 못했고 자체 규약으로 채택했다. 나중에 대조해서 어긋나면
+    **보정은 이 함수 안에서** 한다 — ``SpatialMap.evaluate()``는 건드리지 않는다
+    (엔진 규약을 바꾸면 회귀 감시 기준이 같이 움직인다).
 
     빈 줄과 ``#`` 주석 줄은 데이터가 아니다. 구분자는 콤마가 있으면 콤마,
     없으면 공백(탭 포함)으로 자동 판별하며 ``delimiter``로 강제할 수 있다.
@@ -3521,6 +3620,133 @@ def load_spatial_map_txt(path, *, delimiter=None):
     }
     return sm
 
+
+
+# ---------------------------------------------------------------------------
+# 맵 부착·해제 (계획 단위 4 — GUI가 쓰는 진입점)
+# ---------------------------------------------------------------------------
+#
+# GUI 안에 setattr을 흩어 놓지 않고 여기로 모은다. 이유는 두 가지다.
+#   1. "맵 없음 = None" 규칙을 한 곳에서 지킬 수 있다(아래 clear_spatial_map).
+#   2. Tk 없이 테스트할 수 있다 — GUI 콜백은 이 함수들을 부르기만 한다.
+
+# GUI 표시 순서 = 이 순서. (키, 라벨 i18n 키, 설명 i18n 키)
+SPATIAL_TARGET_INFO = (
+    ("j01", "sp_j01", "sp_j01_hint"),
+    ("j02", "sp_j02", "sp_j02_hint"),
+    ("gen", "sp_gen", "sp_gen_hint"),
+    ("rc",  "sp_rc",  "sp_rc_hint"),
+)
+
+
+def _check_spatial_target(target):
+    if target not in SPATIAL_TARGETS:
+        raise ValueError(
+            f"알 수 없는 공간 분포 대상 {target!r} — "
+            f"{SPATIAL_TARGETS} 중 하나여야 한다.")
+    return target
+
+
+def _check_spatial_dp(dp):
+    """맵은 **인스턴스**에만 붙인다.
+
+    ``spatial_*``는 DiodeParams의 **클래스 속성**이라(기본 None), 클래스에 직접
+    붙이면 이후 만들어지는 모든 인스턴스가 그 맵을 물려받는다 — solve() 내부의
+    폴백 ``dp = DiodeParams()`` 경로까지 전부. 전역 누출이라 되돌리기 어렵고
+    "맵을 지웠는데 결과가 그대로"로 나타난다. 여기서 즉시 막는다.
+    """
+    if isinstance(dp, type):
+        raise TypeError(
+            "공간 분포 맵은 DiodeParams 인스턴스에만 붙인다 — 클래스에 붙이면 "
+            "이후 모든 인스턴스로 전역 누출된다.")
+    return dp
+
+
+def set_spatial_map(dp, target, sm):
+    """``dp.spatial_<target>``에 맵을 붙인다.
+
+    ``sm``이 None이면 해제와 같다(clear_spatial_map을 쓰는 편이 의도가 분명하다).
+    """
+    _check_spatial_target(target)
+    _check_spatial_dp(dp)
+    if sm is not None and not isinstance(sm, SpatialMap):
+        raise TypeError(
+            f"공간 분포 맵은 SpatialMap이어야 한다 (받은 것: {type(sm).__name__}).")
+    setattr(dp, f"spatial_{target}", sm)
+    return sm
+
+
+def clear_spatial_map(dp, target):
+    """맵 해제 — **반드시 None이다.**
+
+    ``SpatialMap(mode='uniform')``으로 대체하면 안 된다. 값은 1.0으로 같지만
+    ``_spatial_mult``가 노드 길이 배열을 만들어 **실제 곱셈이 실행된다.** 무맵
+    경로의 비트 동일 근거는 "1을 곱한다"가 아니라 **"곱셈을 아예 하지 않는다"**
+    이고(소비 지점이 전부 ``if ... is not None:`` 가드 안), uniform 맵은 그
+    가드를 우회해 근거를 없앤다.
+    계획 §비트 동일 근거 (1) · test_clearing_map_to_none_restores_bit_identical_result.
+    """
+    _check_spatial_target(target)
+    _check_spatial_dp(dp)
+    setattr(dp, f"spatial_{target}", None)
+
+
+def get_spatial_map(dp, target):
+    """붙어 있는 맵 또는 None."""
+    _check_spatial_target(target)
+    return getattr(dp, f"spatial_{target}", None)
+
+
+def active_spatial_maps(dp):
+    """맵이 붙어 있는 대상들 (SPATIAL_TARGETS 순서)."""
+    return tuple(t for t in SPATIAL_TARGETS
+                 if getattr(dp, f"spatial_{t}", None) is not None)
+
+
+def spatial_map_caption(sm):
+    """한 줄 요약 — 파일명 (형상, 최소~최대). GUI 라벨·상태줄용."""
+    if sm is None:
+        return ""
+    rep = getattr(sm, "load_report", None)
+    name = os.path.basename(rep["path"]) if rep and rep.get("path") else sm.mode
+    M = sm.matrix
+    if M is None:
+        return name
+    ny, nx = M.shape
+    return f"{name}  ({ny}x{nx}, {float(M.min()):.3g}~{float(M.max()):.3g})"
+
+
+def draw_spatial_map_preview(fig, sm, W_cm, H_cm, title=""):
+    """맵 미리보기를 ``fig``에 그린다 (셀 윤곽 + 컬러맵 + 컬러바).
+
+    **``origin='lower'``가 규약의 시각화다.** ``matrix[0]``이 ``y=0``(셀의
+    아래쪽)이므로 그대로 그리면 위아래가 뒤집힌다 — 텍스트 편집기에서 본 모양과
+    화면이 다른 것이 정상이고, 그 사실을 부제로 적어 사용자가 "뒤집혔다"고
+    오해하지 않게 한다. docs/spatial_map_convention.md §1.
+
+    Tk에 의존하지 않는다 — 어떤 Figure든 받는다(헤드리스 테스트 가능).
+    """
+    fig.clear()
+    ax = fig.add_subplot(111)
+    M = sm.matrix
+    if M is None:
+        ax.text(0.5, 0.5, "matrix 없음", ha="center", va="center")
+        return ax
+    W_mm, H_mm = W_cm * 10.0, H_cm * 10.0
+    im = ax.imshow(M, origin="lower", extent=[0.0, W_mm, 0.0, H_mm],
+                   aspect="equal", cmap="viridis", interpolation="bilinear")
+    ax.add_patch(Rectangle((0, 0), W_mm, H_mm, fill=False,
+                           edgecolor="white", lw=1.2, ls="--"))
+    ny, nx = M.shape
+    # 격자점(=행렬 값이 놓이는 자리). 꼭짓점 정렬이라 경계에 걸린다.
+    gx, gy = np.meshgrid(np.linspace(0, W_mm, nx), np.linspace(0, H_mm, ny))
+    ax.plot(gx.ravel(), gy.ravel(), ".", color="white", ms=2.0, alpha=0.55)
+    ax.set_xlabel("x [mm]"); ax.set_ylabel("y [mm]")
+    ax.set_title(title, fontsize=10)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("multiplier", fontsize=8)
+    cb.ax.tick_params(labelsize=8)
+    return ax
 
 def solve_0d_subcell_current(V, dp, cell='top'):
     """단일 subcell 다이오드 J(V) [mA/cm²].
@@ -8569,6 +8795,35 @@ class FESTProApp(ctk.CTk):
         self._card_headers.append(hdr_db)
         # === END v28.1 diode GUI addition ===
 
+        # --- SPATIAL MAPS Card (v28.58, 계획 단위 4) --- [STEP 3]
+        # 사이드바에는 진입 버튼과 요약만 둔다. 4종 x (불러오기·해제·미리보기)를
+        # 여기 펼치면 세로가 넘친다 — 조작은 _open_spatial_maps 창에서 한다.
+        ctk.CTkFrame(step3, height=8, fg_color="transparent").pack()
+        sp_card = ctk.CTkFrame(step3, fg_color=CLR_CARD_BG, corner_radius=8,
+                               border_width=1, border_color=CLR_CARD_BD)
+        sp_card.pack(fill="x", pady=2)
+        sp_bar = ctk.CTkFrame(sp_card, fg_color="#6D28D9", height=28,
+                              corner_radius=0)
+        sp_bar.pack(fill="x")
+        sp_bar.pack_propagate(False)
+        hdr_sp = ctk.CTkLabel(sp_bar, text=_t('sp_card'),
+                              font=ctk.CTkFont(size=12, weight="bold"),
+                              text_color="white")
+        hdr_sp.pack(side="left", padx=10, pady=3)
+
+        self._spatial_summary_lbl = ctk.CTkLabel(
+            sp_card, text=self._spatial_status_text(),
+            font=ctk.CTkFont(size=10), text_color=CLR_TEXT_SEC, anchor="w")
+        self._spatial_summary_lbl.pack(anchor="w", padx=10, pady=(5, 0))
+
+        ctk.CTkButton(sp_card, text=_t('sp_open'), width=240, height=28,
+                      fg_color="#6D28D9", hover_color="#5B21B6",
+                      font=ctk.CTkFont(size=11, weight="bold"),
+                      text_color="white", corner_radius=6,
+                      command=self._open_spatial_maps).pack(padx=8, pady=(4, 8))
+        self._spatial_card_hdr = hdr_sp
+
+
 
 
         # --- GRID DESIGN Card (v28.10 사용자 요청 재정리) --- [STEP 1]
@@ -10235,6 +10490,233 @@ class FESTProApp(ctk.CTk):
                 "DXF Import Error",
                 f"Failed to load DXF:\n{e}\n\nTraceback:\n{err_detail[-600:]}")
 
+    # ------------------------------------------------------------------
+    # 공간 분포 맵 (v28.58 — 계획 단위 4)
+    # ------------------------------------------------------------------
+    #
+    # 맵은 **전역 DP 인스턴스**에 붙인다. GUI의 모든 calc_iv 호출이 DP를 그대로
+    # 넘기기 때문이다. 클래스에 붙이면 안 되는 이유는 _check_spatial_dp의
+    # 도크스트링에 있다(전역 누출).
+    #
+    # 사이드바에는 버튼 하나만 두고 실제 조작은 별도 창에서 한다. 대상이 4종이고
+    # 각각 파일명·해제·미리보기가 필요한데 그걸 사이드바에 펼치면 세로가 넘친다
+    # (사이드바 세로 넘침은 _gui_i18n_check.py가 감시하는 항목이다).
+
+    def _spatial_status_text(self):
+        return _t('sp_count').format(n=len(active_spatial_maps(DP)))
+
+    def _refresh_spatial_summary(self):
+        """사이드바 요약 라벨을 현재 상태로 갱신한다."""
+        lbl = getattr(self, '_spatial_summary_lbl', None)
+        if lbl is None:
+            return
+        try:
+            n = len(active_spatial_maps(DP))
+            lbl.configure(text=self._spatial_status_text(),
+                          text_color=(CLR_BLUE if n else CLR_TEXT_SEC))
+        except Exception:
+            pass
+
+    def _cell_extent_cm(self):
+        """미리보기용 셀 크기 [cm]. 입력란이 이상하면 현재 GEO로 되돌린다."""
+        try:
+            W = _parse_gui_float(self.tb_grid[0].get(), "cell_w") / 10.0
+            H = _parse_gui_float(self.tb_grid[1].get(), "cell_h") / 10.0
+            if W > 0 and H > 0:
+                return W, H
+        except Exception:
+            pass
+        return float(GEO.W), float(GEO.H)     # CellGeometry는 W/H가 cm다
+
+    def _load_spatial_map(self, target):
+        """파일 선택 → 검증 → DP에 부착. _load_dxf와 같은 흐름이다.
+
+        검증은 load_spatial_map_txt가 **읽는 시점에** 끝낸다(0·음수·NaN·inf·
+        열 개수 불일치·2x2 미만). 실패하면 DP를 건드리지 않는다 — 반쯤 적용된
+        상태가 남지 않는다.
+        """
+        _check_spatial_target(target)
+        fn = filedialog.askopenfilename(
+            title=f"{_t('sp_title')} - {target}",
+            filetypes=[('Matrix text', '*.txt *.csv *.dat'),
+                       ('All Files', '*.*')])
+        if not fn:
+            return
+        try:
+            sm = load_spatial_map_txt(fn)
+        except Exception as e:
+            messagebox.showerror(_t('sp_load_fail'), f"{e}")
+            self._status(f"{_t('sp_load_fail')}: {os.path.basename(fn)}")
+            return
+
+        set_spatial_map(DP, target, sm)
+        self._refresh_spatial_row(target)
+        self._refresh_spatial_summary()
+
+        self._status(f"{_t('sp_loaded')} [{target}]: {spatial_map_caption(sm)}"
+                     f" - {_t('sp_rerun')}")
+        for w in sm.load_report.get("warnings", []):
+            messagebox.showwarning(_t('sp_title'),
+                                   f"{os.path.basename(fn)}\n\n{w}")
+
+    def _clear_spatial_map(self, target):
+        """맵 해제 — **None으로** 되돌린다.
+
+        uniform 맵으로 대체하지 않는 이유는 clear_spatial_map 도크스트링에 있다
+        (무맵 경로의 비트 동일 근거가 "곱셈을 아예 하지 않는다"에 있어서다).
+        """
+        clear_spatial_map(DP, target)
+        self._refresh_spatial_row(target)
+        self._refresh_spatial_summary()
+        self._status(f"{_t('sp_cleared')} [{target}] - {_t('sp_rerun')}")
+
+    def _refresh_spatial_row(self, target):
+        """맵 설정 창의 한 줄(파일명 라벨)을 현재 상태로 갱신한다."""
+        rows = getattr(self, '_spatial_rows', None)
+        if not rows or target not in rows:
+            return
+        sm = get_spatial_map(DP, target)
+        try:
+            if sm is None:
+                rows[target].configure(text=_t('sp_none'),
+                                       text_color=CLR_TEXT_SEC)
+            else:
+                rows[target].configure(text=spatial_map_caption(sm),
+                                       text_color=CLR_BLUE)
+        except Exception:
+            pass
+
+    def _preview_spatial_map(self, target, fig, canvas, caption_lbl):
+        """선택한 대상의 맵을 미리보기 캔버스에 그린다."""
+        sm = get_spatial_map(DP, target)
+        if sm is None:
+            caption_lbl.configure(text=_t('sp_no_map'), text_color=CLR_AMBER)
+            fig.clear()
+            canvas.draw()
+            return
+        W_cm, H_cm = self._cell_extent_cm()
+        label_key = {k: lk for k, lk, _ in SPATIAL_TARGET_INFO}[target]
+        draw_spatial_map_preview(
+            fig, sm, W_cm, H_cm,
+            title=f"{_t(label_key)} - {spatial_map_caption(sm)}")
+        canvas.draw()
+        caption_lbl.configure(text=_t('sp_flip_note'), text_color=CLR_TEXT_SEC)
+
+    def _open_spatial_maps(self):
+        """공간 분포 맵 설정 창 — 4종 각각 불러오기 / 해제 / 미리보기."""
+        win = ctk.CTkToplevel(self)
+        win.title(f"2L-FEST - {_t('sp_title')}")
+        win.geometry("980x620")
+        self._raise_once(win)
+
+        # 상단: 규약 안내. 첫 줄이 아래쪽이라는 사실을 여기서 못 박는다 — 모르면
+        # 맵이 뒤집혔다고 오해하고 파일을 거꾸로 만든다.
+        hdr = ctk.CTkFrame(win, fg_color=CLR_HEADER, corner_radius=0)
+        hdr.pack(fill="x")
+        ctk.CTkLabel(hdr, text=_t('sp_title'),
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color="white").pack(anchor="w", padx=12, pady=(8, 0))
+        ctk.CTkLabel(hdr, text=_t('sp_convention'),
+                     font=ctk.CTkFont(size=10), text_color="#CBD5E1",
+                     wraplength=930, justify="left").pack(
+                         anchor="w", padx=12, pady=(2, 8))
+
+        body = ctk.CTkFrame(win, fg_color="#F8FAFC")
+        body.pack(fill="both", expand=True)
+
+        left = ctk.CTkFrame(body, fg_color=CLR_SIDEBAR, width=430,
+                            corner_radius=0, border_width=1,
+                            border_color=CLR_CARD_BD)
+        left.pack(side="left", fill="y")
+        left.pack_propagate(False)
+
+        right = ctk.CTkFrame(body, fg_color="white")
+        right.pack(side="left", fill="both", expand=True)
+
+        pfig = Figure(figsize=(5.2, 4.6), facecolor='white', dpi=100)
+        pcanvas = FigureCanvasTkAgg(pfig, master=right)
+        pcanvas.get_tk_widget().pack(fill="both", expand=True, padx=6, pady=(6, 2))
+        cap = ctk.CTkLabel(right, text="", font=ctk.CTkFont(size=9),
+                           text_color=CLR_TEXT_SEC, wraplength=470,
+                           justify="left")
+        cap.pack(anchor="w", padx=10, pady=(0, 6))
+
+        self._spatial_rows = {}
+        for idx, (target, label_key, hint_key) in enumerate(SPATIAL_TARGET_INFO):
+            card = ctk.CTkFrame(
+                left, fg_color=(CLR_EVEN_ROW if idx % 2 == 0 else CLR_CARD_BG),
+                corner_radius=6, border_width=1, border_color=CLR_CARD_BD)
+            card.pack(fill="x", padx=8, pady=5)
+
+            ctk.CTkLabel(card, text=f"{_t(label_key)}   [spatial_{target}]",
+                         font=ctk.CTkFont(size=11, weight="bold"),
+                         text_color=CLR_TEXT, anchor="w").pack(
+                             anchor="w", padx=10, pady=(6, 0))
+            # rc는 의미가 반대다 — 맵이 접촉 저항 R을 곱한다(Gc를 나눈다).
+            # "1.5 = 접촉이 1.5배 좋아짐"으로 읽는 오해를 라벨에서 막는다.
+            ctk.CTkLabel(card, text=_t(hint_key), font=ctk.CTkFont(size=9),
+                         text_color=(CLR_AMBER if target == 'rc' else CLR_TEXT_SEC),
+                         anchor="w", wraplength=390, justify="left").pack(
+                             anchor="w", padx=10, pady=(0, 3))
+
+            name_lbl = ctk.CTkLabel(card, text=_t('sp_none'),
+                                    font=ctk.CTkFont(size=10),
+                                    text_color=CLR_TEXT_SEC, anchor="w",
+                                    wraplength=390, justify="left")
+            name_lbl.pack(anchor="w", padx=10, pady=(0, 4))
+            self._spatial_rows[target] = name_lbl
+
+            btns = ctk.CTkFrame(card, fg_color="transparent")
+            btns.pack(anchor="w", padx=8, pady=(0, 8))
+
+            def _mk(tg):
+                def _load():
+                    self._load_spatial_map(tg)
+                    self._preview_spatial_map(tg, pfig, pcanvas, cap)
+
+                def _clear():
+                    self._clear_spatial_map(tg)
+                    self._preview_spatial_map(tg, pfig, pcanvas, cap)
+
+                def _prev():
+                    self._preview_spatial_map(tg, pfig, pcanvas, cap)
+
+                return _load, _clear, _prev
+
+            on_load, on_clear, on_prev = _mk(target)
+
+            ctk.CTkButton(btns, text=_t('sp_load'), width=92, height=26,
+                          font=ctk.CTkFont(size=10, weight="bold"),
+                          fg_color="#00695C", hover_color="#004D40",
+                          text_color="white", corner_radius=5,
+                          command=on_load).pack(side="left", padx=(0, 6))
+            ctk.CTkButton(btns, text=_t('sp_clear'), width=72, height=26,
+                          font=ctk.CTkFont(size=10),
+                          fg_color="#94A3B8", hover_color="#64748B",
+                          text_color="white", corner_radius=5,
+                          command=on_clear).pack(side="left", padx=(0, 6))
+            ctk.CTkButton(btns, text=_t('sp_preview'), width=88, height=26,
+                          font=ctk.CTkFont(size=10),
+                          fg_color=CLR_BLUE, hover_color="#1D4ED8",
+                          text_color="white", corner_radius=5,
+                          command=on_prev).pack(side="left")
+
+            self._refresh_spatial_row(target)
+
+        # 창을 닫으면 라벨 위젯이 죽는다 — _refresh_spatial_row가 사라진 위젯을
+        # 건드리지 않도록 등록을 해제한다(다음에 열면 다시 채운다).
+        def _on_close():
+            self._spatial_rows = {}
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", _on_close)
+
+        active = active_spatial_maps(DP)
+        if active:
+            self._preview_spatial_map(active[0], pfig, pcanvas, cap)
+        else:
+            cap.configure(text=_t('sp_convention'), text_color=CLR_TEXT_SEC)
+
     def _apply_diode_params(self):
         """Read n1/n2 top/bot and LC coupling from DIODE PARAMS card and apply to DP."""
         try:
@@ -11046,6 +11528,12 @@ class FESTProApp(ctk.CTk):
             hdr_texts = [_t('before'), _t('after'), _t('grid_design'), _t('diode_params')]
             for hdr_lbl, txt in zip(self._card_headers, hdr_texts):
                 hdr_lbl.configure(text=txt)
+        # v28.58: SPATIAL MAPS 카드는 _card_headers 위치 zip에 넣지 않는다 —
+        # 그 zip은 [before, after, grid, diode] 4개 위치에 고정 매핑이라 5번째를
+        # 넣으면 조용히 엇갈린다. 별도 참조로 갱신한다.
+        if getattr(self, '_spatial_card_hdr', None) is not None:
+            self._spatial_card_hdr.configure(text=_t('sp_card'))
+        self._refresh_spatial_summary()
         # v28.52: 형상 계수 노트는 문장형이라 _TR 한 줄로 안 떨어진다 —
         # 언어가 바뀌면 통째로 다시 만든다(스케치 캡션도 같이 갱신됨).
         self._refresh_shape_note()

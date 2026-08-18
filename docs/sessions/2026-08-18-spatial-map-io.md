@@ -212,6 +212,13 @@ cell cross-sectional model. 감사 문서의 "미구현"을 격차로 취급하�
 
 ## 7. 다음
 
+> **후속 (2026-08-18, 원 캡처 PC): 단위 3 보류 · 단위 4 완료.**
+> 아래 계획은 그날 안에 결론이 났다 — `docs/sessions/2026-08-18-spatial-map-gui.md`.
+> 요지: **Griddler 무료판에 공간 분포 입력이 없어(PRO 전용) 대조가 불가능했다.**
+> 규약은 자체 규약으로 확정 선언했고(`docs/spatial_map_convention.md`), 절차서는
+> PRO 확보 대비로 보존했다. 단위 4(GUI)는 v28.58로 완료.
+
+
 **단위 3 (Griddler 대조)** — 혼자 진행할 수 없다. Griddler 2.5에 같은 파일을 넣어
 결과를 봐야 한다. 확인할 것 둘:
 

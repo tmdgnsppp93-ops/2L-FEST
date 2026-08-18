@@ -238,6 +238,29 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 
 **물리 변경: 없음** (입력 경로만 추가). 규모: 중.
 
+> **진행 (2026-08-18): 단위 0~4 완료 (v28.56 ~ v28.58). 남은 것은 단위 5(문서 마무리)뿐.**
+> 계획 `docs/superpowers/plans/2026-08-17-spatial-map-io.md`.
+>
+> | 단위 | 상태 | 결과 |
+> |---|---|---|
+> | 0 특성화 테스트 | ✅ | 30건 — `SpatialMap` 테스트가 저장소에 하나도 없었다 |
+> | 1 캐시 무효화 | ✅ v28.56 | `id()` → 내용 기반 `content_key()` |
+> | 2 txt/csv 로더 | ✅ v28.57 | `load_spatial_map_txt`, 절대값 규약 |
+> | 3 Griddler 대조 | ⏸ **대조 불가 — 보류** | 무료판에 기능 없음(PRO 전용) → **자체 규약 확정** |
+> | 4 GUI 배선 | ✅ v28.58 | SPATIAL MAPS 카드 + 설정 창(4종 불러오기·해제·미리보기) |
+> | 5 문서·버전 마무리 | 미착수 | `pro_feature_map` #6 부분구현 → 구현, 이 §3 항목 완료 이동 |
+>
+> **단위 3이 보류인 이유**: Griddler **무료판에는 공간 분포 입력 자체가 없다**
+> (벤더 비교표 *"txt or TIFF → Free = NO"*, 매뉴얼 §3.1, 무료판 화면에 진입점 없음).
+> 절차서와 시험 행렬은 **지우지 않고 보존**한다 — PRO 확보 시 그대로 재개
+> (`docs/crosscheck/2026-08-18-spatial-map-griddler.md` §7).
+>
+> 대신 규약을 **자체 규약으로 확정 선언**했다 — `docs/spatial_map_convention.md`:
+> `matrix[0] = y=0`(첫 데이터 줄이 아래) · **꼭짓점 정렬**.
+> ⚠ 이것은 "우리 규약을 선언했다"이지 **"Griddler와 일치함을 확인했다"가 아니다** —
+> 발표·보고에 교차검증으로 쓸 수 없다. 향후 대조에서 어긋나면 **보정은 로더 안에서만**
+> 하고 `evaluate()`는 건드리지 않는다.
+
 엔진 쪽은 **이미 다 되어 있다.** `SpatialMap`(`2L_FEST.py:3248`)이 5개 모드
 (`uniform`/`rectangle`/`gaussian`/`checkerboard`/`csv`)를 제공하고, `_spatial_mult`
 (`2L_FEST.py:3838`)를 거쳐 접촉 컨덕턴스·J01/J02/광생성·단일셀 경로에 실제로 곱해진다.
