@@ -925,3 +925,170 @@ def test_base_large_sheet_r_approaches_off(fest, make_bifacial):
     j_off = _cell_current(m, dp)
     dp.Rs_base = 1e12
     assert _cell_current(m, dp) == pytest.approx(j_off, rel=1e-9)
+
+
+# =============================================================================
+# 6. full_area 거부 게이트 (계획 단위 3)
+# =============================================================================
+#
+# `full_area`에서 `Rs_base`는 **결과를 전혀 바꾸지 않는다.** 그 모드의 `_Kr`은
+# `assemble_K(0.001)` 하드코딩이고 `Vr ≡ 0`이라 후면 평면의 면전도를 어떻게
+# 바꿔도 수학적으로 불변이기 때문이다(§4의 실측 4건).
+#
+# 조용히 무시하면 "켰는데 결과가 안 변한다"로 나타난다 — 오류도 경고도 없이.
+# v28.43(n_probe_points=0) · v28.54(extraction_method) · v28.57(로더의 0·음수·
+# NaN)과 같은 판단으로 **거부하고 길을 알려준다.**
+#
+# 게이트는 `_build` 안에 둔다 — 진입점이 solve_tandem(:4787) · 연속법 램프
+# (:4817·:4824) · solve_single(:6343) · :7436으로 흩어져 있는데 전부 `_build`를
+# 거치므로 한 곳이면 충분하다.
+
+
+def test_full_area_rejects_base_lateral(fest, make_mono):
+    """`full_area`는 후면을 이상적 접촉으로 두므로 벌크 횡전도를 표현할 수 없다."""
+    m = make_mono()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError) as exc:
+        _solve(m, dp)
+    msg = str(exc.value)
+    assert "Rs_base" in msg
+    assert "full_area" in msg
+    assert "bifacial" in msg or "patterned" in msg   # 어떻게 하면 되는지
+    assert "None" in msg                              # 끄는 방법
+
+
+def test_full_area_rejects_at_build_not_at_solve(fest, make_mono):
+    """`_build` 진입 시점에 거부한다 — 솔버가 돌기 전에 끝낸다.
+
+    솔브 중간에 터지면 사용자는 무엇이 문제인지 알기 어렵고, 반쯤 조립된
+    상태가 남는다. v28.57 로더가 "값 제약은 읽는 시점에"로 정리한 것과 같다.
+    """
+    m = make_mono()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError):
+        m.S._build(**_build_args(dp))
+
+
+def test_full_area_is_silent_when_base_is_off(fest, make_mono):
+    """`Rs_base`가 None이면 `full_area`도 예전처럼 조용히 잘 돈다."""
+    m = make_mono()
+    assert _cell_current(m, _dp(fest, 100.0)) > 0
+
+
+def test_rejection_leaves_the_solver_usable(fest, make_mono):
+    """거부 후에도 솔버가 멀쩡해야 한다 — 반쯤 적용된 상태가 남지 않는다.
+
+    게이트가 해시를 갱신한 뒤에 있으면 `_cache_hash`만 바뀌고 평면은 옛것인
+    상태가 남는다. 게이트를 조립보다 **먼저** 두는 이유다.
+    """
+    m = make_mono()
+    dp = _dp(fest, 100.0)
+    j_ref = _cell_current(m, dp)
+
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError):
+        _solve(m, dp)
+
+    dp.Rs_base = None
+    assert _cell_current(m, dp) == pytest.approx(j_ref, rel=1e-12)
+
+
+def test_bifacial_accepts_base_lateral(fest, make_bifacial):
+    """`bifacial`은 통과하고, 결과가 실제로 달라진다."""
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    j_off = _cell_current(m, dp)
+    dp.Rs_base = 500.0
+    assert _cell_current(m, dp) != j_off
+
+
+def test_single_mode_bifacial_supports_base(fest, make_bifacial):
+    """단일셀도 `rear_mode`만 맞으면 지원한다.
+
+    β에서는 `_Kr` 하나만 바뀌므로 tandem/single 구분이 무의미하다. 초안이
+    단일셀을 제외한 이유("잔차 지점이 별개")가 사라졌다.
+    """
+    m = make_bifacial()
+    dp = fest.DiodeParams()
+    j_off = _cell_current(m, dp, mode="single")
+    dp.Rs_base = 500.0
+    assert _cell_current(m, dp, mode="single") != j_off
+
+
+def test_single_mode_full_area_rejects_base(fest, make_mono):
+    """단일셀 + full_area도 마찬가지로 거부한다 — 기준은 rear_mode다."""
+    m = make_mono()
+    dp = fest.DiodeParams()
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError):
+        _solve(m, dp, mode="single")
+
+
+@pytest.mark.parametrize(
+    "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
+def test_base_gate_follows_the_rear_plane_not_the_phase(
+        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        expected_branch, ns_fn):
+    """**지원 여부는 `rear_mode`(= `Nrm` 유무)만으로 결정된다.**
+
+    Phase A/B도, tandem/single도 기준이 아니다. 단위 0이 고정한 6개 분기 전부에
+    같은 규칙을 적용해 확인한다 — 초안의 "7곳 중 2곳 지원 + 5곳 거부"가 β에서
+    "후면 평면이 실제인 곳은 전부 지원"으로 단순해졌다는 것의 검증이다.
+    """
+    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    m = geo_factory[geo]()
+    _, _, Nrm = _plane_sizes(m)
+    dp = _dp(fest, rs_j)
+    dp.Rs_base = 500.0
+
+    if Nrm > 0:
+        _solve(m, dp, mode=mode)                 # 통과해야 한다
+    else:
+        with pytest.raises(ValueError) as exc:
+            _solve(m, dp, mode=mode)
+        assert "Rs_base" in str(exc.value)
+
+
+def test_gate_and_rear_assembly_share_one_condition(fest, make_mono,
+                                                    make_bifacial):
+    """게이트와 후면 조립 분기가 **같은 조건**을 봐야 한다.
+
+    조건을 두 곳에 따로 쓰면 나중에 한쪽만 바뀌어 어긋난다 — 그러면 게이트를
+    통과했는데 이상적 접촉 평면이 조립되는(=조용히 무효) 상태가 다시 생긴다.
+
+    확인 방법: 거부되는 설정에서는 후면 평면이 `assemble_K(0.001)`(이상적
+    접촉)이고, 통과하는 설정에서는 그렇지 않다.
+    """
+    m_fa = make_mono()
+    m_fa.S._build(**_build_args(_dp(fest, 100.0)))
+    K_ideal, _ = fest.assemble_K(m_fa.pts, m_fa.S.simp, 0.001, m_fa.S.areas,
+                                 m_fa.S.b, m_fa.S.c)
+    assert np.array_equal(m_fa.S._Kr.toarray(), K_ideal.toarray()), (
+        "거부 대상인 full_area의 후면이 이상적 접촉이 아니다 — 게이트 근거가 "
+        "무너졌다")
+
+    m_bf = make_bifacial()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    m_bf.S._build(**_build_args(dp))
+    K_ideal_bf, _ = fest.assemble_K(m_bf.pts, m_bf.S.simp, 0.001, m_bf.S.areas,
+                                    m_bf.S.b, m_bf.S.c)
+    assert not np.array_equal(m_bf.S._Kr.toarray(), K_ideal_bf.toarray())
+
+
+def test_rejection_message_names_the_actual_rear_mode(fest, make_mono):
+    """오류 메시지가 **현재 rear_mode를 그대로** 알려준다.
+
+    "지원하지 않는다"만 적으면 사용자는 자기 설정이 무엇인지 모른 채 추측하게
+    된다. v28.57 로더가 파일명·행·열·값을 적은 것과 같은 이유다.
+    """
+    m = make_mono()
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError) as exc:
+        _solve(m, dp)
+    msg = str(exc.value)
+    assert repr(m.S.geo.rear_mode) in msg or str(m.S.geo.rear_mode) in msg
+    assert "500" in msg          # 사용자가 넣은 값

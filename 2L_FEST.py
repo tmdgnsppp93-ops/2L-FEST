@@ -590,6 +590,32 @@ v28.59: [feat] 벌크 횡전도(base lateral transport) — DiodeParams.Rs_base 
          규약·근거·한계: docs/base_lateral_convention.md
          계획: docs/superpowers/plans/2026-08-18-base-lateral-transport.md
          테스트: tests/test_base_lateral.py 29 → 53.
+v28.60: [fix] 벌크 횡전도 — full_area 거부 게이트 (조용한 무효 제거).
+         v28.59 종료 시점에 full_area + Rs_base가 오류도 경고도 없이 아무 효과가
+         없었다. 그 모드의 _Kr은 assemble_K(0.001) 하드코딩이고 실측 V_rear ≡ 0
+         (span 0.000e+00)이라 후면 평면의 면전도를 어떻게 바꿔도 결과가
+         수학적으로 불변이다(K_r @ 0 = 0). "켰는데 결과가 안 변한다"로 나타나는
+         이 형태는 저장소가 반복해서 거부해 온 것이다(v28.43 n_probe_points=0 ·
+         v28.54 extraction_method · v28.57 로더). ValueError로 거부하고 어떻게
+         하면 되는지(rear_mode를 bifacial/patterned로) 함께 알린다.
+         물리적으로도 앞뒤가 맞는다 — 전면적 후면 금속 접촉이면 다수캐리어의
+         횡방향 이동 거리가 웨이퍼 두께뿐이라 벌크 횡전도가 의미를 갖지 않는다.
+         게이트는 _build 안 한 곳에 둔다. 진입점이 solve_tandem · 연속법 램프 ·
+         solve_single 등으로 흩어져 있지만 전부 _build를 거친다. 위치는 값 검증
+         바로 뒤, **해시·조립보다 먼저** — 뒤에 두면 해시만 갱신되고 평면은
+         옛것인 상태가 남는다.
+         [refactor] 후면 조립 분기 조건을 _rear_is_a_plane boolean 하나로 모아
+         게이트와 조립이 **같은 조건**을 보게 했다. 따로 쓰면 나중에 한쪽만
+         바뀌어 "게이트는 통과했는데 이상적 접촉이 조립되는" 조용한 무효가
+         되살아난다. test_gate_and_rear_assembly_share_one_condition이 감시한다.
+         지원 여부의 유일한 기준은 **rear_mode**다 — Phase A/B도 tandem/single도
+         아니다. 단위 0이 고정한 6개 분기 전부에 같은 규칙을 적용해 확인한다
+         (test_base_gate_follows_the_rear_plane_not_the_phase). 초안의 "7곳 중
+         2곳 지원 + 5곳 거부"가 β에서 "후면 평면이 실제인 곳은 전부 지원"으로
+         단순해졌다.
+         단일셀도 rear_mode만 맞으면 지원한다 — β에서는 _Kr 하나만 바뀌므로
+         tandem/single 구분이 무의미하다.
+         테스트: tests/test_base_lateral.py 53 → 68.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -689,7 +715,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.59",
+    "version": "v28.60",
     "date": "2026-08-18",
 }
 _BUILD_SHA_CACHE = None
@@ -4367,6 +4393,10 @@ class FESTSolver:
         # **값 제약을 해시·조기 반환보다 먼저 끝낸다.** 검증이 뒤에 있으면 같은
         # 파라미터로 두 번째 호출할 때 잘못된 값이 캐시 적중으로 조용히 통과한다
         # (v28.57 로더가 "값 제약은 읽는 시점에"로 정리한 것과 같은 이유).
+        # 후면이 **실제 횡전도 평면**인가. 아래 조립 분기(`if _rear_is_a_plane:`)와
+        # 벌크 게이트가 반드시 같은 조건을 봐야 한다.
+        _rear_is_a_plane = (self.geo.rear_mode in ('bifacial', 'patterned')
+                            and self.isrm is not None)
         Rs_base = dp.Rs_base
         if Rs_base is not None:
             try:
@@ -4381,6 +4411,26 @@ class FESTSolver:
                     f"(받은 값 {Rs_base!r}). 0은 무한 컨덕턴스라 물리적으로 "
                     f"성립하지 않고 강성 계수 1/(4·A·Rs)가 0으로 나눈다. "
                     f"끄려면 None으로 둘 것.")
+            if not _rear_is_a_plane:
+                # full_area는 후면을 **이상적 접촉**으로 둔다 — _Kr이
+                # assemble_K(0.001) 하드코딩이고 실측 V_rear ≡ 0(span 0.000e+00)
+                # 이라, 후면 평면의 면전도를 어떻게 바꿔도 결과가 수학적으로
+                # 불변이다(K_r @ 0 = 0). 즉 Rs_base를 받아도 **조용히 아무 효과가
+                # 없다** — 이 저장소가 반복해서 거부해 온 실패 형태다
+                # (v28.43 n_probe_points=0 · v28.54 extraction_method ·
+                #  v28.57 로더). 거부하고 길을 알려준다.
+                # 물리적으로도 앞뒤가 맞는다: 전면적 후면 금속 접촉이면
+                # 다수캐리어의 횡방향 이동 거리가 웨이퍼 두께뿐이라 벌크 횡전도가
+                # 의미를 갖지 않는다.
+                raise ValueError(
+                    f"벌크 횡전도(Rs_base={Rs_base} Ω/sq)는 "
+                    f"rear_mode={self.geo.rear_mode!r}에서 표현할 수 없다. "
+                    f"full_area는 후면을 이상적 접촉(0.001 Ω/sq, V_rear ≡ 0)으로 "
+                    f"두므로 후면 평면의 면전도를 바꿔도 결과가 수학적으로 "
+                    f"변하지 않는다 — 값을 받아도 조용히 아무 효과가 없다. "
+                    f"rear_mode를 'bifacial'/'patterned'로 두거나 "
+                    f"Rs_base=None으로 끌 것 "
+                    f"(docs/base_lateral_convention.md §3-4).")
         # Interlayer lateral sheet R (Phase B) — affects K_int matrix
         # Phase 1 (v28.33): unless the legacy local-matching flag is set, clamp
         # Rs_j ≤ 0 to RS_JUNCTION_MIN so _K_junc is always built (Phase B). Applied
@@ -4421,7 +4471,7 @@ class FESTSolver:
             self.pts, self.simp, Rs_front, self.areas, self.b, self.c)
 
         # ===== REAR PLANE STIFFNESS =====
-        if self.geo.rear_mode in ('bifacial', 'patterned') and self.isrm is not None:
+        if _rear_is_a_plane:
             # 2-LAYER REAR (mirrors front):
             #   L3 (V_rear_emitter): rear TCO sheet R = dp.Rs_rear_tco (~50 Ω/sq IZO)
             #   L4 (V_rear_metal):   rear metal grid, same paste/Rs as front
