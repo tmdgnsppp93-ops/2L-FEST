@@ -43,6 +43,7 @@
 import os
 import sys
 
+import numpy as np
 import pytest
 import scipy.sparse.linalg as _sla
 
@@ -396,3 +397,167 @@ def test_rs_vert_bot_is_a_post_hoc_lumped_correction(fest, make_mono,
     assert ns_zero == ns_set, (
         "Rs_vert_bot이 Ns를 바꾼다면 FEM 안에 들어와 있다는 뜻이고, "
         "계획 §설계 결정 3의 전제가 무너진다")
+
+
+# =============================================================================
+# 4. β 토폴로지의 전제 (계획 단위 1 — docs/base_lateral_convention.md §3)
+# =============================================================================
+#
+# 규약 문서 §3의 숫자는 **설계의 근거**다. 벌크 횡전도를 "기존 후면 평면의
+# 면전도에 병렬로 더한다"로 구현하기로 한 것이 전부 아래 성질에 기대고 있다:
+#
+#   ① assemble_K가 1/Rs에 선형   → 병렬 합성 = 두 평면을 더한 것
+#   ② sparsity pattern이 Rs와 무관 → Ns·SuperLU 열 순열 불변 = 분기 수술 불필요
+#   ③ full_area의 Vr ≡ 0          → 후면 평면을 바꿔도 결과 불변 = 거부 대상
+#   ④ bifacial의 Vr에 실제 강하    → 벌크 전도가 의미를 갖는 유일한 모드
+#
+# 코드가 바뀌어 이 숫자가 달라지면 규약이 무효가 되는데, 문서만으로는 알 수 없다.
+# 여기서 묶어 둔다.
+
+def test_assemble_K_is_linear_in_sheet_conductance(fest, make_mono):
+    """β의 수학적 근거 — 병렬 합성 = 행렬 덧셈.
+
+    `assemble_K`의 `coeff = 1/(4·A·Rs)`(2L_FEST.py:2649)가 1/Rs에 선형이라
+    성립한다. 이것이 깨지면 "유효 면저항을 한 번 계산"이 "두 평면을 더한 것"과
+    달라져 규약 §1-4가 무효가 된다.
+
+    ⚠ **비트 동일은 아니다**(실측 상대 3.5e-16). 그래서 구현은 반드시
+    "유효 면저항 계산 후 assemble_K 한 번"이어야 하고, 행렬 덧셈이면 안 된다 —
+    off 경로의 비트 동일이 깨진다.
+    """
+    m = make_mono()
+    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    Kp, _ = fest.assemble_K(m.pts, m.S.simp, 1.0 / (1 / 50.0 + 1 / 500.0),
+                            m.S.areas, m.S.b, m.S.c)
+    d = abs((Ka + Kb).tocsr() - Kp)
+    rel = (d.max() if d.nnz else 0.0) / abs(Kp).max()
+    assert rel < 1e-14, f"선형성이 깨졌다 (상대 {rel:.3e})"
+
+
+def test_assemble_K_sparsity_is_independent_of_sheet_resistance(fest, make_mono):
+    """β의 구조적 근거 — 패턴이 같아야 Ns와 SuperLU 열 순열이 같다.
+
+    면저항 값만 바꾸면 같은 메시에서 나온 행렬이므로 패턴이 같다. 이것이
+    "미지 벡터 불변 → 7개 잔차 분기를 손댈 필요 없음"의 근거다.
+    """
+    m = make_mono()
+    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    assert Ka.shape == Kb.shape
+    assert Ka.nnz == Kb.nnz
+    assert np.array_equal(Ka.indices, Kb.indices)
+    assert np.array_equal(Ka.indptr, Kb.indptr)
+
+
+def test_full_area_rear_plane_is_an_ideal_equipotential(fest, make_mono):
+    """`full_area`를 거부하는 근거 — 후면이 완전 등전위다.
+
+    `full_area`의 `_Kr`은 `assemble_K(Rs=0.001)` 하드코딩이고
+    (2L_FEST.py:4389-4390, `dp.Rs_rear_tco`를 무시한다) 그 결과 `Vr ≡ 0`이다.
+    `K_r @ 0 = 0`이므로 후면 평면의 면전도를 어떻게 바꿔도 결과가 수학적으로
+    변하지 않는다.
+
+    이 성질이 깨지면(후면을 실제 면저항으로 바꾸면) `full_area`도 지원 대상이
+    되므로 규약 §3-4의 거부 판정을 다시 해야 한다.
+    """
+    m = make_mono()
+    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    assert float(Vr.max() - Vr.min()) == 0.0, (
+        f"full_area의 Vr에 전압강하가 생겼다 "
+        f"(span={float(Vr.max() - Vr.min()):.3e} V)")
+
+
+def test_full_area_result_is_insensitive_to_rear_plane(fest, make_mono):
+    """위 성질의 직접 확인 — `_Kr`을 2배로 해도 전류가 **비트 동일**하다.
+
+    `_build`는 `_cache_hash`가 같으면 조기 반환하므로, 여기서 평면을 직접 바꾸면
+    다음 solve가 그 값을 그대로 쓴다. 벌크 횡전도 구현이 하려는 조작(후면 평면의
+    면전도 변경)을 미리 흉내 낸 것이다.
+    """
+    m = make_mono()
+    dp = _dp(fest, 100.0)
+    j0 = _cell_current(m, dp)
+    m.S._Kr = (m.S._Kr * 2.0).tocsr()      # 시트 컨덕턴스 2배 = Rs 절반
+    assert _cell_current(m, dp) == j0
+
+
+def test_bifacial_rear_plane_carries_a_real_lateral_drop(fest, make_bifacial):
+    """`bifacial`은 반대다 — `Vr`에 실제 전압강하가 있다.
+
+    그래서 벌크 횡전도가 의미를 갖는 유일한 모드이고, 지원 범위가
+    `rear_mode ∈ {bifacial, patterned}`로 정해진다(규약 §1-5).
+    """
+    m = make_bifacial()
+    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    assert float(Vr.max() - Vr.min()) > 1e-3
+
+
+def test_bifacial_result_responds_to_rear_plane(fest, make_bifacial):
+    """`bifacial`에서는 `_Kr` 변경이 전류를 실제로 바꾼다 — 벌크 항이 닿는 곳."""
+    m = make_bifacial()
+    dp = _dp(fest, 100.0)
+    j0 = _cell_current(m, dp)
+    m.S._Kr = (m.S._Kr * 2.0).tocsr()
+    assert _cell_current(m, dp) != j0
+
+
+def test_rear_tco_feeds_only_the_rear_plane(fest, make_bifacial):
+    """`Rs_rear_tco`가 **후면 평면 조립에만** 쓰이는지 확인한다.
+
+    벌크를 이 값과 **병렬 합성**해 `assemble_K` 인자로 넣기로 한 근거다. 만약
+    `Rs_rear_tco`가 다른 강성행렬에도 새어 들어간다면, 합성값을 그쪽에도 흘리게
+    되므로 구현 위치를 다시 정해야 한다.
+
+    솔브를 거치지 않고 **조립된 행렬을 직접 비교**한다 — 솔브를 태우면 연속법
+    램프·warm-start가 끼어들어 무엇이 원인인지 흐려진다
+    (test_hand_patched_plane_is_discarded_without_warmup 참조).
+    """
+    m1, m2 = make_bifacial(), make_bifacial()
+    dp1 = _dp(fest, 100.0)
+    dp2 = _dp(fest, 100.0)
+    dp2.Rs_rear_tco = 1.0 / (1.0 / dp2.Rs_rear_tco + 1.0 / 500.0)
+
+    m1.S._build(**_build_args(dp1))
+    m2.S._build(**_build_args(dp2))
+
+    # 후면 평면은 달라야 한다 (그래야 이 비교가 의미 있다)
+    assert not np.array_equal(m1.S._Kr.toarray(), m2.S._Kr.toarray())
+
+    # 나머지는 전부 같아야 한다 — Rs_rear_tco가 새지 않는다는 뜻
+    for attr in ("_Ke", "_Krm", "_Km", "_K_junc"):
+        a, b = getattr(m1.S, attr), getattr(m2.S, attr)
+        assert np.array_equal(a.toarray(), b.toarray()), (
+            f"{attr}가 Rs_rear_tco에 반응한다 — 벌크 합성이 그쪽에도 흘러간다")
+    assert np.array_equal(m1.S._Gc, m2.S._Gc)
+    assert np.array_equal(m1.S._Gc_rear, m2.S._Gc_rear)
+
+
+def test_hand_patched_plane_is_discarded_without_warmup(fest, make_bifacial):
+    """⚠ **평면을 손으로 갈아 끼울 때의 함정** — 연속법 램프가 재빌드한다.
+
+    `Rs_junction > 50`이면 `solve_tandem`이 `[50, 200, 1000, 5000, target]`으로
+    램프하며 **각 단계마다 `_build`를 부른다**(`2L_FEST.py:4713-4726`). 그 호출은
+    `Rs_junction`이 달라 캐시 해시가 어긋나므로 **전체 재빌드**가 일어나고, 손으로
+    넣은 `_Kr`이 버려진다.
+
+    warm-start 캐시(`_warm_V_junc_bf`)가 있으면 램프를 통째로 건너뛰므로(`:4713`)
+    살아남는다.
+
+    이 파일과 이후 단위가 평면을 직접 조작하는 테스트를 쓸 때 **반드시 warm-up
+    solve를 먼저** 해야 하는 이유다. 모르고 쓰면 "평면을 바꿨는데 결과가 안
+    변한다"를 모델 성질로 오해하게 된다 — 실제로 이 파일을 쓰다 한 번 겪었다.
+    """
+    def _patch_and_solve(warmup):
+        m = make_bifacial()
+        dp = _dp(fest, 100.0)
+        m.S._build(**_build_args(dp))
+        if warmup:
+            _solve(m, dp)                       # warm-start 캐시를 채운다
+        before = m.S._Kr.copy()
+        m.S._Kr = (m.S._Kr * 2.0).tocsr()
+        _solve(m, dp)
+        return not np.array_equal(m.S._Kr.toarray(), before.toarray())
+
+    assert _patch_and_solve(warmup=False) is False, "램프가 재빌드하지 않았다"
+    assert _patch_and_solve(warmup=True) is True, "warm 경로가 램프를 건너뛰지 않았다"
