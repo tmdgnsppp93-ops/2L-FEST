@@ -3,6 +3,17 @@
 > **성격**: 읽기 전용 감사. 코드 수정 없음, 신규 테스트 실행 없음.
 > **작성**: 2026-08-14
 
+## 개정 이력
+
+이 문서는 특정 시점의 감사 기록이므로 원칙적으로 고치지 않는다. 판정이 실제로
+바뀐 경우에만, **원 판정을 지우지 않고** 개정 줄을 남긴 뒤 갱신한다.
+
+| 개정 | 항목 | 변경 | 근거 |
+|---|---|---|---|
+| 2026-08-18 (`48ce20f`, v28.58) | **#6** 비균일 공간 분포 입력 | **부분구현 → 구현** (단, 자체 규약 — 아래 §#6 참조) | txt/csv 로더(v28.57) + GUI 배선(v28.58). 계획 `docs/superpowers/plans/2026-08-17-spatial-map-io.md` 단위 0~4 |
+
+원 판정(2026-08-14 시점)은 §부분구현 상세 #6에 **그대로 보존**했다.
+
 ## 감사 환경
 
 | 항목 | 값 |
@@ -26,20 +37,71 @@
 | 3 | PC1D 에미터 계산 연동 (또는 대체 J0e 계산) | **미구현** | `PC1D`/`pc1d`/`EDNA`/`J0e` 전문 검색 **0건** | 대체 계산기도 없음 |
 | 4 | Batch 실행 — 여러 케이스 연속 실행 | **완전구현** | `front_electrode/optimizer.py:66` `_sweep`, `:124` `optimize_grid`, `front_electrode/roadmap.py:330` `run_roadmap`, `scripts/optimize_m10.py:205` `run_busbars` | append+flush, `--resume`(`optimize_m10.py:212`), 병렬(`:290` `imap_unordered`) |
 | 5 | 스크립트 실행 — 외부 파일로 케이스 정의 | **완전구현** | `front_electrode/roadmap.py:173` `load_scenario`, `:186` `expand_cases`, `scripts/scenarios/unist_tco.json`, `scripts/run_roadmap.py` CLI | JSON 시나리오 → 누적 전개 → CSV. `optimize_m10.py:27` argparse CLI 병행 |
-| 6 | 비균일 공간 분포 입력 — txt/이미지에서 2D 맵 로드 | **부분구현** | 배선: `2L_FEST.py:3220` `SpatialMap`, `:3810` `_spatial_mult`, 소비 `:4000`(rc) `:4340-4342`(j01/j02/gen) `:5839-5840` | 비고 B |
+| 6 | 비균일 공간 분포 입력 — txt/이미지에서 2D 맵 로드 | **구현 (txt/csv, 자체 규약)** | 로더 `load_spatial_map_txt`, GUI `_open_spatial_maps`, 배선 `SpatialMap` / `_spatial_mult` / 소비 4곳 | §#6 상세 (2026-08-18 개정) |
 | 7 | Metallization optimization — grid 설계 변수 스윕 | **완전구현 (7축)** | `front_electrode/optimizer.py:124-166` | 축 목록은 비고 C |
 | 8 | Base lateral transport — bulk 내 횡방향 캐리어 전류 | **미구현** | 평면 인벤토리 `2L_FEST.py:3693-3702`: `_Ke`(front TCO) / `_Kr`(rear emitter) / `_Krm`(rear metal) / `_Km`(front metal) / `_K_junc`(interlayer). **bulk 평면 없음** | 횡전도는 표면·금속·interlayer 평면에만 존재 |
 | 9 | Capacitive effects — I-V 스윕 속도 의존 과도 효과 | **미구현** | `capacit`/`transient`/`sweep_rate`/`dV/dt` 전문 검색 **0건** | 정상상태 전용 |
 | 10 | Metal optical transparency | **완전구현 (신규)** | `2L_FEST.py:971-984`(파라미터·검증), `:1067-1068`(`optical_widths`), `:1347-1359`(`optical_shading_fraction`), `:4029`(`_sh_case`), `:6964`(`shade_frac`) | 비고 D. audit_2026-08-13 시점의 "미구현"에서 변경됨 |
 | 11 | Tandem non-overlap 영역 Jsc 별도 입력 | **미구현** | `non-overlap`/`nonoverlap`/`top_area`/`overlap_frac` 전문 검색 **0건** | audit_2026-08-13 이후 **변경 없음** |
 
-**완전구현 6 / 부분구현 1 / 미구현 4 / 미확인 0**
+**완전구현 6 / 구현 1 / 미구현 4 / 미확인 0**
+
+> 2026-08-18 개정 반영. 원 집계(2026-08-14)는 **완전구현 6 / 부분구현 1 / 미구현 4**였고, 바뀐 것은 #6 하나다 — 그것도 **규약 일치는 미확인**인 자체 규약 구현이다(§#6 상세).
 
 ---
 
 ## 부분구현 상세
 
+> 2026-08-18: #6은 **구현**으로 개정됐다. 절 제목은 원 감사 구조를 보존하려고 그대로 둔다.
+
 ### #6 비균일 공간 분포
+
+> **2026-08-18 개정 — 부분구현 → 구현 (txt/csv).** 아래 "안 되는 것"으로 적힌 격차는
+> 해소됐다. **원 판정은 지우지 않고 그대로 둔다** — 감사 기록이기 때문이다.
+>
+> **해소된 것**: 파일 입력 경로가 생겼다. `load_spatial_map_txt(path, delimiter=None)`
+> 가 txt/csv 2D 행렬을 `SpatialMap(mode='csv')`로 만들고(v28.57), GUI의 SPATIAL MAPS
+> 카드 → 설정 창에서 4종(`j01`/`j02`/`gen`/`rc`) 각각 불러오기·해제·미리보기를
+> 제공한다(v28.58). 값 제약(0·음수·비유한)은 **로드 시점에** 파일·행·열·값을 적어
+> 거부한다. 회귀 `tests/test_spatial_map.py` 111건.
+>
+> ---
+>
+> ### ⚠ "Griddler와 동일한 구현"이 아니라 **"동일 목적의 자체 규약 구현"**이다
+>
+> 이 구분이 이 항목에서 가장 중요하다. **파일 규약의 일치는 대조하지 못해 미확인
+> 상태다.**
+>
+> 대조 계획(단위 3)은 같은 4×4 행렬을 양쪽에 넣어 **격자 정렬**(꼭짓점 vs 픽셀 중심)과
+> **행 방향**(첫 줄이 y=0인가 y=H인가)을 확인하는 것이었다. **수행할 수 없었다 —
+> Griddler 무료판에 공간 분포 입력 기능 자체가 없다(PRO 전용).** 벤더 비교표
+> *"Input spatial property distributions as txt or TIFF" → Free = NO*, 매뉴얼 §3.1도
+> PRO 기능으로 기술하며, 무료판 화면에 진입점이 없다.
+>
+> 그래서 규약을 **자체 규약으로 확정 선언**했다 — `docs/spatial_map_convention.md`:
+>
+> | 규약 | 2L-FEST 확정값 | Griddler와 같은가 |
+> |---|---|---|
+> | 행 방향 | `matrix[0]` = `y=0` (첫 데이터 줄이 아래) | **미확인** |
+> | 격자 정렬 | 꼭짓점 정렬 `linspace(0,H,ny)` | **미확인** |
+> | 값 해석 | 절대값(정규화 없음) | 매뉴얼 §3.1 기준 동일할 것으로 보이나 **미확인** |
+>
+> 따라서 이 항목의 "구현"은 **기능적 대응(같은 목적을 같은 입력 형식으로 달성)**을
+> 뜻하며, **호환(같은 파일이 양쪽에서 같은 결과)을 뜻하지 않는다.** 같은 파일을 두
+> 도구에 넣었을 때 결과가 일치한다는 주장은 **하지 않는다** — 발표·보고에서
+> 교차검증으로 인용해서도 안 된다.
+>
+> 대조 절차·시험 행렬·기대값 8점은 PRO 확보 대비로 보존해 두었고
+> (`docs/crosscheck/2026-08-18-spatial-map-griddler.md`, 재개 절차 §7), 그 기대값은
+> 테스트로 고정되어 있다. 대조 결과가 규약과 어긋나면 **보정은 로더 안에서만** 하며
+> `SpatialMap.evaluate()`는 건드리지 않는다 — 그래야 회귀 감시 기준이 함께 움직이지
+> 않는다.
+>
+> **남은 격차 1건**: 이미지 입력(jpg/tif/bmp). 규약이 반대라(상대값, 평균 1 정규화)
+> 별도 함수로 두기로 했고, Pillow 의존성이 등록 자료의 구성요소 기재와 얽혀 저작권
+> 등록 이후로 미뤘다(계획 2단계).
+
+**원 판정 (2026-08-14, 보존)**
 
 - **되는 것**: 공간 맵이 솔버에 실제로 반영된다. `SpatialMap.evaluate()`가 노드 좌표에서 배율을 만들고(`3249`), `_spatial_mult`(`3810`)를 거쳐 접촉 컨덕턴스(`4000`), J01/J02/광생성(`4340-4342`), 단일셀 경로(`5839-5840`)에 곱해진다. 모드 5종: `uniform` / `rectangle` / `gaussian` / `checkerboard` / `csv`(2D 행렬 직접 주입).
 - **안 되는 것**: **파일에서 읽어 들이는 경로가 없다.** `np.loadtxt`·`imread` 전문 검색 0건이고, `2L_FEST.py` 안에서 `SpatialMap(`을 생성하는 코드가 **한 줄도 없다**(생성 사례는 `_audit.py:135-145` 스모크 스크립트뿐). 즉 사용자는 GUI·CLI 어디로도 맵을 넣을 수 없고, Python으로 직접 객체를 만들어 `DiodeParams`에 꽂아야 한다. Griddler의 txt/jpg/tif/bmp import에 대응하는 기능은 없다.
