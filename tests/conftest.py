@@ -48,6 +48,20 @@ def pytest_configure(config):
 # 그래서 스택이 다르면 xfail(strict=False)로 낮추되 **이유를 명시**한다.
 # 핀 스택에서는 그대로 strict fail이므로 회귀 감시 능력은 유지된다.
 # 새 스택으로 옮겨 값을 다시 캡처했다면 PINNED_STACK을 갱신할 것.
+#
+# ⚠ **아래 3종은 비트 재현의 필요조건이지 충분조건이 아니다.** (2026-08-17 실증)
+#   맥북(aarch64/darwin)에서 python·numpy·scipy를 아래 값과 완전히 일치시킨 venv를
+#   만들어 게이트를 통과시켰는데도 핀 2건이 값 불일치로 실패했다.
+#     test_default_pin PINS[1]  상대 1.70e-7      (PINS[0] Vb=0은 통과)
+#     test_legacy_pin  PINS[1]  상대 9.75e-7      (PINS[0] Vb=0은 통과)
+#   원인은 **이 dict가 기록하지 않는 두 축**이었다 (2026-08-18 규명):
+#     · 아키텍처   원 캡처 x86-64(AMD64)  vs  맥북 aarch64  — 벡터화·FMA가 다름
+#     · numpy BLAS 원 캡처 scipy-openblas 0.3.31.dev  vs  맥북 Apple Accelerate
+#   둘 다 부동소수점 누적 순서를 바꾸므로 상대 1e-7~1e-6이 뜨는 것이 정상이다.
+#
+#   원 캡처 머신 전체 환경과 맥북 대조표는 docs/WORKLOG.md §1-1-a에 있다.
+#   **핀을 재캡처할 때는 OS·아키텍처·numpy/scipy BLAS 백엔드까지 함께 기록할 것.**
+#   버전 3종만 적으면 다음 사람이 같은 실험을 반복하게 된다(실제로 반복됐다).
 PINNED_STACK = {"python": "3.14.3", "numpy": "2.4.3", "scipy": "1.17.1"}
 
 

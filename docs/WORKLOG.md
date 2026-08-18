@@ -70,12 +70,43 @@ venv        ~/.venvs/2lfest-pin        (저장소 밖, 소스 빌드 아님)
 OS·BLAS/LAPACK 구현·SuperLU 빌드가 **기록되지 않는 축**으로 남아 있고, 버전만
 맞춰서는 1e-8 비트 동일이 성립하지 않는다.
 
-> ⚠ **원 캡처 머신 정보가 저장소에 없다.** v28.46 커밋 메시지도 버전 3종만 적었다.
-> **다음에 핀을 재캡처할 때는 OS·아키텍처·BLAS 백엔드(`numpy.show_config`)·
-> scipy BLAS까지 반드시 함께 기록할 것.** 그러지 않으면 이 실험을 또 반복하게 된다.
-
 이번 실험에서 `PINNED_STACK`·`conftest.py`·핀 값은 **일절 수정하지 않았고**
 기준값 재캡처도 하지 않았다. venv는 저장소 밖에 있어 `git status`에 잡히지 않는다.
+
+### 1-1-a. 원 캡처 머신 환경 (2026-08-18 기록) — 편차 원인 규명됨
+
+> 위 실험 시점에는 "원 캡처 머신 정보가 저장소에 없어" 원인을 특정하지 못했다.
+> **2026-08-18 KIST PC에서 직접 수집해 아래에 기록했고, 그 결과 원인이 규명됐다.**
+
+| 항목 | 원 캡처 PC (KIST) | 맥북 |
+|---|---|---|
+| OS | `Windows-11-10.0.26100-SP0` | darwin |
+| 아키텍처 | **x86-64** (`AMD64`)<br>Intel64 Family 6 Model 151 Stepping 5 | **aarch64** |
+| Python | `3.14.3` (`tags/v3.14.3:323c59a`, MSC v.1944 64-bit, 2026-02-03 빌드) | `3.14.3` (재현 venv) |
+| numpy | `2.4.3` | `2.4.3` (재현 venv) |
+| scipy | `1.17.1` | `1.17.1` (재현 venv) |
+| **numpy BLAS/LAPACK** | **scipy-openblas 0.3.31.dev** (detection: pkgconfig) | **Apple Accelerate** (detection: system) |
+| **scipy BLAS/LAPACK** | scipy-openblas 0.3.30 | 번들 OpenBLAS |
+
+**규명된 원인: 버전 3종은 같았지만 아키텍처와 BLAS 구현이 달랐다.**
+맥북 재현 venv는 python·numpy·scipy 버전을 완전히 맞췄으므로 `stack_mismatch()`가
+`None`이 되어 strict로 돌았지만, 실제로는
+
+1. **x86-64 ↔ aarch64** — 벡터화 폭과 FMA 사용이 다르다
+2. **scipy-openblas ↔ Apple Accelerate** — numpy의 BLAS 구현 자체가 다르다
+
+두 축이 남아 있었다. 이 둘은 부동소수점 **누적 순서**를 바꾸므로 상대 1e-7~1e-6
+편차가 나오는 것이 정상이며, 실측 편차(1.70e-7 / 9.75e-7)가 정확히 그 크기다.
+`Vb=0`만 통과한 것도 앞뒤가 맞는다 — 반복이 짧아 차이가 누적될 여지가 적다.
+
+> **재캡처 시 반드시 함께 기록할 것**: OS·아키텍처·`numpy.show_config('dicts')`의
+> BLAS/LAPACK name·scipy `__config__`의 BLAS name. 버전 3종만으로는 부족하다는 것이
+> 위 실험으로 실증됐다.
+>
+> 수집 명령: `python -c "import platform,numpy,scipy; print(platform.platform(), platform.machine()); print(numpy.show_config('dicts')['Build Dependencies']); print(scipy.__config__.show('dicts')['Build Dependencies'])"`
+
+**`PINNED_STACK` 값 자체는 이 기록으로 바뀌지 않았다.** 게이트는 여전히 버전 3종만
+비교하며, 이 표는 "게이트를 통과해도 머신이 다르면 핀이 깨질 수 있다"는 사실의 근거다.
 
 ### 1-2. 머신 분담
 
