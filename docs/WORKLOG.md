@@ -360,44 +360,54 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 
 ---
 
-## ▶ 다음 착수 지점 (2026-08-19 기준)
+## ▶ 다음 착수 지점 (2026-08-19 야간 기준)
 
 > **여기서부터 이어서 하면 된다.**
 
-**착수 대상: 우선순위 0 — 공간 분포 맵 분기 커버리지 수정, `단위 1`.**
-**단위 0은 2026-08-19에 완료됐다.**
+**착수 대상: 우선순위 0 — 공간 분포 맵 분기 커버리지 수정, `단위 2` (문서 마무리).**
+**단위 0·1은 2026-08-19에 완료됐다.**
 
 | 항목 | 값 |
 |---|---|
 | 계획서 | `docs/superpowers/plans/2026-08-18-spatial-map-branch-coverage.md` |
-| 시작 단위 | **단위 1 (헬퍼 도입 + 배선)** |
-| 세션 기록 | `docs/sessions/2026-08-19-spatial-branch-coverage-unit0.md` |
-| 판정 기준 | `tests/test_spatial_branch_coverage.py` — 97건 (65 passed / 32 xfailed) |
-| 완료 조건 | `RESIDUAL_SEES_MAP`의 `False` **12개를 전부 `True`로** 바꾸고 그 파일이 초록불 |
+| 시작 단위 | **단위 2 (핀 확인 + 문서 갱신)** |
+| 세션 기록 | 단위 0 `…-unit0.md` · 단위 1 `…-unit1.md` |
+| 판정 기준 | `tests/test_spatial_branch_coverage.py` — **97 passed · 0 xfailed** |
+| 현재 버전 | **v28.61** |
 
-### 단위 1을 시작하기 전에 반드시 읽을 것 — 계획서 전제가 네 개 틀렸다
+### 단위 2에 남은 일 — 전부 문서다
 
-단위 0이 실측으로 정정한 것들이다. 계획서 §1의 설계는 유효하지만 **범위가 넓어졌다.**
+물리·코드 검증은 단위 1에서 끝났다(비트 핀 strict 통과, Phase A 5조합 비트 동일).
+남은 것은 **낡은 문서를 실제 상태로 맞추는 것**이다.
 
-| # | 계획서 | 실제 (2026-08-19 실측) |
+| 대상 | 지금 상태 | 해야 할 것 |
 |---|---|---|
-| 1 | 결함 분기 **4개** | **5개** — `_solve_single_bifacial`(`:6513`) 추가 |
-| 2 | 소비 지점 **9곳** | **13개 함수 34줄** — `losses`·`recomb_currents`·`_tab_current` 추가 |
+| `docs/spatial_map_convention.md` §6 | **낡음** — 결함이 있다고 적혀 있다 | 결함 → **해소**로 갱신 (기록은 보존) |
+| `docs/pro_feature_map_2026-08-14.md` #6 | 부분구현 | **구현**으로 3차 개정 |
+| `docs/WORKLOG.md` §2-6 | 보류 블록 | 해제 |
+| `docs/registration_material.md` | v28.60까지 | v28.61 항목 추가 판단 |
+
+> §6은 24칸 표까지는 단위 0에서 정정했으므로 **표는 맞다.** "결함이다"라는 서술과
+> 진단 항목만 해소로 바꾸면 된다.
+
+### 별건으로 기록된 것 (단위 2 범위 밖)
+
+- **바닥 서브셀 pass/metal 가중** — 헬퍼가 `dp.J01_bot`(= `J01_bot_pass`)만 쓰고
+  `J01_bot_metal`은 아무도 읽지 않는다. `DiodeParams` 주석(`2L_FEST.py:1986`)이
+  예고해 둔 항목이다. v28.61은 v28.60 동작 보존이 조건이라 건드리지 않았다.
+  상세: `docs/sessions/2026-08-19-spatial-branch-coverage-unit1.md` §5
+- **`_bf_v29`의 `Jph_b_eff`** — 원래부터 `illum_frac`이 없는 스칼라라 gen 맵을
+  곱할 기준이 없다. 죽은 경로이므로 배선하지 않았다. 같은 문서 §4-(a)
+- **`Rsh` 5번째 대상** — 박사님 지시로 보류. 계획서 §하지 않는 것
+
+### 참고 — 단위 1에서 계획서 전제 네 개가 틀렸던 기록
+
+| # | 계획서 | 실제 |
+|---|---|---|
+| 1 | 결함 분기 4개 | **5개** — `_solve_single_bifacial` 추가 |
+| 2 | 소비 지점 9곳 | **13개 함수 34줄** (전부 배선 → 1함수 4줄) |
 | 3 | `J01_top_arr`가 스칼라 | **아니다.** `mf`가 배열이라 결함 분기에서도 `ndarray[N]` |
-| 4 | 결함 칸 **9개** | **12개** |
-
-**단위 1이 먼저 결정할 것**: 진단·GUI 소비 지점(`losses` · `recomb_currents` ·
-`_tab_current`)도 헬퍼로 배선할지. 남겨 두면 `cell_current`가 가졌던 **자기모순
-값** 문제(맵 없는 전압장 + 맵 있는 다이오드 식)가 그 셋에 그대로 남는다 —
-계획서가 `cell_current`를 고치는 근거로 든 논리가 그대로 적용된다.
-
-`tests/test_spatial_branch_coverage.py`의 `INLINE_ASSEMBLY_CENSUS`가 13개 함수를
-고정하고 있어, 배선할 때마다 그 dict를 갱신하며 진행 상황을 눈으로 확인할 수 있다.
-
-> **단위 1을 끝냈다는 신호**: 결함 칸 12개가 `XPASS → strict 실패`로 뜬다.
-> 그때 `RESIDUAL_SEES_MAP`을 True로 바꾸고 마커가 사라지면 초록불이 된다.
-> (`ΔJ ≠ 0`만 보고 판단하지 말 것 — 고치기 전에도 참이었다.
-> `test_cell_current_delta_is_not_evidence_of_working` 참조.)
+| 4 | 결함 칸 9개 | **12개** |
 
 ### 환경 — 이 항목은 해소됐다
 

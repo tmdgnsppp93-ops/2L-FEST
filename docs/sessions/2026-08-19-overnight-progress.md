@@ -12,3 +12,10 @@
 | 01:40 | 비트 핀 + base_lateral 확인 | **70 passed** (162 s) — 핀 2건 strict, `stack_mismatch() is None` |
 | 01:43 | xfail strict 감사 | **32/32 strict=True**, 그 외 0 |
 | 02:11 | 단위 0 전체 비-slow 회귀 | **391 passed · 2 deselected · 38 xfailed · 0 failed** (1688 s) |
+| 02:14 | **단계 1 완료** — 단위 0 커밋·푸시 | `40d4ea9` (7 files, +1386/−26) |
+| 02:40 | 단위 1 배선 완료 (13개 함수) | census **34줄/13함수 → 4줄/1함수**(`_diode_node_arrays`) |
+| 02:44 | 24칸 재실측 | 결함 12칸 전부 해소 (전압장 Δ ≠ 0 + 지역 배열 변화 확인) |
+| 02:46 | **Phase A 비트 동일 확인** | 5조합 sha256·J값이 단위 0 캡처와 **정확히 일치** |
+| 02:48 | 단위 1 판정 파일 | `test_spatial_branch_coverage.py` **97 passed · 0 xfailed** (100 s) |
+| 02:49 | 비트 핀 2건 | **strict 통과** (3.3 s) |
+| 03:20 | v28.61 전체 비-slow 회귀 | **423 passed · 2 deselected · 6 xfailed · 0 failed · 0 XPASS** (1671 s) — 391+32=423, 38−32=6, **회귀 0건** |

@@ -1,26 +1,36 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""공간 분포 맵 — 분기 커버리지 특성화 테스트 (계획 단위 0).
+"""공간 분포 맵 — 분기 커버리지 (계획 단위 0 특성화 → 단위 1 검증).
 
-이 파일은 **프로덕션 코드를 한 줄도 바꾸지 않는다.** `spatial_j01`/`j02`/`gen`
-세 맵이 어느 분기에서 잔차에 반영되고 어느 분기에서 무시되는지를 **실측으로
-고정**한다. 단위 1(`_diode_node_arrays` 중앙화)이 무엇을 고쳤는지 말할 기준이
-여기서 만들어진다.
+`spatial_j01`/`j02`/`gen` 세 맵이 **모든 분기에서** 잔차에 반영되는지를 실측으로
+고정한다. 단위 0에서는 이 파일이 결함 12칸을 `xfail(strict=True)`로 기록했고,
+**v28.61(단위 1)이 그 12칸을 전부 해소**했다 — `_diode_node_arrays` 중앙화.
+
+| 시점 | 상태 |
+|---|---|
+| 단위 0 (v28.60) | 65 passed · **32 xfailed**(결함 12칸 × 2지표 + 헬퍼 부재 8) |
+| 단위 1 (v28.61) | **전부 통과** — `RESIDUAL_SEES_MAP`에 `False`가 없다 |
+
+strict였기 때문에 v28.61이 고친 순간 XPASS → 실패로 떠서 마커를 지우게 강제됐다.
+`strict=False`였다면 조용히 통과해 신호가 사라졌을 것이다
+(`test_no_unresolved_defect_cells_remain`이 그 장치를 유지한다).
 
 계획: docs/superpowers/plans/2026-08-18-spatial-map-branch-coverage.md
 결함: docs/spatial_map_convention.md §6 · docs/WORKLOG.md §2-6
 
 판정 지표 — 왜 `cell_current`가 아닌가
 --------------------------------------
-`cell_current`(`2L_FEST.py:6717`)는 맵을 **무조건** 적용한다. 잔차가 맵을 무시한
-분기에서도 Δ ≠ 0이 나온다 — 맵 없는 전압장에서 수렴시킨 뒤 맵 있는 다이오드 식으로
-재계산한 **자기모순 값**이기 때문이다. 실측(2026-08-19):
+v28.60의 `cell_current`는 맵을 **무조건** 적용했다. 잔차가 맵을 무시한 분기에서도
+Δ ≠ 0이 나왔다 — 맵 없는 전압장에서 수렴시킨 뒤 맵 있는 다이오드 식으로 재계산한
+**자기모순 값**이기 때문이다. 단위 0 실측:
 
     phaseB_full_area / gen :  전압장 Δ = 0 (비트 동일)  이지만  ΔJ = +4.426 mA/cm²
 
-**그래서 판정은 수렴 전압장으로 한다.** 보조로 잔차 분기 프레임의 지역 변수를
-`sys.settrace`로 직접 관측한다.
+v28.61이 그 자기모순을 없앴지만(솔버와 `cell_current`가 같은 헬퍼를 거친다),
+**판정 지표는 그대로 수렴 전압장이다.** `ΔJ ≠ 0`은 고치기 전에도 참이었으므로
+작동 근거가 될 수 없다 — 새 물성을 추가할 때도 같은 규칙을 쓸 것.
+보조로 잔차 분기 프레임의 지역 변수를 `sys.settrace`로 직접 관측한다.
 
 ⚠ 계획서 §단위0 T2의 *"`J01_top_arr`가 배열인지 스칼라인지 고정"* 은 **성립하지
 않는다** (2026-08-19 실측으로 정정). `J01_top_arr = dp.J01_top_pass * (1 - mf) +
@@ -52,24 +62,21 @@
    `test_single_mode_bifacial_supports_base`(`:1007`)와
    `test_base_gate_follows_the_rear_plane_not_the_phase`(`:1029`)가 이 분기를
    실제로 푼다. **표의 라벨만 틀렸고 기능 커버리지는 온전했다.**
-3. **인라인 조립 지점은 계획서의 9곳이 아니라 13개 함수 34줄이다.**
+3. **인라인 조립 지점은 계획서의 9곳이 아니라 13개 함수 34줄이었다.**
    계획서 §1 표에 없는 것: `_solve_single_bifacial`(잔차!) · `losses` ·
-   `recomb_currents` · `_tab_current`(GUI). 단위 1의 배선 범위를 정할 때 이
-   census(`test_inline_assembly_census_is_pinned`)를 근거로 쓸 것.
+   `recomb_currents` · `_tab_current`(GUI). v28.61이 13곳 전부를 배선해
+   **1개 함수 4줄**이 됐다(`INLINE_ASSEMBLY_CENSUS`).
 4. **`DiodeParams.J02_single_pass/metal`의 기본값이 0.0이다.** 그래서 단일셀에서
    `j02` 맵은 무엇을 곱하든 결과가 변하지 않는다 — 결함이 아니라 **관측 불가**다.
    단일셀 케이스에 한해 `J02_SINGLE_PROBE`로 0이 아닌 값을 넣어 칸을 관측 가능하게
    만든다. 탠덤 칸은 기본값 그대로다(핀 값과의 대조를 유지하기 위해).
 
-빨간불 / 초록불
----------------
-결함 칸 12개는 `xfail(strict=True)`로 표시한다. **오늘은 xfail(=단언 실패)이고,
-단위 1이 고치면 XPASS → strict 실패**가 되어 마커를 지우라고 강제한다. 계획서가
-말한 *"수정 전 빨간불 · 수정 후 초록불"* 을, 저장소 전체를 빨간불로 두지 않고
-칸 단위로 기록하는 방식이다(`test_junction_bf.py:42`의 선례와 같은 형태).
-
-**단위 1의 완료 조건**: `RESIDUAL_SEES_MAP`의 False를 전부 True로 바꾸고 이 파일이
-초록불이 되는 것.
+v28.61이 값을 건드리지 않았다는 근거
+------------------------------------
+Phase A / full_area는 v28.60에서 **유일하게 올바른 탠덤 경로**였다. 단위 0이
+수정 전에 5조합(무맵 + 맵 4종)의 전압장 sha256과 `cell_current`를 캡처해 뒀고,
+v28.61 이후 **5조합 전부 비트 동일**이다(`PHASE_A_PINS`). 리팩터가 계산을
+바꾸지 않았다는 뜻이다.
 
 ⚠ 이 파일은 `sys.settrace`를 쓴다. 커버리지 도구(`pytest-cov`)와 동시에 돌리면
 서로 훅을 덮어쓴다 — 커버리지 측정 시에는 이 파일을 제외할 것.
@@ -291,19 +298,19 @@ RESIDUAL_SEES_MAP = {
     ("phaseA_full_area", "gen"): True,
     ("phaseA_full_area", "rc"): True,
 
-    ("phaseB_full_area", "j01"): False,
-    ("phaseB_full_area", "j02"): False,
-    ("phaseB_full_area", "gen"): False,
+    ("phaseB_full_area", "j01"): True,     # v28.61에서 해소
+    ("phaseB_full_area", "j02"): True,     # v28.61에서 해소
+    ("phaseB_full_area", "gen"): True,     # v28.61에서 해소
     ("phaseB_full_area", "rc"): True,
 
-    ("phaseB_bifacial", "j01"): False,
-    ("phaseB_bifacial", "j02"): False,
-    ("phaseB_bifacial", "gen"): False,
+    ("phaseB_bifacial", "j01"): True,      # v28.61에서 해소
+    ("phaseB_bifacial", "j02"): True,      # v28.61에서 해소
+    ("phaseB_bifacial", "gen"): True,      # v28.61에서 해소
     ("phaseB_bifacial", "rc"): True,
 
-    ("phaseA_bifacial", "j01"): False,
-    ("phaseA_bifacial", "j02"): False,
-    ("phaseA_bifacial", "gen"): False,
+    ("phaseA_bifacial", "j01"): True,      # v28.61에서 해소
+    ("phaseA_bifacial", "j02"): True,      # v28.61에서 해소
+    ("phaseA_bifacial", "gen"): True,      # v28.61에서 해소
     ("phaseA_bifacial", "rc"): True,
 
     ("single_full_area", "j01"): True,
@@ -311,9 +318,9 @@ RESIDUAL_SEES_MAP = {
     ("single_full_area", "gen"): True,
     ("single_full_area", "rc"): True,
 
-    ("single_bifacial", "j01"): False,
-    ("single_bifacial", "j02"): False,
-    ("single_bifacial", "gen"): False,
+    ("single_bifacial", "j01"): True,      # v28.61에서 해소
+    ("single_bifacial", "j02"): True,      # v28.61에서 해소
+    ("single_bifacial", "gen"): True,      # v28.61에서 해소
     ("single_bifacial", "rc"): True,
 }
 
@@ -379,38 +386,34 @@ def test_spatial_targets_registry_unchanged(fest):
     assert fest.SPATIAL_TARGETS == TARGETS
 
 
-def test_every_defect_marker_is_strict():
-    """**결함 마커는 반드시 `strict=True`여야 한다.**
+def test_no_unresolved_defect_cells_remain():
+    """**결함 칸이 하나도 남아 있지 않다** (v28.61에서 12개 전부 해소).
 
-    이 파일의 xfail은 "알려진 결함"의 기록이지 "가끔 실패해도 되는 테스트"가
-    아니다. `strict=False`면 단위 1이 결함을 고쳤을 때 **XPASS가 조용히 통과**해서
-    고쳐졌다는 신호가 사라진다 — 마커도 그대로 남아 다음 사람은 여전히 결함이
-    있다고 읽는다. `strict=True`라야 XPASS가 **실패로 떠서** 마커를 지우게 만든다.
+    단위 0에서는 12칸이 `False`였고 각 칸에 `xfail(strict=True)`가 붙었다.
+    strict였기 때문에 v28.61이 고친 순간 XPASS → 실패로 떠서 마커를 지우게
+    강제됐다. `strict=False`였다면 조용히 통과해 "고쳐졌다"는 신호가 사라지고
+    마커도 그대로 남아 다음 사람은 여전히 결함이 있다고 읽었을 것이다.
+
+    아래 두 단언이 그 장치를 유지한다.
+      (1) `False`가 다시 생기면 = 회귀 또는 새 결함 발견 → 실패
+      (2) 그때 붙는 마커는 반드시 strict여야 한다
 
     `test_junction_bf.py:42`가 의도적으로 `strict=False`를 쓰는 것과 대비된다.
     그쪽은 "환경에 따라 갈리는 알려진 허용"이고, 이쪽은 "고쳐야 할 결함"이다.
-    성격이 다르므로 여기서는 예외를 두지 않는다.
     """
-    offenders = []
+    unresolved = sorted(k for k, v in RESIDUAL_SEES_MAP.items() if not v)
+    assert not unresolved, (
+        f"잔차가 맵을 보지 않는 칸이 남아 있다: {unresolved} — "
+        f"v28.61이 12칸을 해소했으므로 이것은 회귀이거나 새로 발견된 결함이다")
+
+    non_strict = []
     for param in _cross() + _cross(targets=("j01", "j02", "gen")):
         for mark in (param.marks or ()):
             if mark.name == "xfail" and mark.kwargs.get("strict") is not True:
-                offenders.append((param.id, dict(mark.kwargs)))
-
-    for fn in (test_helper_exists,
-               test_inline_assembly_only_inside_helper,
-               test_every_branch_calls_the_helper):
-        marks = [m for m in getattr(fn, "pytestmark", [])
-                 if m.name == "xfail"]
-        if not marks:
-            offenders.append((fn.__name__, "xfail 마커가 없다"))
-        for mark in marks:
-            if mark.kwargs.get("strict") is not True:
-                offenders.append((fn.__name__, dict(mark.kwargs)))
-
-    assert not offenders, (
-        f"strict=True가 아닌 결함 마커가 있다 — 단위 1이 고쳐도 신호가 안 뜬다: "
-        f"{offenders}")
+                non_strict.append((param.id, dict(mark.kwargs)))
+    assert not non_strict, (
+        f"strict=True가 아닌 결함 마커가 있다 — 고쳐도 신호가 안 뜬다: "
+        f"{non_strict}")
 
 
 # `solve_tandem`/`solve_single` 본문이 직접 조립하는 경로. `BRANCH_CASES`는 이
@@ -535,23 +538,22 @@ def test_branch_local_diode_arrays_carry_the_map(fest, geo_factory, case,
 INLINE_ASSEMBLY_RE = re.compile(
     r"J0\d_(?:top|single)_pass\s*\*\s*\(\s*1\s*-\s*mf\s*\)")
 
-# 2026-08-19 census. 계획서 §1의 "소비 지점 7곳 + 진단 2곳"에 **없는 것 4개**가
-# 여기 있다: _solve_single_bifacial(잔차!) · losses · recomb_currents ·
-# _tab_current(GUI). 단위 1은 이 표를 근거로 배선 범위를 정한다.
+# census. **v28.61에서 13개 함수 34줄 → 1개 함수 4줄이 됐다.**
+#
+# 단위 0의 census가 남긴 기록 (v28.60 시점, 13개 함수 34줄):
+#     solve_tandem 2 · _solve_tandem_junction 2 · _solve_tandem_junction_bf 2 ·
+#     _solve_tandem_junction_bf_v29 2 · _solve_tandem_bifacial 2 ·
+#     solve_single 2 · _solve_single_bifacial 2 · cell_current 4 ·
+#     _phase_b_interlayer_diagnostics 2 · current_matching_diagnostics 2 ·
+#     losses 6 · recomb_currents 4 · _tab_current 2
+# 계획서 §1의 "소비 지점 7곳 + 진단 2곳"에 없던 4개(_solve_single_bifacial(잔차) ·
+# losses · recomb_currents · _tab_current)를 그 census가 찾아냈고, v28.61은 13곳
+# 전부를 배선했다.
+#
+# 헬퍼 안의 4줄은 mode별 top/single × J01/J02 조합이다. 지점이 늘면(=결함 재발
+# 경로) 여기가 먼저 실패해서 갱신을 요구한다.
 INLINE_ASSEMBLY_CENSUS = {
-    "solve_tandem": 2,
-    "_solve_tandem_junction": 2,
-    "_solve_tandem_junction_bf": 2,
-    "_solve_tandem_junction_bf_v29": 2,
-    "_solve_tandem_bifacial": 2,
-    "solve_single": 2,
-    "_solve_single_bifacial": 2,
-    "cell_current": 4,
-    "_phase_b_interlayer_diagnostics": 2,
-    "current_matching_diagnostics": 2,
-    "losses": 6,
-    "recomb_currents": 4,
-    "_tab_current": 2,
+    "_diode_node_arrays": 4,
 }
 
 
@@ -597,17 +599,12 @@ def test_inline_assembly_census_is_pinned():
         f"  줄 번호={[(ln, fn) for ln, fn in sites]}")
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="단위 1 미착수 — FESTSolver._diode_node_arrays가 아직 없다")
 def test_helper_exists(fest):
-    """단위 1이 만들 중앙 헬퍼. **오늘은 없다.**"""
+    """중앙 헬퍼 (v28.61 신설). 단위 0 시점에는 없어서 xfail이었다."""
     assert hasattr(fest.FESTSolver, HELPER_NAME), (
-        f"FESTSolver.{HELPER_NAME}가 없다 — 계획 단위 1이 만든다")
+        f"FESTSolver.{HELPER_NAME}가 없다 — v28.61이 만든 중앙 조립 지점이다")
 
 
-@pytest.mark.xfail(strict=True,
-                   reason="단위 1 미착수 — _diode_node_arrays가 아직 없고 13개 "
-                          "함수가 다이오드 배열을 직접 조립한다 (census 참조)")
 def test_inline_assembly_only_inside_helper():
     """**T1-(1) 소스 검사.** 배열 조립은 헬퍼 안에서만 한다.
 
@@ -616,10 +613,9 @@ def test_inline_assembly_only_inside_helper():
     "한 곳만 고쳤다"가 아니라 **"여러 곳에서 각자 조립할 수 있었다"** 이고,
     그 가능성 자체를 없애는 것이 목적이다.
 
-    ⚠ 단위 1에서 이 xfail을 지울 때, 진단·GUI 소비 지점(`losses` ·
-    `recomb_currents` · `_tab_current`)까지 헬퍼를 쓰게 할지 결정해야 한다.
-    그것들을 남겨 두면 `cell_current`가 가졌던 **자기모순 값** 문제가 그대로
-    남는다(맵 없는 전압장 + 맵 있는 다이오드 식).
+    v28.61은 진단·GUI 소비 지점(`losses` · `recomb_currents` · `_tab_current`)
+    까지 배선했다. 남겨 두면 `cell_current`가 가졌던 **자기모순 값** 문제가
+    그것들에 그대로 남기 때문이다(맵 없는 전압장 + 맵 있는 다이오드 식).
     """
     offenders = [(ln, fn) for ln, fn in _inline_assembly_sites()
                  if fn != HELPER_NAME]
@@ -629,8 +625,6 @@ def test_inline_assembly_only_inside_helper():
 
 
 @pytest.mark.parametrize("case_id", sorted(ACTUAL_BRANCH))
-@pytest.mark.xfail(strict=True,
-                   reason="단위 1 미착수 — _diode_node_arrays가 없어 호출을 셀 수 없다")
 def test_every_branch_calls_the_helper(fest, geo_factory, monkeypatch,
                                        case_id):
     """**T1-(2) 런타임 계수.** 각 분기가 헬퍼를 최소 1회 부른다.
@@ -756,25 +750,31 @@ def test_clearing_map_restores_bit_identical_result(fest, geo_factory,
 # 6. 함정 자체를 고정한다
 # =============================================================================
 
-def test_cell_current_delta_is_not_evidence_of_working(fest, geo_factory):
-    """**판정 함정의 회귀 감시.**
+def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
+    """**판정 함정이 사라졌다는 것 자체를 고정한다.**
 
-    Phase B / full_area + `gen` 맵에서 `cell_current`는 크게 변하는데
-    (`ΔJ ≈ +4.4 mA/cm²`) 수렴 전압장은 **비트 동일**이다. 이 조합이 이 결함이
-    오래 남은 이유다 — 겉보기에는 작동한다.
+    v28.60에서 이 조합(Phase B / full_area + `gen`)은 이랬다:
 
-    단위 1이 고치면 전압장이 달라지므로 이 테스트도 갱신해야 한다. 그때
-    **`ΔJ ≠ 0`만 보고 "고쳐졌다"고 판단하지 말라**는 것이 이 테스트가 남기는
-    말이다. 그 조건은 고치기 전에도 참이었다.
+        수렴 전압장 Δ = 0 (비트 동일)   ·   ΔJ = +4.426 mA/cm²
+
+    전압장은 1비트도 안 움직이는데 보고되는 전류는 4.4 mA/cm² 바뀌었다.
+    맵 없는 전압장에 맵 있는 다이오드 식을 씌운 **자기모순 값**이었고, Δ ≠ 0이라
+    겉보기에는 작동하는 것처럼 보였다 — 그래서 결함이 오래 남았다.
+
+    v28.61 이후에는 **둘 다** 움직인다. 전압장이 움직이는 것이 잔차가 맵을 봤다는
+    증거이고, 그것이 이 테스트의 단언이다.
+
+    > 여기 남기는 말: **`ΔJ ≠ 0`을 작동 근거로 쓰지 말 것.** 그 조건은 고치기
+    > 전에도 참이었다. 새 물성을 추가할 때 판정은 항상 수렴 전압장으로 한다.
     """
     case = _case_by_id()["phaseB_full_area"]
-    base = _cached(fest, geo_factory, case, None)
+    no_map = _cached(fest, geo_factory, case, None)
     with_map = _cached(fest, geo_factory, case, "gen")
 
-    assert np.array_equal(base.V, with_map.V), (
-        "Phase B / full_area가 gen 맵을 잔차에 반영하기 시작했다 — "
-        "결함이 고쳐졌다면 이 테스트를 갱신할 것 (단위 1)")
-    assert abs(with_map.J - base.J) > 1.0, (
-        f"cell_current가 더 이상 맵을 무조건 적용하지 않는다 "
-        f"(ΔJ={with_map.J - base.J:+.5e}) — cell_current 쪽이 바뀌었다면 "
-        f"자기모순은 사라졌을 수 있다. docs/spatial_map_convention.md §6 갱신 필요")
+    assert not np.array_equal(no_map.V, with_map.V), (
+        "Phase B / full_area가 gen 맵을 잔차에 반영하지 않는다 — "
+        "v28.61의 결함 수정이 회귀했다")
+    assert abs(with_map.J - no_map.J) > 1.0, (
+        f"gen 맵이 걸렸는데 cell_current가 거의 변하지 않았다 "
+        f"(ΔJ={with_map.J - no_map.J:+.5e}) — 전압장은 변했으므로 "
+        f"cell_current 쪽 배선이 끊겼을 수 있다")
