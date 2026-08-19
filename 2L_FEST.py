@@ -656,6 +656,53 @@ v28.61: [fix] 공간 분포 맵 분기 누락 해소 — spatial_j01/j02/gen이 
          (test_phase_a_full_area_values_are_pinned).
          테스트: tests/test_spatial_branch_coverage.py 97건 — 단위 0의 xfail 32건이
          전부 통과로 전환. RESIDUAL_SEES_MAP의 False 12개 → 0개.
+v28.62: [feat] 공간 분포 5번째 대상 — spatial_rsh (션트 저항).
+         Griddler 매뉴얼 §3.1이 "most cell parameters"에 shunt conductance를
+         포함하고 GUI에도 nonuniform 진입 버튼이 있는데 우리에게 빠져 있었다.
+         Rsh는 이미 노드 잔차(A 계층)에 있어 j01/j02와 **같은 계층**이므로
+         새 평면도 새 미지수도 필요 없다.
+         SPATIAL_TARGETS = (j01, j02, gen, rc, **rsh**) — **끝에 붙였다.**
+         순서가 GUI 행 순서이자 active_spatial_maps()의 반환 순서라, 중간에
+         끼우면 그 순서에 기대는 것들이 조용히 어긋난다.
+         [refactor] _diode_node_arrays가 Rsh/Rshb 노드 배열을 함께 돌려준다.
+         배선한 소비 지점 **12개 함수 47줄**: 잔차 7(인라인 2 + 이름 있는 5) ·
+         cell_current · _phase_b_interlayer_diagnostics ·
+         current_matching_diagnostics · losses · _tab_current(GUI).
+         recomb_currents는 Rsh를 쓰지 않는다(재결합 보고이지 누설이 아니다).
+         losses는 P_shunt 블록이 재결합 블록보다 앞이라 헬퍼 호출을 위로
+         올렸다 — 분기 안에서 두 번 부르던 것이 한 번이 됐다.
+         제외한 8개 함수는 **0D 해석 참조**(solve_0d_tandem_iv · _J_at ·
+         subcell_iv · solve_0d_subcell_current)와 **보고·GUI 필드**
+         (expected_voc · _apply_diode_params · _rpt_p6 · _build_sidebar)다.
+         공간 균일 교차검증 참조와 표시값이라 소비 지점이 아니다 — v28.61이
+         0D 참조를 제외한 것과 같은 근거.
+         ⚠ **방향이 반대다.** 맵이 션트 **저항 Rsh**를 곱하므로 누설 컨덕턴스
+         1/Rsh는 나뉜다. 값이 크면 누설이 **줄어** 셀이 좋아진다. rc와 같은
+         함정이라 SPATIAL_INVERTED_TARGETS = ("rc", "rsh")를 신설하고 GUI가
+         그 목록을 보고 힌트를 앰버로 강조하게 했다. 목록을 GUI에 두지 않은
+         이유: 방향이 뒤집힌다는 것은 모델의 사실이지 화면의 사실이 아니다.
+         ⚠⚠ **Griddler와 곱셈 방향이 반대다.** 매뉴얼 §1.2의 등가회로는 shunt를
+         **컨덕턴스 G_shunt [S/cm²]**로 두는데 우리는 **저항 Rsh [Ω·cm²]**로
+         둔다. 같은 물리를 같은 배율 파일로 기술하려면 한쪽이 역수여야 하므로,
+         Griddler용 맵을 그대로 가져오면 **역효과**가 난다.
+         docs/spatial_map_convention.md §7에 명시했다.
+         비트 동일: 맵이 None이면 헬퍼가 dp.Rsh_* **스칼라 그 객체**를 그대로
+         돌려준다. 소비 지점이 전부 `V / Rsh`(나눗셈)이므로 식이 v28.61과
+         문자 그대로 같다. 컨덕턴스 Gsh = 1/Rsh를 돌려주고 `V * Gsh`로 바꾸면
+         **안 된다** — `V / R`과 `V * (1/R)`은 IEEE754에서 마지막 비트가 다르다.
+         캐시: _sm_tag에 5번째 슬롯 추가. 맵이 없으면 상수 0이라 무맵 경로의
+         캐시 hit/miss 거동이 이전과 같다(_base_tag와 같은 처리).
+         테스트: 단위 0이 6분기 x rsh 6칸을 False로 고정하고 strict xfail 12건을
+         붙였다(미구현). 구현되는 순간 전부 XPASS → 실패로 떠서 표를 갱신하게
+         강제했다. 그 뒤 116 passed · 0 xfailed.
+         판정은 **수렴 전압장 비트 비교** — cell_current가 아니다.
+         [fix] SPATIAL MAPS 카드 요약 라벨이 총 개수를 문자열에 박고 있었다
+         ('{n} of 4 active'). 대상이 5종이 되면서 "4개 중 5개 적용"이 나올 수
+         있었다 — len(SPATIAL_TARGETS)에서 받도록 고쳤다. 하드코딩된
+         target == 'rc' 조건을 SPATIAL_INVERTED_TARGETS로 올린 것과 같은 부류다.
+         [문서] docs/spatial_map_convention.md §7 신설 ·
+         docs/spatial_map_usage.md에 rsh 추가 ·
+         examples/spatial_maps/local_shunt_rsh.txt 신설.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -755,7 +802,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.61",
+    "version": "v28.62",
     "date": "2026-08-19",
 }
 _BUILD_SHA_CACHE = None
@@ -1107,7 +1154,9 @@ _TR = {
     'sp_load': {'EN': 'Load...', 'KR': '불러오기...'},
     'sp_clear': {'EN': 'Clear', 'KR': '해제'},
     'sp_preview': {'EN': 'Preview', 'KR': '미리보기'},
-    'sp_count': {'EN': '{n} of 4 active', 'KR': '4개 중 {n}개 적용'},
+    # 총 개수를 문자열에 박지 않는다 — v28.62에서 대상이 4종 → 5종이 되면서
+    # "4개 중 5개 적용"이 나올 수 있었다. len(SPATIAL_TARGETS)에서 받는다.
+    'sp_count': {'EN': '{n} of {total} active', 'KR': '{total}개 중 {n}개 적용'},
     'sp_j01': {'EN': 'J01 multiplier', 'KR': 'J01 배율'},
     'sp_j02': {'EN': 'J02 multiplier', 'KR': 'J02 배율'},
     'sp_gen': {'EN': 'Photogeneration multiplier', 'KR': '광생성 배율'},
@@ -1124,6 +1173,16 @@ _TR = {
                          '2.0 = double R, poorly pressed)',
                    'KR': '값이 클수록 접촉이 나쁨  (0.5 = 접촉저항 절반, 잘 눌린 영역; '
                          '2.0 = 두 배, 덜 눌린 영역)'},
+    'sp_rsh': {'EN': 'Shunt R multiplier (Rsh)', 'KR': '션트 저항 배율 (Rsh)'},
+    # rsh도 rc와 같이 의미가 반대다 — 맵이 션트 **저항**을 곱하므로 값이 크면
+    # 누설이 줄어 셀이 좋아진다. "shunt 값을 키우면 셀이 나빠진다"는 직관은
+    # 컨덕턴스 기준의 직관이고, 우리 입력은 저항이다(SPATIAL_INVERTED_TARGETS).
+    'sp_rsh_hint': {'EN': 'higher = LESS leakage  (0.5 = half Rsh, strong shunt; '
+                          '2.0 = double Rsh, cleaner).  Griddler states shunt as '
+                          'a CONDUCTANCE - invert a map taken from there',
+                    'KR': '값이 클수록 누설이 적음  (0.5 = 션트저항 절반, 누설 심함; '
+                          '2.0 = 두 배, 깨끗함).  Griddler는 shunt를 컨덕턴스로 '
+                          '두므로 그쪽 맵을 가져오면 역수를 취할 것'},
     'sp_convention': {
         'EN': 'File convention: first data row = BOTTOM of the cell (y=0); '
               'values are absolute multipliers (no normalization); grid is '
@@ -1966,10 +2025,16 @@ class DiodeParams:
     #   spatial_j02 : multiplies J02 (n2 / SCR recombination)
     #   spatial_gen : multiplies photogeneration Jph (optical non-uniformity)
     #   spatial_rc  : multiplies contact conductance Gc (1/multiplier on R_contact)
+    #   spatial_rsh : multiplies shunt RESISTANCE Rsh (so it divides the shunt
+    #                 conductance 1/Rsh). v28.62. Same inverted sense as rc —
+    #                 see SPATIAL_INVERTED_TARGETS. NOTE Griddler states shunt as
+    #                 a CONDUCTANCE (S/cm²) while we state it as a RESISTANCE
+    #                 (Ω·cm²), so a map taken from Griddler must be inverted.
     spatial_j01 = None
     spatial_j02 = None
     spatial_gen = None
     spatial_rc  = None
+    spatial_rsh = None
 
     # --- Luminescent Coupling J01 (Zeder 2025; Jäger 2021) ---
     # J_LC = J01_coupling × (exp(qV_top/kT)-1), added to bot photocurrent.
@@ -3621,7 +3686,25 @@ class SpatialMap:
 
 # Convenience: a registry of multiplier maps the solver looks for on dp.
 # Each entry is a node-length array (or None). Defaults to None = all-ones.
-SPATIAL_TARGETS = ("j01", "j02", "gen", "rc")
+#
+# v28.62: 5번째 대상 `rsh`(shunt) 추가. **끝에 붙인다** — 순서가 GUI 행 순서이자
+# active_spatial_maps()의 반환 순서라, 중간에 끼우면 기존 순서에 기대는 것들이
+# 조용히 어긋난다. 논리적으로는 j01/j02와 같은 A 계층이지만 그 이유로
+# 재배열하지 않는다.
+SPATIAL_TARGETS = ("j01", "j02", "gen", "rc", "rsh")
+
+# 맵이 **저항**을 곱하는 대상 — 값이 클수록 그 대상이 나빠진다.
+#   rc  : 맵이 접촉 저항 R_contact를 곱한다  -> 컨덕턴스 Gc를 나눈다
+#   rsh : 맵이 션트 저항 Rsh를 곱한다        -> 컨덕턴스 1/Rsh를 나눈다
+# 나머지(j01/j02/gen)는 "값이 크다 = 그 물성이 크다"로 곧바로 읽힌다.
+# GUI가 이 목록을 보고 힌트를 앰버로 강조한다. **목록을 GUI에 두지 않고 여기
+# 두는 이유**: 방향이 뒤집힌다는 것은 모델의 사실이지 화면의 사실이 아니다.
+#
+# ⚠ Griddler와 곱셈 방향이 **반대**다. 매뉴얼 §1.2의 등가회로는 shunt를
+# **컨덕턴스 G_shunt [S/cm²]**로 두는데 우리는 **저항 Rsh [Ω·cm²]**로 둔다.
+# 같은 물리를 같은 배율 파일로 기술하려면 한쪽이 역수여야 한다 —
+# docs/spatial_map_convention.md §7.
+SPATIAL_INVERTED_TARGETS = ("rc", "rsh")
 
 
 def make_uniform(n):
@@ -3768,6 +3851,7 @@ SPATIAL_TARGET_INFO = (
     ("j02", "sp_j02", "sp_j02_hint"),
     ("gen", "sp_gen", "sp_gen_hint"),
     ("rc",  "sp_rc",  "sp_rc_hint"),
+    ("rsh", "sp_rsh", "sp_rsh_hint"),
 )
 
 
@@ -4425,6 +4509,9 @@ class FESTSolver:
                            : pass/metal 성분. `recomb_currents`가 이 분해를
                              **보고 항목으로** 쓰므로(pass_n1/met_n1/…) 합쳐진
                              배열로는 재현할 수 없다.
+            Rsh, Rshb      : 션트 **저항** 노드 배열 (v28.62). top(또는 single)과
+                             bottom. 맵이 없으면 `dp.Rsh_*` **스칼라 그 객체**를
+                             그대로 돌려준다 — 아래 근거 (5).
 
         비트 동일 근거 (무맵 경로)
         --------------------------
@@ -4436,6 +4523,12 @@ class FESTSolver:
            비트가 다르다. 그래서 결합값과 성분을 따로 계산한다.
         3. `J01b = dp.J01_bot * 1.0`은 IEEE754에서 `x * 1.0 == x`(정확).
         4. `gen_t`는 맵이 없으면 `illum_frac` **그 객체**다.
+        5. `Rsh`/`Rshb`는 맵이 없으면 `dp.Rsh_*` **스칼라 그 객체**다. 소비
+           지점은 전부 `V / Rsh`(나눗셈)와 `1 / Rsh` 형태이므로, 스칼라를 그대로
+           돌려주면 식이 v28.61과 **문자 그대로 같다.**
+           ⚠ 컨덕턴스 `Gsh = 1/Rsh`를 돌려주고 `V * Gsh`로 바꾸면 안 된다 —
+           `V / R`과 `V * (1/R)`은 IEEE754에서 마지막 비트가 다르다. 곱셈이
+           빠를 것 같다는 이유로 바꾸면 비트 핀이 깨진다.
 
         `test_phase_a_full_area_values_are_pinned`가 단위 0에서 캡처한 값으로
         이 네 가지를 감시한다.
@@ -4446,6 +4539,7 @@ class FESTSolver:
         _m_j01 = self._spatial_mult(dp, 'j01')
         _m_j02 = self._spatial_mult(dp, 'j02')
         _m_gen = self._spatial_mult(dp, 'gen')
+        _m_rsh = self._spatial_mult(dp, 'rsh')
 
         if mode == 'single':
             J01_pass = dp.J01_single_pass * (1 - mf)
@@ -4476,11 +4570,21 @@ class FESTSolver:
         gen_t = (ilf * _m_gen) if _m_gen is not None else ilf
         gen_b = gen_t
 
+        # 션트 (v28.62). 맵은 **저항**을 곱한다 — 컨덕턴스를 나누는 것과 같다.
+        # 근거 (5): 맵이 없으면 스칼라 그 객체를 그대로 내보내 `V / Rsh`가
+        # v28.61의 `V / dp.Rsh_top`과 문자 그대로 같아진다.
+        Rsh = dp.Rsh_single if mode == 'single' else dp.Rsh_top
+        Rshb = dp.Rsh_bot
+        if _m_rsh is not None:
+            Rsh = Rsh * _m_rsh
+            Rshb = Rshb * _m_rsh
+
         return types.SimpleNamespace(
             J01=J01, J02=J02, J01b=J01b, J02b=J02b,
             gen_t=gen_t, gen_b=gen_b,
             J01_pass=J01_pass, J01_met=J01_met,
-            J02_pass=J02_pass, J02_met=J02_met)
+            J02_pass=J02_pass, J02_met=J02_met,
+            Rsh=Rsh, Rshb=Rshb)
 
     def _build(self, rm, hf, wf, rc, Rs_front, cf, dp):
         """Build/cache stiffness matrices AND pre-assembled static Jacobians.
@@ -4572,7 +4676,8 @@ class FESTSolver:
         _sm_tag = (dp.spatial_j01.content_key() if dp.spatial_j01 is not None else 0,
                    dp.spatial_j02.content_key() if dp.spatial_j02 is not None else 0,
                    dp.spatial_gen.content_key() if dp.spatial_gen is not None else 0,
-                   dp.spatial_rc.content_key()  if dp.spatial_rc  is not None else 0)
+                   dp.spatial_rc.content_key()  if dp.spatial_rc  is not None else 0,
+                   dp.spatial_rsh.content_key() if dp.spatial_rsh is not None else 0)
         # 벌크 태그: 꺼져 있으면 **상수 0**. _sm_tag가 "맵 없으면 0"인 것과 같은
         # 처리다(위 주석) — off 슬롯이 상수라야 캐시 hit/miss 판정이 예전
         # 필드들만으로 결정되고, 무벌크 경로의 캐시 거동이 이전과 완전히 같아진다.
@@ -5053,6 +5158,8 @@ class FESTSolver:
         # 조립한다. 이 블록이 인라인이던 v28.60까지, 디스패치로 갈라진 잔차
         # 분기 5곳이 같은 계산을 복제하지 않아 맵을 조용히 무시했다.
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         J01_top_arr = _dna.J01
         J02_top_arr = _dna.J02
         _J01b = _dna.J01b
@@ -5086,9 +5193,9 @@ class FESTSolver:
             e1t = np.exp(np.minimum(Vtop / (dp.n1_top * VT), 80))
             e2t = np.exp(np.minimum(Vtop / (dp.n2_top * VT), 80))
             Jph_t = _gen_t * dp.Jph_top
-            Jt = Jph_t - J01_top_arr * (e1t - 1) - J02_top_arr * (e2t - 1) - Vtop / dp.Rsh_top
+            Jt = Jph_t - J01_top_arr * (e1t - 1) - J02_top_arr * (e2t - 1) - Vtop / Rsh_arr
             dJt = -(J01_top_arr * e1t / (dp.n1_top * VT) +
-                     J02_top_arr * e2t / (dp.n2_top * VT) + 1 / dp.Rsh_top)
+                     J02_top_arr * e2t / (dp.n2_top * VT) + 1 / Rsh_arr)
 
             # Bottom subcell with implicit interlayer R (Phase A vertical only)
             # KVL: cell J flows from rear pad (low V) UP to front pad (high V).
@@ -5114,7 +5221,7 @@ class FESTSolver:
                     Jb_i = (_gen_b * dp.Jph_bot
                             - _J01b * (e1b_i - 1)
                             - _J02b * (e2b_i - 1)
-                            - Vbot / dp.Rsh_bot
+                            - Vbot / Rshb_arr
                             + J_LC_in)
                     # Residual: Vbot - (Vbot_lump + Rc*Jb) = 0
                     f_in = Vbot - Vbot_lump - Rc_j * Jb_i
@@ -5122,7 +5229,7 @@ class FESTSolver:
                         break
                     dJb_i = -(_J01b * e1b_i / (dp.n1_bot * VT) +
                               _J02b * e2b_i / (dp.n2_bot * VT) +
-                              1 / dp.Rsh_bot)
+                              1 / Rshb_arr)
                     # df/dVbot = 1 - Rc*dJb_i  (always > 1 since dJb_i < 0)
                     df_in = 1.0 - Rc_j * dJb_i
                     dVb = -f_in / df_in
@@ -5136,9 +5243,9 @@ class FESTSolver:
             e1b = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
             e2b = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
             Jph_b = _gen_b * dp.Jph_bot
-            Jb = Jph_b - _J01b * (e1b - 1) - _J02b * (e2b - 1) - Vbot / dp.Rsh_bot
+            Jb = Jph_b - _J01b * (e1b - 1) - _J02b * (e2b - 1) - Vbot / Rshb_arr
             dJb_raw = -(_J01b * e1b / (dp.n1_bot * VT) +
-                         _J02b * e2b / (dp.n2_bot * VT) + 1 / dp.Rsh_bot)
+                         _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
             # Implicit-Rc Jacobian correction:
             # Vbot = Vbot_lump + Rc*Jb(Vbot)
             # dVbot/dVbot_lump = 1 / (1 - Rc*dJb/dVbot)
@@ -5339,6 +5446,8 @@ class FESTSolver:
         # v28.61: 중앙 헬퍼. v28.60까지 이 분기는 배율을 곱하지 않았고,
         # 기본 설정(Rs_junction=5000)이 바로 이 경로다.
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         J01_top_arr = _dna.J01
         J02_top_arr = _dna.J02
         _J01b = _dna.J01b
@@ -5378,19 +5487,19 @@ class FESTSolver:
             e1t = np.exp(np.minimum(Vtop / (dp.n1_top * VT), 80))
             e2t = np.exp(np.minimum(Vtop / (dp.n2_top * VT), 80))
             Jt = _gen_t * dp.Jph_top - J01_top_arr * (e1t - 1) \
-                 - J02_top_arr * (e2t - 1) - Vtop / dp.Rsh_top
+                 - J02_top_arr * (e2t - 1) - Vtop / Rsh_arr
             dJt = -(J01_top_arr * e1t / (dp.n1_top * VT)
                     + J02_top_arr * e2t / (dp.n2_top * VT)
-                    + 1 / dp.Rsh_top)
+                    + 1 / Rsh_arr)
 
             # Bot subcell
             e1b = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
             e2b = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
             Jb = _gen_b * dp.Jph_bot - _J01b * (e1b - 1) \
-                 - _J02b * (e2b - 1) - Vbot / dp.Rsh_bot
+                 - _J02b * (e2b - 1) - Vbot / Rshb_arr
             dJb = -(_J01b * e1b / (dp.n1_bot * VT)
                     + _J02b * e2b / (dp.n2_bot * VT)
-                    + 1 / dp.Rsh_bot)
+                    + 1 / Rshb_arr)
 
             # LC
             if dp.J01_coupling > 0:
@@ -5596,11 +5705,11 @@ class FESTSolver:
                 e1t_t = np.exp(np.minimum(Vtop_t / (dp.n1_top * VT), 80))
                 e2t_t = np.exp(np.minimum(Vtop_t / (dp.n2_top * VT), 80))
                 Jt_t = (_gen_t * dp.Jph_top - J01_top_arr * (e1t_t - 1)
-                        - J02_top_arr * (e2t_t - 1) - Vtop_t / dp.Rsh_top)
+                        - J02_top_arr * (e2t_t - 1) - Vtop_t / Rsh_arr)
                 e1b_t = np.exp(np.minimum(Vbot_t / (dp.n1_bot * VT), 80))
                 e2b_t = np.exp(np.minimum(Vbot_t / (dp.n2_bot * VT), 80))
                 Jb_t = (_gen_b * dp.Jph_bot - _J01b * (e1b_t - 1)
-                        - _J02b * (e2b_t - 1) - Vbot_t / dp.Rsh_bot)
+                        - _J02b * (e2b_t - 1) - Vbot_t / Rshb_arr)
                 It_t = Jt_t * self._na
                 Ib_t = Jb_t * self._na
                 F_quick = abs(np.max(self._Ke @ Ve_t - It_t))
@@ -5716,6 +5825,8 @@ class FESTSolver:
         mf = self.metal_frac
         # v28.61: 중앙 헬퍼 (v28.60까지 이 분기는 배율을 곱하지 않았다).
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         J01_top_arr = _dna.J01
         J02_top_arr = _dna.J02
         _J01b = _dna.J01b
@@ -5768,9 +5879,9 @@ class FESTSolver:
             e1t = np.exp(np.minimum(Vtop / (dp.n1_top * VT), 80))
             e2t = np.exp(np.minimum(Vtop / (dp.n2_top * VT), 80))
             Jt = _gen_t * dp.Jph_top - J01_top_arr * (e1t - 1) \
-                 - J02_top_arr * (e2t - 1) - Vtop / dp.Rsh_top
+                 - J02_top_arr * (e2t - 1) - Vtop / Rsh_arr
             dJt = -(J01_top_arr * e1t / (dp.n1_top * VT)
-                    + J02_top_arr * e2t / (dp.n2_top * VT) + 1 / dp.Rsh_top)
+                    + J02_top_arr * e2t / (dp.n2_top * VT) + 1 / Rsh_arr)
 
             # Bottom subcell with bifacial Jph and LC
             # gen 맵은 전면 항에만 곱한다 — 후면 입사광은 별개 광원이다.
@@ -5783,9 +5894,9 @@ class FESTSolver:
             else:
                 J_LC = 0.0; dILC = np.zeros(N)
             Jb = (Jph_b_eff - _J01b * (e1b - 1)
-                  - _J02b * (e2b - 1) - Vbot / dp.Rsh_bot + J_LC)
+                  - _J02b * (e2b - 1) - Vbot / Rshb_arr + J_LC)
             dJb = -(_J01b * e1b / (dp.n1_bot * VT)
-                    + _J02b * e2b / (dp.n2_bot * VT) + 1 / dp.Rsh_bot)
+                    + _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
 
             It = Jt * self._na
             Ib = Jb * self._na
@@ -6050,6 +6161,8 @@ class FESTSolver:
         # 않은 물리를 죽은 경로에 신설하는 것이므로 하지 않는다. 이 분기가
         # 배선될 때 함께 판정할 일이다.
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         J01_top_arr = _dna.J01
         J02_top_arr = _dna.J02
         _J01b = _dna.J01b
@@ -6094,9 +6207,9 @@ class FESTSolver:
             e1t = np.exp(np.minimum(Vtop / (dp.n1_top * VT), 80))
             e2t = np.exp(np.minimum(Vtop / (dp.n2_top * VT), 80))
             Jt = (dp.Jph_top * _gen_t - J01_top_arr * (e1t - 1)
-                  - J02_top_arr * (e2t - 1) - Vtop / dp.Rsh_top)
+                  - J02_top_arr * (e2t - 1) - Vtop / Rsh_arr)
             dJt = -(J01_top_arr * e1t / (dp.n1_top * VT)
-                    + J02_top_arr * e2t / (dp.n2_top * VT) + 1 / dp.Rsh_top)
+                    + J02_top_arr * e2t / (dp.n2_top * VT) + 1 / Rsh_arr)
             It = Jt * self._na
             dIt = dJt * self._na
 
@@ -6113,9 +6226,9 @@ class FESTSolver:
                 else:
                     J_LC = 0.0
                 Jb_k = (Jph_b_eff - _J01b * (e1b - 1)
-                        - _J02b * (e2b - 1) - Vbot_k / dp.Rsh_bot + J_LC)
+                        - _J02b * (e2b - 1) - Vbot_k / Rshb_arr + J_LC)
                 dJb = -(_J01b * e1b / (dp.n1_bot * VT)
-                        + _J02b * e2b / (dp.n2_bot * VT) + 1 / dp.Rsh_bot)
+                        + _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
                 Ib_k = Jb_k * self._na
                 dIb = dJb * self._na  # negative
 
@@ -6144,9 +6257,9 @@ class FESTSolver:
             else:
                 J_LC = 0.0; dILC = np.zeros(N)
             Jb = (Jph_b_eff - _J01b * (e1b - 1)
-                  - _J02b * (e2b - 1) - Vbot / dp.Rsh_bot + J_LC)
+                  - _J02b * (e2b - 1) - Vbot / Rshb_arr + J_LC)
             dJb = -(_J01b * e1b / (dp.n1_bot * VT)
-                    + _J02b * e2b / (dp.n2_bot * VT) + 1 / dp.Rsh_bot)
+                    + _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
             Ib = Jb * self._na
             dIb = dJb * self._na
 
@@ -6332,6 +6445,8 @@ class FESTSolver:
         mf = self.metal_frac
         # v28.61: 중앙 헬퍼 (v28.60까지 이 분기는 배율을 곱하지 않았다).
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         J01_top_arr = _dna.J01
         J02_top_arr = _dna.J02
         _J01b = _dna.J01b
@@ -6361,9 +6476,9 @@ class FESTSolver:
             e1t = np.exp(np.minimum(Vtop / (dp.n1_top * VT), 80))
             e2t = np.exp(np.minimum(Vtop / (dp.n2_top * VT), 80))
             Jph_t = _gen_t * dp.Jph_top
-            Jt = Jph_t - J01_top_arr * (e1t - 1) - J02_top_arr * (e2t - 1) - Vtop / dp.Rsh_top
+            Jt = Jph_t - J01_top_arr * (e1t - 1) - J02_top_arr * (e2t - 1) - Vtop / Rsh_arr
             dJt = -(J01_top_arr * e1t / (dp.n1_top * VT) +
-                     J02_top_arr * e2t / (dp.n2_top * VT) + 1 / dp.Rsh_top)
+                     J02_top_arr * e2t / (dp.n2_top * VT) + 1 / Rsh_arr)
 
             # Bottom subcell with bifacial Jph_b and implicit interlayer R
             # See full_area solver for KVL derivation. Sign: +Rc*Jb (not -).
@@ -6381,14 +6496,14 @@ class FESTSolver:
                     Jb_i = (Jph_b_eff
                             - _J01b * (e1b_i - 1)
                             - _J02b * (e2b_i - 1)
-                            - Vbot / dp.Rsh_bot
+                            - Vbot / Rshb_arr
                             + J_LC_in)
                     f_in = Vbot - Vbot_lump - Rc_j * Jb_i
                     if np.max(np.abs(f_in)) < 1e-12:
                         break
                     dJb_i = -(_J01b * e1b_i / (dp.n1_bot * VT) +
                               _J02b * e2b_i / (dp.n2_bot * VT) +
-                              1 / dp.Rsh_bot)
+                              1 / Rshb_arr)
                     df_in = 1.0 - Rc_j * dJb_i
                     dVb = -f_in / df_in
                     mx_in = np.max(np.abs(dVb))
@@ -6401,9 +6516,9 @@ class FESTSolver:
             e1b = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
             e2b = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
             Jph_b = Jph_b_eff
-            Jb = Jph_b - _J01b * (e1b - 1) - _J02b * (e2b - 1) - Vbot / dp.Rsh_bot
+            Jb = Jph_b - _J01b * (e1b - 1) - _J02b * (e2b - 1) - Vbot / Rshb_arr
             dJb_raw = -(_J01b * e1b / (dp.n1_bot * VT) +
-                         _J02b * e2b / (dp.n2_bot * VT) + 1 / dp.Rsh_bot)
+                         _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
             if Rc_j > 0:
                 dJb = dJb_raw / (1.0 - Rc_j * dJb_raw)
             else:
@@ -6576,6 +6691,7 @@ class FESTSolver:
         mf = self.metal_frac
         # (③ v28.61): 중앙 헬퍼로 교체. 계산은 v28.60과 같다.
         _dna = self._diode_node_arrays(dp, mode='single')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
         J01_arr = _dna.J01
         J02_arr = _dna.J02
         _gen = _dna.gen_t
@@ -6590,9 +6706,9 @@ class FESTSolver:
             e1 = np.exp(np.minimum(Vd / (dp.n1_single * VT), 80))
             e2 = np.exp(np.minimum(Vd / (dp.n2_single * VT), 80))
             Jph = _gen * dp.Jph_single
-            Jd = Jph - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / dp.Rsh_single
+            Jd = Jph - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / Rsh_arr
             dJd = -(J01_arr * e1 / (dp.n1_single * VT) +
-                     J02_arr * e2 / (dp.n2_single * VT) + 1 / dp.Rsh_single)
+                     J02_arr * e2 / (dp.n2_single * VT) + 1 / Rsh_arr)
 
             Id = Jd * self._na
             dId = dJd * self._na
@@ -6691,6 +6807,7 @@ class FESTSolver:
         # v28.60까지 여기에는 _spatial_mult 호출이 아예 없었다.
         # docs/spatial_map_convention.md §6 표에도 이 행이 빠져 있었다.
         _dna = self._diode_node_arrays(dp, mode='single')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
         J01_arr = _dna.J01
         J02_arr = _dna.J02
         _gen = _dna.gen_t
@@ -6708,9 +6825,9 @@ class FESTSolver:
             # Bifacial: rear illumination gain scaled by rear_illum_frac
             # gen 맵은 전면 항에만 곱한다 — 후면 입사광은 별개 광원이다.
             Jph = (_gen + dp.bifacial_gain * self.rear_illum_frac) * dp.Jph_single
-            Jd = Jph - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / dp.Rsh_single
+            Jd = Jph - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / Rsh_arr
             dJd = -(J01_arr * e1 / (dp.n1_single * VT) +
-                     J02_arr * e2 / (dp.n2_single * VT) + 1 / dp.Rsh_single)
+                     J02_arr * e2 / (dp.n2_single * VT) + 1 / Rsh_arr)
 
             Id = Jd * self._na
             dId = dJd * self._na
@@ -6867,6 +6984,7 @@ class FESTSolver:
         # 전압장에 맵 있는 다이오드 식을 씌운 **자기모순 값**이 보고됐다
         # (ΔJ ≠ 0이라 겉보기에는 작동하는 것처럼 보였다).
         _dna = self._diode_node_arrays(dp, mode=result['mode'])
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
         _gen = _dna.gen_t
 
         if result['mode'] == 'tandem':
@@ -6881,7 +6999,7 @@ class FESTSolver:
             # in which case top is current-limiting and bifacial gain is lost.
             # If the cell is under-matched (Jph_top < Jph_bot), adding rear
             # light to bot further widens the mismatch.
-            Jt = _gen * dp.Jph_top - J01_arr * (e1t - 1) - J02_arr * (e2t - 1) - Vtop / dp.Rsh_top
+            Jt = _gen * dp.Jph_top - J01_arr * (e1t - 1) - J02_arr * (e2t - 1) - Vtop / Rsh_arr
             # UNITS-1 note: current density is normalized by self.geo.area = the
             # bounding-rectangle W*H. For the default SQUARE wafer this equals
             # wafer_area(), so Jsc/Eff are correct. For pseudo_square/circular
@@ -6900,7 +7018,7 @@ class FESTSolver:
             e2 = np.exp(np.minimum(Vd / (dp.n2_single * VT), 80))
             # Bifacial: include rear-side photocurrent (gen map applies to front)
             Jph_eff = (_gen + dp.bifacial_gain * self.rear_illum_frac) * dp.Jph_single
-            Jd = Jph_eff - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / dp.Rsh_single
+            Jd = Jph_eff - J01_arr * (e1 - 1) - J02_arr * (e2 - 1) - Vd / Rsh_arr
             return np.sum(Jd * self._na) / self.geo.area * 1000
 
     def _phase_b_interlayer_diagnostics(self, result, dp=None):
@@ -6928,6 +7046,8 @@ class FESTSolver:
 
         # v28.61: 중앙 헬퍼 — 진단이 솔버와 같은 배열을 보게 한다.
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         Jph_top_node = _dna.gen_t * dp.Jph_top
         Jph_bot_node = (_dna.gen_b + dp.bifacial_gain * rilf) * dp.Jph_bot
         Jph_top_eff = float(np.sum(Jph_top_node * self._na)) / A * 1000.0
@@ -6949,7 +7069,7 @@ class FESTSolver:
         Jt = (_dna.gen_t * dp.Jph_top
               - J01_top_arr * (e1t - 1)
               - J02_top_arr * (e2t - 1)
-              - Vtop / dp.Rsh_top)
+              - Vtop / Rsh_arr)
 
         e1b = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
         e2b = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
@@ -6960,7 +7080,7 @@ class FESTSolver:
         Jb = (Jph_bot_node
               - _dna.J01b * (e1b - 1)
               - _dna.J02b * (e2b - 1)
-              - Vbot / dp.Rsh_bot
+              - Vbot / Rshb_arr
               + J_LC)
 
         It = Jt * self._na
@@ -7064,6 +7184,8 @@ class FESTSolver:
         # Top sees only front light. Bot may also see rear light if bifacial.
         # v28.61: 중앙 헬퍼 — 진단이 솔버와 같은 배열을 보게 한다.
         _dna = self._diode_node_arrays(dp, mode='tandem')
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
         Jph_top_node = _dna.gen_t * dp.Jph_top
         Jph_bot_node = _dna.gen_b * dp.Jph_bot + dp.bifacial_gain * rilf * dp.Jph_bot
         Jph_top_eff = float(np.sum(Jph_top_node * self._na)) / A * 1000.0   # mA/cm²
@@ -7087,7 +7209,7 @@ class FESTSolver:
         Jt = (_dna.gen_t * dp.Jph_top
               - J01_top_arr * (e1t - 1)
               - J02_top_arr * (e2t - 1)
-              - Vtop / dp.Rsh_top)
+              - Vtop / Rsh_arr)
 
         # Bot subcell — reconstruct Vbot (Phase A assumption)
         Vbot_lump = Ve - Vtop - Vr
@@ -7104,13 +7226,13 @@ class FESTSolver:
                 Jb_i = (Jph_bot_node
                         - _dna.J01b * (e1b - 1)
                         - _dna.J02b * (e2b - 1)
-                        - Vbot / dp.Rsh_bot
+                        - Vbot / Rshb_arr
                         + J_LC)
                 f = Vbot - Vbot_lump - Rc_j * Jb_i
                 if np.max(np.abs(f)) < 1e-12: break
                 dJb = -(_dna.J01b * e1b / (dp.n1_bot * VT)
                         + _dna.J02b * e2b / (dp.n2_bot * VT)
-                        + 1.0 / dp.Rsh_bot)
+                        + 1.0 / Rshb_arr)
                 df = 1.0 - Rc_j * dJb
                 dV = -f / df
                 mx = float(np.max(np.abs(dV)))
@@ -7123,7 +7245,7 @@ class FESTSolver:
         Jb = (Jph_bot_node
               - _dna.J01b * (e1b - 1)
               - _dna.J02b * (e2b - 1)
-              - Vbot / dp.Rsh_bot
+              - Vbot / Rshb_arr
               + J_LC)
 
         # mA/cm² area-weighted
@@ -7710,6 +7832,13 @@ class FESTSolver:
         A_ = self.geo.area
         mode = result['mode']
 
+        # v28.62: 션트 저항 노드 배열. 아래 P_shunt 블록이 재결합 블록보다 앞이라
+        # 헬퍼 호출을 **여기로 올린다** — 예전에는 분기 안에서 두 번 불렀고
+        # (mode='tandem' / mode='single'), 둘 다 여기 `mode`와 같은 값이었다.
+        _dna = self._diode_node_arrays(dp, mode=mode)
+        Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+        Rshb_arr = _dna.Rshb
+
         # Shunt power loss: P_shunt = sum(V_diode^2 / Rsh * nodal_area)
         # v28: when Phase B (lateral interlayer), Vbot = V_int - Vr.
         result_vint = result.get('Vint')
@@ -7721,12 +7850,12 @@ class FESTSolver:
                 Vbot = result_vint - Vr
             else:
                 Vbot = Ve - Vtop - Vr
-            P_shunt_top = np.sum((Vtop**2 / dp.Rsh_top) * self._na)
-            P_shunt_bot = np.sum((Vbot**2 / dp.Rsh_bot) * self._na)
+            P_shunt_top = np.sum((Vtop**2 / Rsh_arr) * self._na)
+            P_shunt_bot = np.sum((Vbot**2 / Rshb_arr) * self._na)
             P_shunt = P_shunt_top + P_shunt_bot
         else:
             Vd = Ve - Vr
-            P_shunt = np.sum((Vd**2 / dp.Rsh_single) * self._na)
+            P_shunt = np.sum((Vd**2 / Rsh_arr) * self._na)
 
         # Recombination power loss: P_recomb = sum(J_recomb * V_diode * nodal_area)
         # J_recomb = J01*(exp(V/n1VT)-1) + J02*(exp(V/n2VT)-1) for each node
@@ -7758,7 +7887,6 @@ class FESTSolver:
             # so P_Rc_junction = sum(Rc * Jt²·area) using top current.
             Vbot = Vbot_lump.copy()
             # v28.61: 중앙 헬퍼 — 손실 보고가 솔버와 같은 배열을 보게 한다.
-            _dna = self._diode_node_arrays(dp, mode='tandem')
             if dp.Rc_junction > 0 and not phase_B:
                 Jph_b_loc = (_dna.gen_b
                              + dp.bifacial_gain * self.rear_illum_frac) * dp.Jph_bot
@@ -7766,7 +7894,7 @@ class FESTSolver:
                     e1 = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
                     e2 = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
                     Jb_loc = (Jph_b_loc - _dna.J01b * (e1 - 1)
-                              - _dna.J02b * (e2 - 1) - Vbot / dp.Rsh_bot)
+                              - _dna.J02b * (e2 - 1) - Vbot / Rshb_arr)
                     Vbot_new = Vbot_lump + dp.Rc_junction * Jb_loc
                     if np.max(np.abs(Vbot_new - Vbot)) < 1e-10:
                         break
@@ -7775,7 +7903,7 @@ class FESTSolver:
                 e1 = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
                 e2 = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
                 Jb_local_for_int = (Jph_b_loc - _dna.J01b * (e1 - 1)
-                                    - _dna.J02b * (e2 - 1) - Vbot / dp.Rsh_bot)
+                                    - _dna.J02b * (e2 - 1) - Vbot / Rshb_arr)
             elif dp.Rc_junction > 0 and phase_B:
                 # Phase B: use top current Jt (current matching → Jt = Jb at int)
                 J01_t_arr = _dna.J01
@@ -7785,7 +7913,7 @@ class FESTSolver:
                 Jt_loc = (_dna.gen_t * dp.Jph_top
                           - J01_t_arr * (e1t_loc - 1)
                           - J02_t_arr * (e2t_loc - 1)
-                          - Vtop / dp.Rsh_top)
+                          - Vtop / Rsh_arr)
                 Jb_local_for_int = Jt_loc
 
             J01_t = _dna.J01
@@ -7802,7 +7930,6 @@ class FESTSolver:
             P_recomb = P_recomb_top + P_recomb_bot
         else:
             Vd = Ve - Vr
-            _dna = self._diode_node_arrays(dp, mode='single')
             J01_s = _dna.J01
             J02_s = _dna.J02
             e1 = np.exp(np.minimum(Vd / (dp.n1_single * VT), 80))
@@ -10804,7 +10931,8 @@ class FESTProApp(ctk.CTk):
     # (사이드바 세로 넘침은 _gui_i18n_check.py가 감시하는 항목이다).
 
     def _spatial_status_text(self):
-        return _t('sp_count').format(n=len(active_spatial_maps(DP)))
+        return _t('sp_count').format(n=len(active_spatial_maps(DP)),
+                                     total=len(SPATIAL_TARGETS))
 
     def _refresh_spatial_summary(self):
         """사이드바 요약 라벨을 현재 상태로 갱신한다."""
@@ -10953,10 +11081,13 @@ class FESTProApp(ctk.CTk):
                          font=ctk.CTkFont(size=11, weight="bold"),
                          text_color=CLR_TEXT, anchor="w").pack(
                              anchor="w", padx=10, pady=(6, 0))
-            # rc는 의미가 반대다 — 맵이 접촉 저항 R을 곱한다(Gc를 나눈다).
+            # rc·rsh는 의미가 반대다 — 맵이 **저항**을 곱한다(컨덕턴스를 나눈다).
             # "1.5 = 접촉이 1.5배 좋아짐"으로 읽는 오해를 라벨에서 막는다.
+            # 목록은 SPATIAL_INVERTED_TARGETS — 방향이 뒤집힌다는 것은 모델의
+            # 사실이지 화면의 사실이 아니므로 여기서 하드코딩하지 않는다.
             ctk.CTkLabel(card, text=_t(hint_key), font=ctk.CTkFont(size=9),
-                         text_color=(CLR_AMBER if target == 'rc' else CLR_TEXT_SEC),
+                         text_color=(CLR_AMBER if target in SPATIAL_INVERTED_TARGETS
+                                     else CLR_TEXT_SEC),
                          anchor="w", wraplength=390, justify="left").pack(
                              anchor="w", padx=10, pady=(0, 3))
 
@@ -12543,12 +12674,13 @@ class FESTProApp(ctk.CTk):
             # (VT_는 그대로 둔다 — 모듈 VT와 값이 달라 통일하면 표시값이 바뀐다.
             #  별건이므로 여기서 손대지 않는다.)
             _dna = S._diode_node_arrays(DP, mode='tandem')
+            Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
             J01_arr = _dna.J01
             J02_arr = _dna.J02
             VT_ = 0.02585  # ~kT/q at 300K
             e1 = np.exp(np.minimum(Vt_b/(DP.n1_top*VT_), 80))
             e2 = np.exp(np.minimum(Vt_b/(DP.n2_top*VT_), 80))
-            Jnode = (_dna.gen_t*DP.Jph_top - J01_arr*(e1-1) - J02_arr*(e2-1) - Vt_b/DP.Rsh_top) * 1000  # mA/cm²
+            Jnode = (_dna.gen_t*DP.Jph_top - J01_arr*(e1-1) - J02_arr*(e2-1) - Vt_b/Rsh_arr) * 1000  # mA/cm²
             # Clip extremes for cleaner colormap
             jmin, jmax = np.percentile(Jnode, [2, 98])
             Jnode_c = np.clip(Jnode, jmin, jmax)

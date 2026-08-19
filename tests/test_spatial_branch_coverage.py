@@ -326,15 +326,16 @@ RESIDUAL_SEES_MAP = {
     ("single_bifacial", "gen"): True,      # v28.61에서 해소
     ("single_bifacial", "rc"): True,
 
-    # --- 5번째 대상: shunt (2026-08-19 단위 0) --------------------------------
-    # 전부 False다. **결함이 아니라 미구현**이다 — `rsh`는 SPATIAL_TARGETS에
-    # 아직 없어서 맵을 붙이는 것 자체가 거부된다. 구현되면 6칸이 True가 된다.
-    ("phaseA_full_area", "rsh"): False,
-    ("phaseB_full_area", "rsh"): False,
-    ("phaseB_bifacial", "rsh"): False,
-    ("phaseA_bifacial", "rsh"): False,
-    ("single_full_area", "rsh"): False,
-    ("single_bifacial", "rsh"): False,
+    # --- 5번째 대상: shunt (단위 0에서 6칸 False → v28.62에서 전부 True) -------
+    # 단위 0 시점에는 `rsh`가 SPATIAL_TARGETS에 없어 맵을 붙이는 것 자체가
+    # 거부됐다(결함이 아니라 **미구현**). v28.62가 `_diode_node_arrays` 안에서
+    # 처리하도록 배선했고, 12칸(6분기 × 2지표)이 XPASS로 뒤집혔다.
+    ("phaseA_full_area", "rsh"): True,     # v28.62
+    ("phaseB_full_area", "rsh"): True,     # v28.62 — 기본 설정
+    ("phaseB_bifacial", "rsh"): True,      # v28.62
+    ("phaseA_bifacial", "rsh"): True,      # v28.62
+    ("single_full_area", "rsh"): True,     # v28.62
+    ("single_bifacial", "rsh"): True,      # v28.62
 }
 
 # 실제 도달 분기. `BRANCH_CASES`의 `expected_branch`와 일치한다 — 단, 그쪽은
@@ -354,13 +355,16 @@ ACTUAL_BRANCH = {
 # 방식이기 때문이다(그 칸에 strict xfail이 붙어 구현되는 순간 XPASS로 뒤집힌다).
 TARGETS = ("j01", "j02", "gen", "rc", "rsh")
 
-# 단위 0 시점에 **아직 엔진에 없는** 대상. 구현되면 여기를 비운다.
-#   - `set_spatial_map(dp, 'rsh', ...)`가 ValueError를 던진다(레지스트리에 없다)
+# 아직 엔진에 없는 대상. 구현되면 여기를 비운다.
+#   - `set_spatial_map(dp, <t>, ...)`가 ValueError를 던진다(레지스트리에 없다)
 #   - 그래서 아래 교차 테스트가 실패하고, strict xfail이 그것을 예상 결과로 잡는다
+#
+# **v28.62에서 비었다.** `rsh`가 단위 0에서 여기 있었고, 구현되는 순간 12칸이
+# XPASS(strict) → 실패로 떠서 표를 갱신하게 강제했다. 그것이 이 장치의 목적이다.
 # 근거: Griddler 매뉴얼 §3.1이 "most cell parameters"에 shunt conductance를
 # 포함하고 GUI에도 nonuniform 진입 버튼이 있는데 우리에게 빠져 있었다.
 # Rsh는 이미 노드 잔차(A 계층)에 있어 j01/j02와 같은 계층이다.
-NOT_YET_IMPLEMENTED = ("rsh",)
+NOT_YET_IMPLEMENTED = ()
 
 IMPLEMENTED_TARGETS = tuple(t for t in TARGETS if t not in NOT_YET_IMPLEMENTED)
 

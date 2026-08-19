@@ -50,8 +50,23 @@ def _pts(*xy):
 # =============================================================================
 
 def test_spatial_targets_registry(fest):
-    """대상 물성 4종 확정 (계획 §대상 물성, 2026-08-17 박사님 확정)."""
-    assert fest.SPATIAL_TARGETS == ("j01", "j02", "gen", "rc")
+    """대상 물성 확정 — 4종(2026-08-17 박사님 확정) + `rsh`(v28.62).
+
+    `rsh`는 **끝에 붙인다.** 순서가 GUI 행 순서이자 `active_spatial_maps()`의
+    반환 순서라, 중간에 끼우면 그 순서에 기대는 것들이 조용히 어긋난다.
+    """
+    assert fest.SPATIAL_TARGETS == ("j01", "j02", "gen", "rc", "rsh")
+
+
+def test_inverted_targets_registry(fest):
+    """맵이 **저항**을 곱하는 대상 목록 — `rc`와 `rsh` 둘뿐이다.
+
+    이 목록이 GUI의 앰버 강조를 결정한다. 방향이 뒤집힌다는 것은 **모델의
+    사실**이지 화면의 사실이 아니므로 엔진 쪽에 둔다. 새 대상을 추가하는 사람이
+    여기를 안 보면 경고 없이 반대로 쓰이게 되므로 목록을 테스트로 고정한다.
+    """
+    assert fest.SPATIAL_INVERTED_TARGETS == ("rc", "rsh")
+    assert set(fest.SPATIAL_INVERTED_TARGETS) <= set(fest.SPATIAL_TARGETS)
 
 
 def test_diode_params_default_none(fest):
@@ -306,6 +321,74 @@ def test_rc_map_multiplies_resistance_not_conductance(fest, make_mono):
     assert np.allclose(Gc2[ism], Gc0[ism] / 2.0, rtol=0, atol=0)
     # 접촉 노드 밖은 건드리지 않는다
     assert np.array_equal(Gc2[~ism], Gc0[~ism])
+
+
+def test_rsh_map_multiplies_resistance_not_conductance(fest, make_mono):
+    """rsh 맵은 **션트 저항 Rsh**를 곱한다 → 누설 컨덕턴스 1/Rsh는 나뉜다.
+
+    예: 0.5 = Rsh 절반(누설이 심한 자리) → 누설 전류 2배
+        2.0 = Rsh 두 배(깨끗한 자리)     → 누설 전류 절반
+
+    `rc`와 같은 함정이다(§6). 그리고 **Griddler와 방향이 반대**다 — 그쪽은
+    shunt를 컨덕턴스 G_shunt [S/cm²]로 두고 우리는 저항 Rsh [Ω·cm²]로 둔다.
+    같은 파일을 그대로 가져오면 역효과가 난다
+    (`docs/spatial_map_convention.md` §7).
+
+    판정은 헬퍼가 돌려주는 노드 배열로 한다 — `_Gc`처럼 밖에서 볼 수 있는
+    행렬이 아니라 잔차 안에서만 쓰이는 값이기 때문이다.
+    """
+    m = make_mono()
+    dp0 = fest.DiodeParams()
+    base = m.S._diode_node_arrays(dp0, mode="tandem")
+
+    dp2 = fest.DiodeParams()
+    dp2.spatial_rsh = fest.SpatialMap(mode="uniform", background=2.0)
+    got = m.S._diode_node_arrays(dp2, mode="tandem")
+
+    assert np.allclose(got.Rsh, dp0.Rsh_top * 2.0, rtol=0, atol=0)
+    assert np.allclose(got.Rshb, dp0.Rsh_bot * 2.0, rtol=0, atol=0)
+    # 누설 컨덕턴스는 절반이 된다 — 이것이 "값이 크면 좋다"의 실체다
+    assert np.allclose(1.0 / got.Rsh, (1.0 / dp0.Rsh_top) / 2.0)
+
+
+def test_rsh_no_map_returns_the_scalar_itself(fest, make_mono):
+    """맵이 없으면 헬퍼가 `dp.Rsh_*` **스칼라 그 객체**를 돌려준다.
+
+    이것이 무맵 비트 동일의 근거다. 소비 지점이 전부 `V / Rsh`(나눗셈)이므로,
+    스칼라를 그대로 돌려주면 식이 v28.61과 **문자 그대로 같다.**
+
+    ⚠ 컨덕턴스 `1/Rsh`를 돌려주고 `V * Gsh`로 바꾸면 안 된다 —
+    `V / R`과 `V * (1/R)`은 IEEE754에서 마지막 비트가 다르다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    t = m.S._diode_node_arrays(dp, mode="tandem")
+    assert t.Rsh is dp.Rsh_top
+    assert t.Rshb is dp.Rsh_bot
+    sgl = m.S._diode_node_arrays(dp, mode="single")
+    assert sgl.Rsh is dp.Rsh_single
+
+
+def test_rsh_map_is_in_the_build_cache_hash(fest, make_mono):
+    """rsh 맵을 바꾸면 `_build` 캐시가 무효화된다.
+
+    Rsh는 `_build`가 만드는 강성행렬에 들어가지 않지만, **warm-start 벡터**는
+    이전 문제의 해다. 다른 맵 4종과 같은 처리를 해서 슬롯이 빠지는 일이 없게
+    한다 — 맵이 없으면 상수 0이라 무맵 경로의 캐시 거동은 그대로다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    h0 = m.S._cache_hash
+    dp.spatial_rsh = fest.SpatialMap(mode="uniform", background=2.0)
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    assert m.S._cache_hash != h0, "rsh 맵이 캐시 해시에 없다"
+    fest.clear_spatial_map(dp, "rsh")
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    assert m.S._cache_hash == h0, "맵을 떼면 해시가 원래대로 돌아와야 한다"
 
 
 # =============================================================================
@@ -1174,10 +1257,32 @@ def test_cell_extent_falls_back_to_geo_on_garbage(fest):
 
 
 def test_status_text_counts_active_maps(fest, clean_dp):
+    """요약 라벨의 적용 개수 **와 총 개수** 둘 다 확인한다.
+
+    총 개수를 문자열에 박으면 안 된다 — v28.62에서 대상이 4종 → 5종이 되면서
+    `'{n} of 4 active'`가 **"4개 중 5개 적용"** 을 낼 수 있었다.
+    `SPATIAL_INVERTED_TARGETS`로 올린 하드코딩 `target == 'rc'`와 같은 부류다.
+
+    기존 단언(0개·1개)은 그대로 두고 총 개수 검사를 덧붙인다.
+    """
     app = _bare_app(fest)
-    assert "0" in fest.FESTProApp._spatial_status_text(app)
+    total = len(fest.SPATIAL_TARGETS)
+    txt0 = fest.FESTProApp._spatial_status_text(app)
+    assert "0" in txt0
+    assert str(total) in txt0, (
+        f"요약 라벨에 총 개수 {total}이 없다: {txt0!r} — "
+        f"len(SPATIAL_TARGETS)에서 받아야 한다")
+
     fest.set_spatial_map(fest.DP, "rc", fest.SpatialMap())
     assert "1" in fest.FESTProApp._spatial_status_text(app)
+
+    # 전부 적용하면 "n개 중 n개" — 같은 수가 두 번 나온다. 총 개수가 다른 수로
+    # 박혀 있으면 여기서 갈린다.
+    for t in fest.SPATIAL_TARGETS:
+        fest.set_spatial_map(fest.DP, t, fest.SpatialMap())
+    txt_all = fest.FESTProApp._spatial_status_text(app)
+    assert txt_all.count(str(total)) >= 2, (
+        f"전부 적용했는데 라벨이 {txt_all!r}이다 — 총 개수가 하드코딩돼 있다")
 
 
 # =============================================================================
