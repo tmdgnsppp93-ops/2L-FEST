@@ -1816,3 +1816,198 @@ def test_extraction_method_value_is_unchanged(fest):
                         w_busbar=600e-4)
     assert g.extraction_method == "probe_point", (
         "기본값이 바뀌었다 — v28.64는 GUI만 건드린다")
+
+
+# =============================================================================
+# 15. 설정 창 싱글톤 (v28.65) — "한 번 눌렀는데 창이 여러 개"
+# =============================================================================
+#
+# 보고된 증상은 "SPATIAL MAPS 버튼 한 번 눌렀는데 창이 4개"였다. 조사 결과
+# **한 번의 클릭이 여러 창을 만드는 경로는 코드에 없다**(콜백 1곳, 사이드바
+# 1회 생성, 휠 바인딩은 버튼 이벤트에 닿지 않음 — 아래 세 테스트가 그 셋을
+# 각각 고정한다). 실제 원인이 무엇이든(클릭 중복 전달 등) 싱글톤이 증상을
+# 구조적으로 없앤다.
+#
+# 창이 여러 개면 지저분한 것으로 끝나지 않는다. `_spatial_rows`가 딕셔너리
+# 하나라 두 번째 창이 첫 번째 창의 등록을 덮어쓰고, 아무 창이나 하나 닫으면
+# `_on_close`가 그것을 비워 **아직 열려 있는 창들까지 같이 죽는다.**
+
+
+def _toplevel_calls(fest):
+    return fest.ctk.CTkToplevel.call_count
+
+
+# --- 15-a. 클릭 → 콜백 경로가 하나뿐이다 ---------------------------------------
+
+def test_open_callback_is_bound_exactly_once(fest):
+    """`_open_spatial_maps`를 부르는 지점이 **정확히 한 곳**이다.
+
+    사이드바 카드의 버튼 `command=` 하나. 두 곳이 되면 한 번의 클릭이 두 창을
+    만들 수 있고, 그것이 보고된 증상의 첫 번째 가설이었다.
+    """
+    import ast
+    import inspect
+    src = inspect.getsource(fest.FESTProApp._build_sidebar)
+    assert src.count("command=self._open_spatial_maps") == 1, (
+        "사이드바에서 창 열기 콜백이 한 번만 걸려야 한다")
+
+    # 모듈 도크스트링(=변경 이력)은 빼고 센다 — 거기서는 이 코드를 **설명**
+    # 하므로 같은 문자열이 산문으로 등장한다. 이력을 고칠 때마다 깨지는
+    # 테스트는 아무도 안 고치고 지워 버린다.
+    whole = inspect.getsource(fest)
+    module_doc = ast.get_docstring(ast.parse(whole)) or ""
+    code = whole.replace(module_doc, "", 1)
+    assert code.count("command=self._open_spatial_maps") == 1
+    assert code.count("def _open_spatial_maps") == 1
+
+
+def test_sidebar_is_built_once(fest):
+    """사이드바를 두 번 만들면 버튼도 둘이 된다 — 호출 지점이 하나뿐이다.
+
+    보고된 증상의 세 번째 가설(i18n 갱신·사이드바 재생성이 버튼을 여러 번
+    만든다)이 성립하지 않음을 고정한다. 언어 전환은 `_update_sidebar_labels`가
+    **기존 위젯의 text만** 바꾸며 위젯을 다시 만들지 않는다.
+    """
+    import inspect
+    whole = inspect.getsource(fest)
+    assert whole.count("self._build_sidebar(") == 1
+
+    switch = inspect.getsource(fest.FESTProApp._update_sidebar_labels)
+    assert "_build_sidebar" not in switch, (
+        "언어 전환이 사이드바를 다시 만들면 버튼이 중복된다")
+    assert "CTkButton" not in switch, (
+        "언어 전환은 위젯을 만들지 않고 text만 갱신해야 한다")
+
+
+def test_wheel_binding_never_touches_button_events(fest):
+    """휠 바인딩이 **클릭 이벤트를 건드리지 않는다.**
+
+    보고된 증상의 두 번째 가설(v28.63의 하위 트리 바인딩이 버튼 콜백을 중복
+    등록했다)이 성립하지 않음을 고정한다. `<Button-4>`/`<Button-5>`는 X11의
+    휠 위/아래이고 `<Button-1>`(클릭)과 다른 이벤트다 — 그 사실에 기대고 있으니
+    누가 `<Button-1>`을 추가하면 여기서 걸려야 한다.
+    """
+    seqs = []
+
+    class _W:
+        def bind(self, seq, fn):
+            seqs.append(seq)
+
+        def winfo_children(self):
+            return []
+
+    frame = _W()
+    frame._parent_canvas = object()
+    fest.FESTProApp._bind_wheel_to_scrollframe(
+        object.__new__(fest.FESTProApp), frame)
+
+    assert set(seqs) == {"<MouseWheel>", "<Button-4>", "<Button-5>"}
+    assert "<Button-1>" not in seqs, "휠 바인딩이 클릭을 가로채면 안 된다"
+    assert not any("Double" in s or "ButtonRelease" in s for s in seqs)
+
+
+# --- 15-b. 싱글톤 ---------------------------------------------------------------
+
+def test_second_open_does_not_create_a_new_window(fest, clean_dp):
+    """이미 열려 있으면 **새 창을 만들지 않는다** — 앞으로 올리기만 한다."""
+    app = _bare_app(fest)
+    fest.ctk.CTkToplevel.reset_mock()
+
+    fest.FESTProApp._open_spatial_maps(app)
+    assert _toplevel_calls(fest) == 1
+
+    for _ in range(3):
+        fest.FESTProApp._open_spatial_maps(app)
+    assert _toplevel_calls(fest) == 1, (
+        f"네 번 눌렀는데 창이 {_toplevel_calls(fest)}개 만들어졌다 — "
+        f"보고된 증상 그대로다")
+
+
+def test_second_open_raises_the_existing_window(fest, clean_dp, monkeypatch):
+    """두 번째 호출은 **기존 창을** 앞으로 올린다(아무 일도 안 하면 안 된다)."""
+    raised = []
+    monkeypatch.setattr(fest.FESTProApp, "_raise_once",
+                        lambda self, w, **kw: raised.append(w))
+    app = _bare_app(fest)
+    fest.ctk.CTkToplevel.reset_mock()
+
+    fest.FESTProApp._open_spatial_maps(app)
+    first = app._spatial_win
+    raised.clear()
+
+    fest.FESTProApp._open_spatial_maps(app)
+    assert raised == [first], "기존 창을 앞으로 올려야 한다"
+    assert app._spatial_win is first
+
+
+def test_closing_allows_reopening(fest, clean_dp):
+    """닫으면 등록이 풀려 **다시 열린다** — 싱글톤이 창을 영영 막으면 안 된다."""
+    app = _bare_app(fest)
+    fest.ctk.CTkToplevel.reset_mock()
+
+    fest.FESTProApp._open_spatial_maps(app)
+    win = app._spatial_win
+    # WM_DELETE_WINDOW로 등록된 핸들러를 그대로 부른다
+    handler = win.protocol.call_args[0][1]
+    handler()
+    assert app._spatial_win is None
+    assert app._spatial_rows == {}
+
+    fest.FESTProApp._open_spatial_maps(app)
+    assert _toplevel_calls(fest) == 2
+    assert app._spatial_win is not None
+
+
+def test_dead_window_reference_does_not_block_reopen(fest, clean_dp):
+    """창이 죽었는데 참조만 남은 경우에도 다시 열린다.
+
+    `winfo_exists()`가 False이거나 예외를 던지는 상황 — 사용자가 창을
+    강제로 닫았거나 Tk가 먼저 정리한 경우다. 여기서 막히면 버튼이 영영
+    먹통이 되므로, 싱글톤 판정은 **살아 있음이 확인될 때만** 막는다.
+    """
+    app = _bare_app(fest)
+
+    class _Dead:
+        def winfo_exists(self):
+            return False
+
+    app._spatial_win = _Dead()
+    fest.ctk.CTkToplevel.reset_mock()
+    fest.FESTProApp._open_spatial_maps(app)
+    assert _toplevel_calls(fest) == 1
+
+    class _Raises:
+        def winfo_exists(self):
+            raise RuntimeError("application has been destroyed")
+
+    app._spatial_win = _Raises()
+    fest.ctk.CTkToplevel.reset_mock()
+    fest.FESTProApp._open_spatial_maps(app)
+    assert _toplevel_calls(fest) == 1
+
+
+def test_format_help_window_is_also_a_singleton(fest):
+    """도움말 창도 같은 처리 — 같은 결함이 같은 기능 안에 두 번 있었다."""
+    app = _bare_app(fest)
+    fest.ctk.CTkToplevel.reset_mock()
+
+    fest.FESTProApp._show_spatial_format_help(app)
+    assert _toplevel_calls(fest) == 1
+
+    for _ in range(3):
+        fest.FESTProApp._show_spatial_format_help(app)
+    assert _toplevel_calls(fest) == 1
+
+
+def test_help_close_button_releases_the_singleton(fest):
+    """도움말의 [닫기]가 등록을 풀어 다시 열 수 있게 한다."""
+    app = _bare_app(fest)
+    fest.FESTProApp._show_spatial_format_help(app)
+    win = app._spatial_help_win
+    handler = win.protocol.call_args[0][1]
+    handler()
+    assert app._spatial_help_win is None
+
+    fest.ctk.CTkToplevel.reset_mock()
+    fest.FESTProApp._show_spatial_format_help(app)
+    assert _toplevel_calls(fest) == 1

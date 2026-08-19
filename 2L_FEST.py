@@ -746,6 +746,33 @@ v28.64: [ui] 전류 추출 방식(extraction_method)을 **비활성 드롭다운
          모듈 상수에서 받는다.
          i18n: extract_probe_only 1키 EN/KR. 언어 전환 시 즉시 갱신되도록
          `_update_sidebar_labels`에 등록했다(라벨은 자동으로 안 바뀐다).
+v28.65: [fix] 공간 분포 창이 **누를 때마다 새로 뜬다** — 싱글톤 처리 추가.
+         `_open_spatial_maps` / `_show_spatial_format_help` 둘 다 이미 열린
+         창을 확인하지 않고 `CTkToplevel`을 무조건 새로 만들었다. 이제
+         `winfo_exists()`로 확인해서, 살아 있으면 `_raise_once`로 **앞으로
+         올리기만** 하고 돌아온다.
+         ⚠ 창이 여러 개면 단순히 지저분한 것으로 끝나지 않는다.
+         `self._spatial_rows`가 **딕셔너리 하나**라 두 번째 창이 첫 번째 창의
+         등록을 덮어쓴다 → 첫 창의 파일명 라벨은 그 뒤로 영영 갱신되지 않고,
+         **아무 창이나 하나 닫으면** `_on_close`가 `_spatial_rows`를 비워
+         아직 열려 있는 창들까지 같이 죽는다. 창별 등록으로 바꾸는 대신
+         창을 하나로 제한한다 — 이 창은 전역 DP 하나를 조작하는 창이라
+         애초에 둘 이상 뜰 이유가 없다(둘이 뜨면 어느 쪽이 현재 상태인지도
+         모호해진다).
+         원인 조사 기록: 사용자 보고는 "한 번 눌렀는데 4개"였다. 콜백 중복
+         바인딩과 사이드바 재생성을 먼저 의심했으나 **둘 다 근거가 없다** —
+         `command=self._open_spatial_maps`는 저장소 전체에서 1곳(`sp_card`
+         버튼)뿐이고, `_build_sidebar`는 1회만 호출되며, v28.63의
+         `_bind_wheel_to_scrollframe`은 `<MouseWheel>`/`<Button-4>`/
+         `<Button-5>`만 걸고 그것도 **새로 만든 창의 하위 트리에만** 건다
+         (사이드바 버튼에 닿지 않고, 그 시퀀스는 `command`를 부르지도
+         않는다). 앱에 `bind_all`은 한 곳도 없다.
+         즉 **한 번의 클릭이 네 창을 만드는 경로는 코드에 없다.** 실제로는
+         클릭이 여러 번 전달된 것(트랙패드 중복 발화·길게 눌림 등)으로 보이며,
+         싱글톤은 그 원인이 무엇이든 증상을 구조적으로 없앤다.
+         테스트: 콜백이 정확히 1회만 바인딩되는지 · 휠 바인딩이 버튼 이벤트를
+         건드리지 않는지 · 이미 열려 있으면 새 창을 만들지 않는지 ·
+         닫으면 다시 열 수 있는지.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -845,7 +872,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.64",
+    "version": "v28.65",
     "date": "2026-08-19",
 }
 _BUILD_SHA_CACHE = None
@@ -11220,8 +11247,27 @@ class FESTProApp(ctk.CTk):
 
         대상 수를 문구에 박지 않는다(v28.62에 4종 → 5종이 됐다). 실제 목록은
         ``SPATIAL_TARGET_INFO``가 정한다.
+
+        v28.65: **싱글톤이다.** 이미 떠 있으면 새로 만들지 않고 앞으로 올린다.
+        단순한 정돈이 아니라 정확성 문제다 — ``self._spatial_rows``가 딕셔너리
+        하나라, 두 번째 창이 첫 번째 창의 등록을 덮어쓰면 첫 창의 파일명 라벨은
+        영영 갱신되지 않고, 아무 창이나 하나 닫으면 ``_on_close``가 그 딕셔너리를
+        비워 아직 열려 있는 창들까지 같이 죽는다. 이 창은 전역 ``DP`` 하나를
+        조작하므로 둘 이상 뜰 이유도 없다(둘이 뜨면 어느 쪽이 현재 상태인지
+        모호해진다).
         """
+        _open = getattr(self, '_spatial_win', None)
+        if _open is not None:
+            try:
+                if _open.winfo_exists():
+                    self._raise_once(_open)
+                    return
+            except Exception:
+                pass          # 죽은 창 참조 — 아래에서 새로 만든다
+            self._spatial_win = None
+
         win = ctk.CTkToplevel(self)
+        self._spatial_win = win
         win.title(f"2L-FEST - {_t('sp_title')}")
         win.geometry("980x620")
         # v28.63: 카드 목록이 스크롤되므로 창을 줄여도 전부 접근할 수 있다.
@@ -11348,6 +11394,7 @@ class FESTProApp(ctk.CTk):
         # 건드리지 않도록 등록을 해제한다(다음에 열면 다시 채운다).
         def _on_close():
             self._spatial_rows = {}
+            self._spatial_win = None      # v28.65: 다시 열 수 있게 해제
             win.destroy()
 
         win.protocol("WM_DELETE_WINDOW", _on_close)
@@ -11419,8 +11466,22 @@ class FESTProApp(ctk.CTk):
         방향이 뒤집히는 대상 목록은 ``SPATIAL_INVERTED_TARGETS``에서 받는다.
         여기에 목록을 다시 적으면 대상이 6종이 되는 날 안내만 5종으로 남는다 —
         `'{n} of 4 active'`가 냈던 실패와 같은 종류다.
+
+        v28.65: 설정 창과 같은 이유로 **싱글톤**이다. 읽기 전용 안내라 상태가
+        엇갈릴 일은 없지만, 버튼을 누를 때마다 같은 창이 쌓이는 것은 같다.
         """
+        _open = getattr(self, '_spatial_help_win', None)
+        if _open is not None:
+            try:
+                if _open.winfo_exists():
+                    self._raise_once(_open)
+                    return
+            except Exception:
+                pass
+            self._spatial_help_win = None
+
         win = ctk.CTkToplevel(self)
+        self._spatial_help_win = win
         win.title(f"2L-FEST - {_t('sp_help_title')}")
         win.geometry("660x680")
         try:
@@ -11501,11 +11562,16 @@ class FESTProApp(ctk.CTk):
         else:
             para(_t('sp_help_dir_missing'), color=CLR_AMBER)
 
+        def _close_help():
+            self._spatial_help_win = None   # v28.65: 다시 열 수 있게 해제
+            win.destroy()
+
         ctk.CTkButton(win, text=_t('sp_close'), width=90, height=28,
                       font=ctk.CTkFont(size=10),
                       fg_color="#94A3B8", hover_color="#64748B",
                       text_color="white", corner_radius=5,
-                      command=win.destroy).pack(pady=(4, 8))
+                      command=_close_help).pack(pady=(4, 8))
+        win.protocol("WM_DELETE_WINDOW", _close_help)
 
         self._bind_wheel_to_scrollframe(body)
 
