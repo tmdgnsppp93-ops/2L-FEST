@@ -724,6 +724,28 @@ v28.63: [ui] 공간 분포 맵 설정 창 개선 — **물리 무변경**(계산
          2.0인 맵과 전부 1.0인 맵이 똑같이 보인다.
          계산은 `spatial_map_stats()` **모듈 함수**가 한다(Tk 없이 테스트).
          i18n: sp_help* 11 + sp_stats + sp_close = 13키 EN/KR 동시 추가.
+v28.64: [ui] 전류 추출 방식(extraction_method)을 **비활성 드롭다운 → 읽기 전용
+         상태 표시**로 바꿨다. 전면·후면 두 곳. **기능 상태는 그대로다** —
+         솔버는 여전히 이 값을 읽지 않고, GridDesign에 들어가는 값도
+         `probe_point` 그대로다(계산 경로 0줄).
+         v28.54가 선택지를 닫으면서 `state="disabled"` 드롭다운 + 붉은
+         "(not implemented)" 라벨을 남겼는데, **비활성 드롭다운은 "곧 열릴
+         것"으로 읽힌다.** 고를 수 없는 것을 선택 위젯 모양으로 두면 사용자는
+         값이 아니라 시점을 기다린다. 선택지가 하나뿐이면 그것은 선택이 아니라
+         상태이므로, 상태를 표시하는 위젯(라벨)으로 바꾼다.
+         드롭다운과 붉은 라벨을 지우고 `_t('extract_probe_only')` 라벨 하나만
+         남겼다. 솔버가 연결되는 날 라벨을 CTkOptionMenu로 되돌리면 된다 —
+         v28.54 주석이 적어 둔 복원 절차(values 복원 + state 제거)는 그때
+         "라벨을 드롭다운으로 교체"로 바뀐다.
+         ⚠ `_extract_method_var` / `_rear_extract_method_var`(StringVar)는
+         **남긴다.** 지우면 `_apply_grid_design`이 getattr 폴백으로 넘어가는데,
+         그 폴백은 같은 값을 내지만 **경로가 다르다.** 위젯을 지우는 변경에서
+         읽기 경로까지 함께 바꾸면 결과가 같은지 판정할 축이 둘이 된다.
+         var는 이제 "사용자의 선택"이 아니라 **고정된 상태**이므로, 표시 라벨과
+         var 초기값이 갈리지 않도록 둘 다 `EXTRACTION_METHOD_FIXED_LABEL`
+         모듈 상수에서 받는다.
+         i18n: extract_probe_only 1키 EN/KR. 언어 전환 시 즉시 갱신되도록
+         `_update_sidebar_labels`에 등록했다(라벨은 자동으로 안 바뀐다).
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -823,7 +845,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.63",
+    "version": "v28.64",
     "date": "2026-08-19",
 }
 _BUILD_SHA_CACHE = None
@@ -1274,10 +1296,22 @@ _TR = {
         'EN': 'min {vmin} / max {vmax} / mean {vmean}   ({ny} x {nx} values)',
         'KR': '최소 {vmin} / 최대 {vmax} / 평균 {vmean}   ({ny} x {nx}개 값)'},
     'sp_close': {'EN': 'Close', 'KR': '닫기'},
+    # v28.64: 전류 추출 방식 — 선택이 아니라 **상태**다(솔버 미연결).
+    # 비활성 드롭다운을 지우고 이 라벨만 남긴다.
+    'extract_probe_only': {'EN': 'Probe Point', 'KR': '프로브 점 방식'},
     # General
     'ready': {'EN': 'Ready. Click a tab.', 'KR': '준비 완료. 탭을 클릭하세요.'},
     'run_compare_first': {'EN': 'Run COMPARE first.', 'KR': 'COMPARE를 먼저 실행하세요.'},
 }
+
+# v28.64: GridDesign에 실제로 들어가는 값을 정하는 문자열.
+#
+# `_apply_grid_design`의 `_method_map`이 이 문자열을 `"probe_point"`로 옮긴다.
+# 표시용 라벨(`_t('extract_probe_only')`)과 **다른 것**이다 — 표시는 번역되고
+# 이 값은 번역되면 안 된다. 화면 문자열을 그대로 매핑 키로 쓰던 구조라, 라벨을
+# i18n으로 바꾸면서 둘이 갈릴 자리가 생겼다. 상수로 묶어 그 자리를 없앤다.
+EXTRACTION_METHOD_FIXED_LABEL = "At Probe Point (I-V tester)"
+
 
 def _t(key):
     """Get translated text for current language."""
@@ -9541,27 +9575,27 @@ class FESTProApp(ctk.CTk):
         method_row.pack(fill="x", padx=4, pady=3); method_row.pack_propagate(False)
         ctk.CTkLabel(method_row, text="Method:", font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=CLR_TEXT_SEC, width=58, anchor="w").pack(side="left", padx=(6, 2))
-        # v28.54: 비활성화. extraction_method는 GridDesign에 저장만 되고 솔버가
-        #   읽지 않는다(저장소 전체 참조가 정의·저장·GUI 매핑뿐). 그 상태로 열어
+        # v28.54: extraction_method는 GridDesign에 저장만 되고 솔버가 읽지
+        #   않는다(저장소 전체 참조가 정의·저장·GUI 매핑뿐). 그 상태로 열어
         #   두면 "Ribbon Ends"/"Floating"을 골라도 probe_point와 **똑같은 결과가
         #   에러 없이** 나와, 사용자가 모듈 모사를 했다고 믿게 된다. v28.43의
-        #   n_probe_points=0 버그(조용히 틀린 값)와 같은 계열이라 솔버 연결 전까지
-        #   선택지를 닫는다. 연결 시 values 복원 + state 제거로 되돌린다.
+        #   n_probe_points=0 버그(조용히 틀린 값)와 같은 계열이라 선택지를 닫았다.
         #   근거: docs/audit_2026-08-13.md §4 "Current extraction mode".
-        self._extract_method_var = ctk.StringVar(value="At Probe Point (I-V tester)")
-        ctk.CTkLabel(method_row, text="(not implemented)",
-                     font=ctk.CTkFont(size=9, slant="italic"),
-                     text_color="#B71C1C").pack(side="right", padx=(2, 6))
-        self._extract_method_dropdown = ctk.CTkOptionMenu(
-            method_row,
-            values=["At Probe Point (I-V tester)"],
-            variable=self._extract_method_var,
-            font=ctk.CTkFont(size=10),
-            fg_color="#7B1FA2", button_color="#6A1B9A",
-            button_hover_color="#4A148C", height=26, width=180,
-            dropdown_font=ctk.CTkFont(size=10),
-            state="disabled")
-        self._extract_method_dropdown.pack(side="left", fill="x", expand=True, padx=4)
+        # v28.64: 그 "닫음"을 **비활성 드롭다운이 아니라 라벨**로 표현한다.
+        #   비활성 드롭다운은 "곧 열릴 것"으로 읽혀서, 사용자가 값이 아니라
+        #   시점을 기다리게 된다. 선택지가 하나뿐이면 선택이 아니라 상태다.
+        #   솔버가 연결되는 날 이 라벨을 CTkOptionMenu로 되돌린다.
+        # var는 남긴다 — 아래 _apply_grid_design이 읽는 경로를 그대로 두기
+        #   위해서다(위젯을 지우면서 읽기 경로까지 바꾸면 결과가 같은지
+        #   판정할 축이 둘이 된다). 이제 "선택"이 아니라 고정된 상태다.
+        self._extract_method_var = ctk.StringVar(
+            value=EXTRACTION_METHOD_FIXED_LABEL)
+        self._extract_method_lbl = ctk.CTkLabel(
+            method_row, text=_t('extract_probe_only'),
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=CLR_TEXT, anchor="w")
+        self._extract_method_lbl.pack(side="left", fill="x", expand=True,
+                                      padx=(2, 6))
 
         # --- REAR DESIGN Card --- [STEP 1]
         ctk.CTkFrame(step1, height=8, fg_color="transparent").pack()
@@ -9686,21 +9720,16 @@ class FESTProApp(ctk.CTk):
         rear_method_row.pack(fill="x", padx=6, pady=3); rear_method_row.pack_propagate(False)
         ctk.CTkLabel(rear_method_row, text="R-Method:", font=ctk.CTkFont(size=10, weight="bold"),
                      text_color=CLR_TEXT_SEC, width=68, anchor="w").pack(side="left", padx=(6, 2))
-        # v28.54: 비활성화 — 전면 Method와 같은 이유(솔버 미연결). 위 주석 참조.
-        self._rear_extract_method_var = ctk.StringVar(value="At Probe Point (I-V tester)")
-        ctk.CTkLabel(rear_method_row, text="(not implemented)",
-                     font=ctk.CTkFont(size=9, slant="italic"),
-                     text_color="#B71C1C").pack(side="right", padx=(2, 6))
-        self._rear_extract_method_dropdown = ctk.CTkOptionMenu(
-            rear_method_row,
-            values=["At Probe Point (I-V tester)"],
-            variable=self._rear_extract_method_var,
-            font=ctk.CTkFont(size=10),
-            fg_color="#4E342E", button_color="#3E2723",
-            button_hover_color="#1B0000", height=26, width=180,
-            dropdown_font=ctk.CTkFont(size=10),
-            state="disabled")
-        self._rear_extract_method_dropdown.pack(side="left", fill="x", expand=True, padx=4)
+        # v28.54: 선택지를 닫았다 — 전면 Method와 같은 이유(솔버 미연결).
+        # v28.64: 읽기 전용 상태 표시로 교체 — 위 전면 주석 참조.
+        self._rear_extract_method_var = ctk.StringVar(
+            value=EXTRACTION_METHOD_FIXED_LABEL)
+        self._rear_extract_method_lbl = ctk.CTkLabel(
+            rear_method_row, text=_t('extract_probe_only'),
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=CLR_TEXT, anchor="w")
+        self._rear_extract_method_lbl.pack(side="left", fill="x", expand=True,
+                                           padx=(2, 6))
         self._rear_patt_rows.append(rear_method_row)  # so it hides with bifacial toggle
 
         ctk.CTkFrame(rear_card, height=6, fg_color=CLR_CARD_BG).pack()
@@ -10014,10 +10043,12 @@ class FESTProApp(ctk.CTk):
                 min_value=0, max_value=50
             )
             extract_method_label = getattr(self, "_extract_method_var", None)
-            extract_method_label = extract_method_label.get() if extract_method_label is not None else "At Probe Point (I-V tester)"
+            extract_method_label = (extract_method_label.get()
+                                    if extract_method_label is not None
+                                    else EXTRACTION_METHOD_FIXED_LABEL)
             # dropdown label -> internal key
             _method_map = {
-                "At Probe Point (I-V tester)": "probe_point",
+                EXTRACTION_METHOD_FIXED_LABEL: "probe_point",
                 "Ribbon Ends (Module)":        "ribbon_ends",
                 "Floating (Voc only)":         "floating",
                 # also accept raw keys for back-compat
@@ -10075,9 +10106,11 @@ class FESTProApp(ctk.CTk):
                 r_probe = _parse_gui_int(self.tb_rear_pat[6].get(), "Rear Probe Pts/BB",
                                          min_value=0, max_value=50)
                 r_method_label = getattr(self, "_rear_extract_method_var", None)
-                r_method_label = r_method_label.get() if r_method_label is not None else "At Probe Point (I-V tester)"
+                r_method_label = (r_method_label.get()
+                                  if r_method_label is not None
+                                  else EXTRACTION_METHOD_FIXED_LABEL)
                 _rear_method_map = {
-                    "At Probe Point (I-V tester)": "probe_point",
+                    EXTRACTION_METHOD_FIXED_LABEL: "probe_point",
                     "Ribbon Ends (Module)":        "ribbon_ends",
                     "Full Area Chuck":             "full_area_chuck",
                     "Floating (Voc only)":         "floating",
@@ -12292,6 +12325,13 @@ class FESTProApp(ctk.CTk):
         # 넣으면 조용히 엇갈린다. 별도 참조로 갱신한다.
         if getattr(self, '_spatial_card_hdr', None) is not None:
             self._spatial_card_hdr.configure(text=_t('sp_card'))
+        # v28.64: 전류 추출 방식 상태 라벨. 드롭다운이던 시절에는 값이 영문
+        # 고정이라 전환 대상이 아니었다 — 라벨로 바꾸면서 번역 대상이 됐고,
+        # 라벨은 자동으로 안 바뀌므로 여기 등록해야 한다.
+        for _name in ('_extract_method_lbl', '_rear_extract_method_lbl'):
+            _lbl = getattr(self, _name, None)
+            if _lbl is not None:
+                _lbl.configure(text=_t('extract_probe_only'))
         self._refresh_spatial_summary()
         # v28.52: 형상 계수 노트는 문장형이라 _TR 한 줄로 안 떨어진다 —
         # 언어가 바뀌면 통째로 다시 만든다(스케치 캡션도 같이 갱신됨).

@@ -1725,3 +1725,94 @@ def test_wheel_scroll_direction_by_platform(fest):
     on_wheel(_Ev(num=4))           # X11 위로
     on_wheel(_Ev(num=5))           # X11 아래로
     assert moved == [-1, 1, -1, 1, -1, 1]
+
+
+# =============================================================================
+# 14. 전류 추출 방식 — 읽기 전용 상태 표시 (v28.64)
+# =============================================================================
+#
+# 이 절은 `tests/test_spatial_map.py`의 관심사(공간 분포)가 아니라 **GUI 상태
+# 표시**를 다루지만, 검사 방식이 §13과 같아서(모듈 상수 ↔ 화면 문자열의 결합)
+# 여기 붙인다. 별도 파일로 떼면 `fest` 픽스처 세션이 하나 더 뜨고 로드에만
+# 5초가 더 든다.
+#
+# **기능은 그대로다.** 솔버는 여전히 extraction_method를 읽지 않는다. 여기서
+# 고정하는 것은 "고를 수 없는 것을 선택 위젯으로 두지 않는다"와, 위젯을
+# 지우면서 **GridDesign에 들어가는 값이 바뀌지 않았다**는 두 가지다.
+
+
+def test_fixed_label_maps_to_probe_point(fest):
+    """고정 라벨 상수가 `_apply_grid_design`의 매핑 키와 같다.
+
+    상수와 매핑 표가 갈리면 조용히 `probe_point` 폴백으로 떨어진다 — **같은
+    값이 나오므로 아무도 눈치채지 못한다.** 그 폴백이 정답을 가려 주는 상황이라
+    소스에서 직접 확인한다.
+    """
+    import inspect
+    src = inspect.getsource(fest.FESTProApp._apply_grid_design)
+    assert "EXTRACTION_METHOD_FIXED_LABEL: \"probe_point\"" in src, (
+        "매핑 표가 상수 대신 문자열 리터럴을 쓰고 있다 — 갈려도 폴백이 덮는다")
+    assert fest.EXTRACTION_METHOD_FIXED_LABEL == "At Probe Point (I-V tester)"
+
+
+def test_fixed_label_is_not_translated(fest):
+    """고정 라벨은 **번역 대상이 아니다.**
+
+    GridDesign에 들어가는 값을 정하는 문자열이라, 언어를 바꿨다고 매핑이
+    달라지면 안 된다. 화면에 뜨는 것은 `extract_probe_only`(번역됨)이고
+    이것은 내부 키다 — 둘을 섞지 않는다.
+    """
+    assert fest.EXTRACTION_METHOD_FIXED_LABEL not in [
+        v for entry in fest._TR.values() for v in entry.values()]
+
+
+def test_extract_label_key_has_both_languages(fest):
+    """표시 라벨이 EN/KR 둘 다 있다 — 한쪽만 넣으면 그 자리만 다른 언어로 뜬다."""
+    entry = fest._TR['extract_probe_only']
+    assert set(entry) == {"EN", "KR"}
+    assert entry["EN"] == "Probe Point"
+    assert entry["KR"] == "프로브 점 방식"
+
+
+def test_no_disabled_dropdown_remains(fest):
+    """비활성 드롭다운과 "(not implemented)" 라벨이 **코드에서 사라졌다.**
+
+    v28.64의 요지는 "고를 수 없는데 드롭다운 모양이면 곧 열릴 것처럼 보인다"
+    였다. 위젯이 남아 있으면 그 요지가 무너지므로 소스에서 확인한다.
+    변경 이력(파일 도크스트링)은 검사 대상이 아니다 — 거기 남는 것이 맞다.
+    """
+    import inspect
+    src = inspect.getsource(fest.FESTProApp._build_sidebar)
+    assert "(not implemented)" not in src
+    assert "_extract_method_dropdown" not in src
+    assert "_rear_extract_method_dropdown" not in src
+    # 대신 라벨이 있다 — 전면·후면 두 곳.
+    assert src.count("_t('extract_probe_only')") == 2, (
+        "전면/후면 두 곳 모두 상태 라벨이어야 한다")
+
+
+def test_state_labels_are_registered_for_language_switch(fest):
+    """언어를 바꾸면 상태 라벨도 그 자리에서 바뀐다.
+
+    드롭다운이던 시절에는 값이 영문 고정이라 전환 대상이 아니었다. 라벨로
+    바꾸면서 번역 대상이 됐고, 라벨은 자동으로 안 바뀌므로
+    `_update_sidebar_labels`에 등록해야 한다. 등록을 빠뜨리면 한국어 모드에서
+    이 두 자리만 영어로 남는다 — 사람 눈으로는 잘 안 걸리는 유형이다.
+    """
+    import inspect
+    src = inspect.getsource(fest.FESTProApp._update_sidebar_labels)
+    for name in ("_extract_method_lbl", "_rear_extract_method_lbl"):
+        assert name in src, f"{name}이 언어 전환 갱신에 등록되지 않았다"
+    assert "extract_probe_only" in src
+
+
+def test_extraction_method_value_is_unchanged(fest):
+    """GridDesign에 들어가는 값은 여전히 `probe_point`다 — **기능 무변경.**
+
+    위젯을 지우는 변경이 결과를 바꾸지 않았다는 축. StringVar를 남긴 이유가
+    이것이다(지우면 읽기 경로가 getattr 폴백으로 갈아탄다).
+    """
+    g = fest.GridDesign(n_fingers=4, n_busbars=1, w_finger=50e-4,
+                        w_busbar=600e-4)
+    assert g.extraction_method == "probe_point", (
+        "기본값이 바뀌었다 — v28.64는 GUI만 건드린다")
