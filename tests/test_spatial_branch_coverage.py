@@ -141,6 +141,9 @@ TARGET_LOCALS = {
     # rc는 `_build` 안에서 `_Gc`를 고치는 강성 조립(B 계층)이라 다이오드 지역
     # 배열에 나타나지 않는다. 전압장 판정만 한다.
     "rc": (),
+    # rsh는 j01/j02와 **같은 계층**(A, 노드 잔차)이다. 분기마다 이름이 다른
+    # j01/j02와 달리 헬퍼 도입 이후 도입되므로 **모든 분기에서 같은 이름**을 쓴다.
+    "rsh": ("Rsh_arr", "Rshb_arr"),
 }
 
 _ALL_LOCALS = tuple(sorted({n for v in TARGET_LOCALS.values() for n in v}))
@@ -322,6 +325,16 @@ RESIDUAL_SEES_MAP = {
     ("single_bifacial", "j02"): True,      # v28.61에서 해소
     ("single_bifacial", "gen"): True,      # v28.61에서 해소
     ("single_bifacial", "rc"): True,
+
+    # --- 5번째 대상: shunt (2026-08-19 단위 0) --------------------------------
+    # 전부 False다. **결함이 아니라 미구현**이다 — `rsh`는 SPATIAL_TARGETS에
+    # 아직 없어서 맵을 붙이는 것 자체가 거부된다. 구현되면 6칸이 True가 된다.
+    ("phaseA_full_area", "rsh"): False,
+    ("phaseB_full_area", "rsh"): False,
+    ("phaseB_bifacial", "rsh"): False,
+    ("phaseA_bifacial", "rsh"): False,
+    ("single_full_area", "rsh"): False,
+    ("single_bifacial", "rsh"): False,
 }
 
 # 실제 도달 분기. `BRANCH_CASES`의 `expected_branch`와 일치한다 — 단, 그쪽은
@@ -336,7 +349,20 @@ ACTUAL_BRANCH = {
     "single_bifacial": "_solve_single_bifacial",
 }
 
-TARGETS = ("j01", "j02", "gen", "rc")
+# 이 표가 덮으려는 대상. **`fest.SPATIAL_TARGETS`와 다를 수 있다** — 아직
+# 구현되지 않은 대상을 여기 먼저 올리고 결함 칸을 `False`로 두는 것이 단위 0의
+# 방식이기 때문이다(그 칸에 strict xfail이 붙어 구현되는 순간 XPASS로 뒤집힌다).
+TARGETS = ("j01", "j02", "gen", "rc", "rsh")
+
+# 단위 0 시점에 **아직 엔진에 없는** 대상. 구현되면 여기를 비운다.
+#   - `set_spatial_map(dp, 'rsh', ...)`가 ValueError를 던진다(레지스트리에 없다)
+#   - 그래서 아래 교차 테스트가 실패하고, strict xfail이 그것을 예상 결과로 잡는다
+# 근거: Griddler 매뉴얼 §3.1이 "most cell parameters"에 shunt conductance를
+# 포함하고 GUI에도 nonuniform 진입 버튼이 있는데 우리에게 빠져 있었다.
+# Rsh는 이미 노드 잔차(A 계층)에 있어 j01/j02와 같은 계층이다.
+NOT_YET_IMPLEMENTED = ("rsh",)
+
+IMPLEMENTED_TARGETS = tuple(t for t in TARGETS if t not in NOT_YET_IMPLEMENTED)
 
 
 @pytest.fixture
@@ -355,11 +381,14 @@ def _cross(targets=TARGETS):
         for t in targets:
             marks = ()
             if not RESIDUAL_SEES_MAP[(case.id, t)]:
-                marks = pytest.mark.xfail(
-                    strict=True,
-                    reason=f"결함 — {ACTUAL_BRANCH[case.id]}가 spatial_{t}를 "
-                           f"잔차에 반영하지 않는다 (계획 단위 1이 고친다). "
+                if t in NOT_YET_IMPLEMENTED:
+                    why = (f"미구현 — spatial_{t}가 SPATIAL_TARGETS에 아직 없다. "
+                           f"맵을 붙이는 것 자체가 거부된다")
+                else:
+                    why = (f"결함 — {ACTUAL_BRANCH[case.id]}가 spatial_{t}를 "
+                           f"잔차에 반영하지 않는다. "
                            f"docs/spatial_map_convention.md §6")
+                marks = pytest.mark.xfail(strict=True, reason=why)
             out.append(pytest.param(case.values, t, marks=marks,
                                     id=f"{case.id}-{t}"))
     return out
@@ -381,9 +410,40 @@ def test_cross_table_matches_branch_cases():
     assert set(RESIDUAL_SEES_MAP) == {(i, t) for i in ids for t in TARGETS}
 
 
-def test_spatial_targets_registry_unchanged(fest):
-    """대상 4종이 늘면 표가 조용히 불완전해진다."""
-    assert fest.SPATIAL_TARGETS == TARGETS
+def test_spatial_targets_registry_matches_the_table(fest):
+    """엔진 레지스트리 == 이 표에서 **구현됐다고 적은** 대상.
+
+    대상이 늘었는데 표가 안 늘면 새 대상이 감시 밖에 놓인다. 반대로 표에만
+    올리고 구현이 안 됐으면 `NOT_YET_IMPLEMENTED`에 있어야 한다 — 그래야 그
+    칸의 xfail이 "미구현"이라는 정확한 사유를 갖는다.
+
+    구현이 끝나면 `NOT_YET_IMPLEMENTED`를 비우고, 그 순간 이 단언이 5종을
+    요구하게 된다.
+    """
+    assert fest.SPATIAL_TARGETS == IMPLEMENTED_TARGETS, (
+        f"레지스트리={fest.SPATIAL_TARGETS} vs 표의 구현분={IMPLEMENTED_TARGETS} — "
+        f"대상을 추가했으면 TARGETS와 RESIDUAL_SEES_MAP을 함께 갱신할 것")
+
+
+@pytest.mark.parametrize("target", NOT_YET_IMPLEMENTED or ["<none>"])
+def test_not_yet_implemented_targets_are_actually_rejected(fest, target):
+    """미구현이라고 적은 대상이 **실제로** 거부되는지 확인한다.
+
+    이 테스트가 없으면 `NOT_YET_IMPLEMENTED`가 낡아도 아무도 모른다 — 구현이
+    끝났는데 목록에 남아 있으면 위 교차 테스트 6칸이 XPASS로 뒤집혀 실패하므로
+    결국 잡히지만, **여기가 먼저** 잡아서 원인을 정확히 말해 준다.
+
+    구현이 끝나면 `NOT_YET_IMPLEMENTED = ()`가 되어 이 테스트는 수집되지 않는다
+    (파라미터가 비면 `<none>` 하나가 들어와 즉시 통과한다).
+    """
+    if target == "<none>":
+        assert not NOT_YET_IMPLEMENTED
+        return
+    assert target not in fest.SPATIAL_TARGETS
+    assert not hasattr(fest.DiodeParams, f"spatial_{target}")
+    with pytest.raises(ValueError) as exc:
+        fest.set_spatial_map(fest.DiodeParams(), target, fest.SpatialMap())
+    assert target in str(exc.value)
 
 
 def test_no_unresolved_defect_cells_remain():
@@ -401,13 +461,20 @@ def test_no_unresolved_defect_cells_remain():
     `test_junction_bf.py:42`가 의도적으로 `strict=False`를 쓰는 것과 대비된다.
     그쪽은 "환경에 따라 갈리는 알려진 허용"이고, 이쪽은 "고쳐야 할 결함"이다.
     """
-    unresolved = sorted(k for k, v in RESIDUAL_SEES_MAP.items() if not v)
+    unresolved = sorted(k for k, v in RESIDUAL_SEES_MAP.items()
+                        if not v and k[1] not in NOT_YET_IMPLEMENTED)
     assert not unresolved, (
         f"잔차가 맵을 보지 않는 칸이 남아 있다: {unresolved} — "
         f"v28.61이 12칸을 해소했으므로 이것은 회귀이거나 새로 발견된 결함이다")
 
+    # ⚠ `NOT_YET_IMPLEMENTED`는 **결함이 아니라 계획된 공백**이라 위 단언에서
+    # 뺀다. 그렇다고 감시가 느슨해지지는 않는다 — 그 칸에도 strict xfail이
+    # 붙으므로 구현되는 순간 XPASS로 실패해서 표를 갱신하게 만든다. 그리고
+    # `test_not_yet_implemented_targets_are_actually_rejected`가 그 목록이
+    # 낡았는지를 따로 본다.
+
     non_strict = []
-    for param in _cross() + _cross(targets=("j01", "j02", "gen")):
+    for param in _cross() + _cross(targets=_LOCAL_OBSERVED_TARGETS):
         for mark in (param.marks or ()):
             if mark.name == "xfail" and mark.kwargs.get("strict") is not True:
                 non_strict.append((param.id, dict(mark.kwargs)))
@@ -496,8 +563,13 @@ def test_residual_sees_spatial_map(fest, geo_factory, case, target):
         f"작동 근거가 못 된다)")
 
 
-@pytest.mark.parametrize("case,target",
-                         _cross(targets=("j01", "j02", "gen")))
+# 지역 다이오드 배열로 직접 관측할 수 있는 대상. `rc`만 빠진다 — 강성 조립
+# (B 계층)이라 다이오드 배열에 나타나지 않는다. `rsh`는 j01/j02와 같은 A 계층
+# 이므로 여기 들어간다.
+_LOCAL_OBSERVED_TARGETS = tuple(t for t in TARGETS if TARGET_LOCALS[t])
+
+
+@pytest.mark.parametrize("case,target", _cross(targets=_LOCAL_OBSERVED_TARGETS))
 def test_branch_local_diode_arrays_carry_the_map(fest, geo_factory, case,
                                                  target):
     """분기 프레임의 다이오드 지역 배열이 맵을 싣고 있는가 — 직접 관측.
@@ -707,7 +779,7 @@ def test_phase_a_full_area_values_are_pinned(fest, geo_factory, bit_pin_gate,
 
 
 @pytest.mark.parametrize("case_id", sorted(ACTUAL_BRANCH))
-@pytest.mark.parametrize("target", TARGETS)
+@pytest.mark.parametrize("target", IMPLEMENTED_TARGETS)
 def test_clearing_map_restores_bit_identical_result(fest, geo_factory,
                                                     case_id, target):
     """맵을 붙였다 **None으로 떼면** 무맵 결과와 비트 동일이다 — 6분기 전부.
