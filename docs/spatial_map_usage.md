@@ -329,5 +329,10 @@ fest.clear_spatial_map(dp, "j01")      # ← 반드시 이것. 1.0짜리 맵으�
 | `docs/spatial_map_convention.md` | **규범 문서.** 규약의 근거·확정 이력·해소된 결함(§6) |
 | `docs/crosscheck/2026-08-18-spatial-map-griddler.md` | Griddler 대조 절차(보류) 와 재개 조건 |
 | `examples/spatial_maps/` | 예제 파일 4종 |
-| `tests/test_spatial_map.py` | 로더·`evaluate()`·GUI 배선 회귀 111건 |
+| `tests/test_spatial_map.py` | 로더·`evaluate()`·GUI 배선 회귀 + **예제 파일 로드 가드**(§12) |
 | `tests/test_spatial_branch_coverage.py` | 모든 해석 분기에서 맵이 반영되는지 97건 |
+
+> 예제 파일을 **추가·이름 변경·삭제**하면 `tests/test_spatial_map.py` §12가
+> 먼저 실패한다 — 파일이 로더로 읽히는지, 머리에 설명 주석이 있는지, 그리고
+> **이 문서 §3 표에 올라 있는지**를 함께 본다. 예제만 늘고 안내가 따라오지
+> 않는 것을 막는 장치다.

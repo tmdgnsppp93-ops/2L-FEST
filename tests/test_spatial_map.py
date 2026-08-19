@@ -1178,3 +1178,127 @@ def test_status_text_counts_active_maps(fest, clean_dp):
     assert "0" in fest.FESTProApp._spatial_status_text(app)
     fest.set_spatial_map(fest.DP, "rc", fest.SpatialMap())
     assert "1" in fest.FESTProApp._spatial_status_text(app)
+
+
+# =============================================================================
+# 12. 예제 파일 (examples/spatial_maps/) — 배포물이 실제로 읽히는가
+# =============================================================================
+#
+# `docs/spatial_map_usage.md`가 가리키는 예제 파일들이다. 사용자가 처음 만나는
+# 파일이므로 **깨진 채로 배포되면 안 된다.** 예제가 로드 실패하면 사용자는 자기
+# 파일이 잘못됐다고 의심하지, 예제를 의심하지 않는다.
+#
+# 파일 목록을 코드에 박지 않고 **glob으로 찾는다.** 목록을 박으면 새 예제를
+# 추가한 사람이 여기를 안 고쳐도 초록불이 나온다 — 감시하지 않는 것이 조용히
+# 늘어나는 그 실패 유형이다(`_NAMED_SOLVERS`에 `_solve_single_bifacial`이
+# 빠져 있던 것과 같다). 대신 목록이 비면 통과가 무의미해지므로
+# `test_examples_directory_is_not_empty`가 그것을 막는다.
+
+_EXAMPLES_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "examples", "spatial_maps")
+
+
+def _example_files():
+    if not os.path.isdir(_EXAMPLES_DIR):
+        return []
+    return sorted(
+        os.path.join(_EXAMPLES_DIR, n)
+        for n in os.listdir(_EXAMPLES_DIR)
+        if n.lower().endswith((".txt", ".csv")))
+
+
+_EXAMPLE_FILES = _example_files()
+_EXAMPLE_IDS = [os.path.basename(p) for p in _EXAMPLE_FILES]
+
+
+def test_examples_directory_is_not_empty():
+    """예제 디렉터리가 살아 있고 파일이 있다.
+
+    아래 파라미터화는 glob 결과가 비면 **0건 수집으로 조용히 통과**한다.
+    디렉터리를 옮기거나 비웠을 때 그 사실이 초록불로 덮이지 않게 여기서 막는다.
+    `docs/spatial_map_usage.md` §3이 4종을 표로 안내하므로 그 수를 하한으로 둔다.
+    """
+    assert os.path.isdir(_EXAMPLES_DIR), f"{_EXAMPLES_DIR}가 없다"
+    assert len(_EXAMPLE_FILES) >= 4, (
+        f"예제 파일이 {len(_EXAMPLE_FILES)}개뿐이다 — "
+        f"docs/spatial_map_usage.md §3은 4종을 안내한다: {_EXAMPLE_IDS}")
+
+
+@pytest.mark.parametrize("path", _EXAMPLE_FILES, ids=_EXAMPLE_IDS)
+def test_every_example_file_loads(fest, path):
+    """모든 예제 파일이 실제 로더로 읽힌다.
+
+    로더는 0·음수·NaN·inf·2x2 미만·열 개수 불일치를 전부 거부하므로
+    (§9), 이 한 줄이 통과하면 파일이 규약에 맞는다는 뜻이다.
+    여기서는 그 위에 **결과가 쓸 수 있는 상태인지**까지 본다.
+    """
+    sm = fest.load_spatial_map_txt(path)
+    M = sm.matrix
+    assert M.ndim == 2 and M.shape[0] >= 2 and M.shape[1] >= 2
+    assert np.all(np.isfinite(M)) and np.all(M > 0.0)
+    assert sm.load_report["path"] == path
+    assert sm.load_report["shape"] == tuple(int(v) for v in M.shape)
+
+
+@pytest.mark.parametrize("path", _EXAMPLE_FILES, ids=_EXAMPLE_IDS)
+def test_every_example_file_explains_itself(fest, path):
+    """예제 파일 머리에 `#` 주석 설명이 있다.
+
+    예제의 값어치는 숫자가 아니라 **무엇을 뜻하는 숫자인지**에 있다. 특히 `rc`는
+    방향이 직관과 반대라(§6) 주석이 없으면 반대로 쓰기 쉽다. 로더가 `#` 줄을
+    건너뛰므로 주석이 있어도 로드에는 영향이 없다 —
+    `load_report['skipped_lines']`로 실제로 건너뛰었음을 확인한다.
+    """
+    with open(path, encoding="utf-8-sig") as fh:
+        lines = [ln.strip() for ln in fh if ln.strip()]
+    assert lines, f"{os.path.basename(path)}: 비어 있다"
+    assert lines[0].startswith("#"), (
+        f"{os.path.basename(path)}: 첫 줄이 주석이 아니다 — 예제 파일은 머리에 "
+        f"용도와 값의 의미를 적는다")
+    sm = fest.load_spatial_map_txt(path)
+    assert sm.load_report["skipped_lines"] >= 1
+
+
+@pytest.mark.parametrize("path", _EXAMPLE_FILES, ids=_EXAMPLE_IDS)
+def test_every_example_file_attaches_to_a_real_target(fest, clean_dp, path):
+    """예제를 4종 어디에 붙였다 떼도 상태가 깨끗하게 돌아온다.
+
+    파일이 읽히는 것과 **쓸 수 있는 것**은 다르다. 사용자가 GUI에서 하는 일
+    (불러오기 → 적용 → 해제)을 그대로 한 번 돌려 본다.
+    """
+    sm = fest.load_spatial_map_txt(path)
+    for target in fest.SPATIAL_TARGETS:
+        fest.set_spatial_map(fest.DP, target, sm)
+        assert fest.get_spatial_map(fest.DP, target) is sm
+        fest.clear_spatial_map(fest.DP, target)
+        assert fest.get_spatial_map(fest.DP, target) is None
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+def test_usage_doc_points_at_the_example_files():
+    """`docs/spatial_map_usage.md`가 실재하는 예제 파일만 가리킨다.
+
+    문서가 없는 파일을 안내하면 사용자는 자기 설치가 잘못된 줄 안다. 파일을
+    이름 바꾸거나 지웠을 때 문서가 따라오지 않는 것을 여기서 잡는다.
+    """
+    doc = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "docs", "spatial_map_usage.md")
+    assert os.path.isfile(doc), "docs/spatial_map_usage.md가 없다"
+    with open(doc, encoding="utf-8") as fh:
+        text = fh.read()
+    for name in _EXAMPLE_IDS:
+        assert name in text, (
+            f"사용 안내가 {name}을 언급하지 않는다 — 예제를 추가했으면 "
+            f"docs/spatial_map_usage.md §3 표에도 넣을 것")
+    # 반대 방향: 문서가 `examples/spatial_maps/<파일>` 로 가리키는 것은 실재해야
+    # 한다. 경로 접두사로 좁혀서 본다 — 본문에 인용된 오류 메시지의 파일명
+    # (edge.txt 등)이나 대조용 파일(spatial_4x4.txt)까지 잡으면 문서를 고칠
+    # 때마다 이 테스트가 헛되이 깨진다.
+    import re
+    referenced = set(re.findall(r"examples/spatial_maps/([A-Za-z0-9_.-]+)", text))
+    missing = {n for n in referenced if not os.path.isfile(
+        os.path.join(_EXAMPLES_DIR, n))}
+    assert not missing, (
+        f"사용 안내가 실재하지 않는 예제 파일을 가리킨다: {sorted(missing)}")
