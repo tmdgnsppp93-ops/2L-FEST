@@ -703,6 +703,27 @@ v28.62: [feat] 공간 분포 5번째 대상 — spatial_rsh (션트 저항).
          [문서] docs/spatial_map_convention.md §7 신설 ·
          docs/spatial_map_usage.md에 rsh 추가 ·
          examples/spatial_maps/local_shunt_rsh.txt 신설.
+v28.63: [ui] 공간 분포 맵 설정 창 개선 — **물리 무변경**(계산 경로 0줄).
+         대상이 5종이 되면서 카드 목록이 창 높이를 넘어 아래 카드가 잘렸다.
+         [1] 카드 목록을 CTkScrollableFrame으로 감싸고 minsize(720x420)를 뒀다.
+         휠 스크롤은 **스크롤 프레임 하위 트리에만** 바인딩한다 — bind_all은
+         다른 창까지 잡아가고, Toplevel 바인딩은 오른쪽 미리보기 캔버스 위에서도
+         왼쪽 목록이 움직인다(Tk 바인드태그가 위젯→클래스→토플레벨→all이라).
+         [2] 파일 양식 안내를 GUI 안으로 — docs/와 examples/에만 있어서 화면만
+         보고는 무엇을 만들지 알 수 없었다. 헤더의 [형식 도움말]이 예시 4x4
+         (복사 가능) · 규칙 8항 · 방향 주의 · 예제 폴더 경로를 띄운다.
+         예시 행렬은 `SPATIAL_HELP_SAMPLE` **모듈 상수**다 — GUI 문자열로 묻으면
+         로더 규약이 바뀌어도 아무도 모른다. 테스트가 이 상수를 실제 로더에
+         넣어 읽히는지 확인한다(안내와 로더가 갈라지면 빨간불).
+         [3] Load 대화상자 initialdir을 examples/spatial_maps/로 — 처음 쓰는
+         사람이 빈 대화상자 대신 예제부터 본다. 폴더가 없으면(단일 exe 배포 등)
+         **키 자체를 넘기지 않는다** — initialdir=None을 주면 Tk가 CWD로 가는데
+         그건 "없으면 평소 동작"과 다르다.
+         [4] 미리보기 캡션에 값 범위(min/max/mean/형상)를 숫자로 붙였다. 맵이
+         제대로 읽혔는지 그림만으로는 못 본다 — 컬러맵은 자동 정규화라 전부
+         2.0인 맵과 전부 1.0인 맵이 똑같이 보인다.
+         계산은 `spatial_map_stats()` **모듈 함수**가 한다(Tk 없이 테스트).
+         i18n: sp_help* 11 + sp_stats + sp_close = 13키 EN/KR 동시 추가.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -802,7 +823,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.62",
+    "version": "v28.63",
     "date": "2026-08-19",
 }
 _BUILD_SHA_CACHE = None
@@ -1200,6 +1221,59 @@ _TR = {
     'sp_no_map': {'EN': 'No map loaded for this target.',
                   'KR': '이 대상에는 적용된 맵이 없다.'},
     'sp_rerun': {'EN': 'Re-run COMPARE to apply.', 'KR': '적용하려면 COMPARE를 다시 실행하세요.'},
+    # --- v28.63: 파일 양식 안내(GUI 내부) · 미리보기 통계 -------------------
+    # 규칙 문구는 load_spatial_map_txt의 실제 거부 조건과 1:1이다. 안내와 로더가
+    # 갈라지면 사용자는 안내를 믿고 만든 파일이 거부당한다 —
+    # test_help_sample_actually_loads가 예시 행렬로 그 결합을 감시한다.
+    'sp_help': {'EN': 'Format help...', 'KR': '형식 도움말...'},
+    'sp_help_title': {'EN': 'Spatial map file format',
+                      'KR': '공간 분포 파일 형식'},
+    'sp_help_sample_hdr': {'EN': 'Example 4x4 - copy this and edit the numbers',
+                           'KR': '예시 4x4 - 이대로 복사해서 숫자만 고치세요'},
+    'sp_help_copy': {'EN': 'Copy example', 'KR': '예시 복사'},
+    'sp_help_copied': {'EN': 'Example matrix copied to the clipboard.',
+                       'KR': '예시 행렬을 클립보드에 복사했습니다.'},
+    'sp_help_rules_hdr': {'EN': 'Rules', 'KR': '규칙'},
+    'sp_help_rules': {
+        'EN': '- First data row = BOTTOM of the cell (y=0); first column = left (x=0).\n'
+              '- Values are ABSOLUTE multipliers - no normalization. 1.0 = nominal.\n'
+              '- Minimum size 2x2; the grid is vertex-aligned, so corner values\n'
+              '  sit exactly on the cell corners.\n'
+              '- Delimiter is auto-detected: comma if any line has one, otherwise\n'
+              '  whitespace (tabs included).\n'
+              '- Blank lines and lines starting with # are skipped - comment freely.\n'
+              '- Every row must have the same number of columns.\n'
+              '- 0, negative, NaN and inf are REJECTED with the row/column that\n'
+              '  holds them. They are never silently clamped or replaced.',
+        'KR': '- 첫 데이터 줄 = 셀의 아래쪽(y=0), 첫 열 = 왼쪽(x=0).\n'
+              '- 값은 절대 배율이다 - 정규화하지 않는다. 1.0 = 기준값 그대로.\n'
+              '- 최소 2x2. 격자는 꼭짓점 정렬이라 모서리 값이 셀 모서리에\n'
+              '  정확히 놓인다.\n'
+              '- 구분자는 자동 판별한다: 콤마가 한 줄이라도 있으면 콤마,\n'
+              '  없으면 공백(탭 포함).\n'
+              '- 빈 줄과 # 로 시작하는 줄은 건너뛴다 - 주석을 자유롭게 달 것.\n'
+              '- 행마다 열 개수가 같아야 한다.\n'
+              '- 0 · 음수 · NaN · inf는 행·열 위치를 적어 거부한다. 조용히\n'
+              '  고치거나 치환하지 않는다.'},
+    'sp_help_inverted_hdr': {'EN': 'Direction warning', 'KR': '방향 주의'},
+    'sp_help_inverted': {
+        'EN': 'These targets multiply a RESISTANCE, so a higher number makes the '
+              'cell BETTER there, not worse: {targets}. Everything else (j01 / j02 '
+              '/ gen) reads directly as "higher = more of that quantity". Griddler '
+              'states shunt as a CONDUCTANCE while we state it as a RESISTANCE - '
+              'invert a map taken from there before loading it as rsh.',
+        'KR': '다음 대상은 저항을 곱한다 - 값이 크면 그 자리가 오히려 좋아진다: '
+              '{targets}. 나머지(j01 / j02 / gen)는 "값이 크다 = 그 물성이 크다"로 '
+              '곧바로 읽는다. Griddler는 shunt를 컨덕턴스로 두는데 우리는 저항으로 '
+              '두므로, 그쪽 맵을 rsh로 쓰려면 역수를 취할 것.'},
+    'sp_help_dir_hdr': {'EN': 'Ready-made examples', 'KR': '바로 쓸 수 있는 예제'},
+    'sp_help_dir_missing': {
+        'EN': 'The examples folder was not found next to the application.',
+        'KR': '앱 옆에서 예제 폴더를 찾지 못했습니다.'},
+    'sp_stats': {
+        'EN': 'min {vmin} / max {vmax} / mean {vmean}   ({ny} x {nx} values)',
+        'KR': '최소 {vmin} / 최대 {vmax} / 평균 {vmean}   ({ny} x {nx}개 값)'},
+    'sp_close': {'EN': 'Close', 'KR': '닫기'},
     # General
     'ready': {'EN': 'Ready. Click a tab.', 'KR': '준비 완료. 탭을 클릭하세요.'},
     'run_compare_first': {'EN': 'Run COMPARE first.', 'KR': 'COMPARE를 먼저 실행하세요.'},
@@ -3930,6 +4004,65 @@ def spatial_map_caption(sm):
         return name
     ny, nx = M.shape
     return f"{name}  ({ny}x{nx}, {float(M.min()):.3g}~{float(M.max()):.3g})"
+
+
+# v28.63: GUI 안내용 예시 행렬. **모듈 상수로 둔다** — GUI 문자열 안에 묻으면
+# 로더 규약이 바뀌어도 안내가 그대로 남는다. 사용자는 안내를 믿고 만든 파일이
+# 거부당하면 자기 파일을 의심하지 않고 프로그램을 의심한다.
+# `test_help_sample_actually_loads`가 이 상수를 실제 로더에 넣어 감시한다.
+#
+# 주석은 영문 ASCII다 — 사용자가 통째로 복사해 파일로 저장하는 내용이므로
+# 인코딩 사고를 만들 이유가 없다(로더는 어차피 `#` 줄을 건너뛴다).
+# 값은 일부러 균일하지 않다. 전부 1.0이면 "복사해서 그대로 써도 되는구나"로
+# 읽혀 정작 무엇을 고쳐야 하는지 안 보인다.
+SPATIAL_HELP_SAMPLE = (
+    "# first data row = BOTTOM of the cell (y=0), first column = left (x=0)\n"
+    "# values are absolute multipliers, 1.0 = nominal\n"
+    "1.00, 1.00, 1.00, 1.00\n"
+    "1.00, 0.90, 0.90, 1.00\n"
+    "1.00, 0.90, 0.90, 1.00\n"
+    "1.00, 1.00, 1.00, 1.00\n"
+)
+
+
+def spatial_examples_dir():
+    """배포된 예제 맵 폴더의 절대 경로. **없으면 None.**
+
+    None을 그대로 ``filedialog(initialdir=...)``에 넘기면 안 된다 — Tk는 그것을
+    "지정 없음"이 아니라 CWD로 해석해서, 폴더가 없는 배포(단일 exe 등)에서만
+    시작 경로가 조용히 달라진다. 호출부가 **키 자체를 빼도록** None을 돌려준다.
+    """
+    try:
+        d = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "examples", "spatial_maps")
+    except Exception:
+        return None
+    return d if os.path.isdir(d) else None
+
+
+def spatial_map_stats(sm):
+    """맵 값 요약 dict (ny·nx·min·max·mean). 맵/행렬이 없으면 None.
+
+    미리보기 그림만으로는 값을 못 읽는다 — imshow가 자동 정규화하므로 **전부
+    2.0인 맵과 전부 1.0인 맵이 화면에서 똑같이 보인다.** 그래서 숫자를 따로
+    적는다. 계산을 GUI 콜백이 아니라 여기 두는 이유는 다른 spatial 헬퍼와 같다
+    (Tk 없이 테스트 가능).
+
+    ``spatial_map_caption``과 겹치지 않는다 — 캡션은 파일명 한 줄 요약(min~max)
+    이고 이쪽은 평균까지 포함한 수치다. 캡션을 늘리면 카드 라벨이 두 줄로
+    번져 사이드바 세로가 넘친다.
+    """
+    if sm is None:
+        return None
+    M = getattr(sm, "matrix", None)
+    if M is None:
+        return None
+    M = np.asarray(M, dtype=float)
+    ny, nx = (int(v) for v in M.shape)
+    return {"ny": ny, "nx": nx,
+            "min": float(M.min()),
+            "max": float(M.max()),
+            "mean": float(M.mean())}
 
 
 def draw_spatial_map_preview(fig, sm, W_cm, H_cm, title=""):
@@ -10965,10 +11098,18 @@ class FESTProApp(ctk.CTk):
         상태가 남지 않는다.
         """
         _check_spatial_target(target)
+        # v28.63: 예제 폴더에서 시작한다 — 처음 쓰는 사람이 빈 대화상자 대신
+        # 바로 쓸 수 있는 파일부터 본다. 폴더가 없으면 **키를 넘기지 않는다**
+        # (initialdir=None은 Tk가 CWD로 해석한다 — spatial_examples_dir 참조).
+        _kw = {}
+        _ex_dir = spatial_examples_dir()
+        if _ex_dir:
+            _kw['initialdir'] = _ex_dir
         fn = filedialog.askopenfilename(
             title=f"{_t('sp_title')} - {target}",
             filetypes=[('Matrix text', '*.txt *.csv *.dat'),
-                       ('All Files', '*.*')])
+                       ('All Files', '*.*')],
+            **_kw)
         if not fn:
             return
         try:
@@ -11029,13 +11170,34 @@ class FESTProApp(ctk.CTk):
             fig, sm, W_cm, H_cm,
             title=f"{_t(label_key)} - {spatial_map_caption(sm)}")
         canvas.draw()
-        caption_lbl.configure(text=_t('sp_flip_note'), text_color=CLR_TEXT_SEC)
+        # v28.63: 값 범위를 숫자로 함께 적는다. 그림만으로는 못 읽는다 —
+        # imshow가 자동 정규화하므로 전부 2.0인 맵과 전부 1.0인 맵이 똑같이
+        # 보인다(spatial_map_stats 도크스트링).
+        text = _t('sp_flip_note')
+        st = spatial_map_stats(sm)
+        if st is not None:
+            text = (_t('sp_stats').format(
+                vmin=f"{st['min']:.4g}", vmax=f"{st['max']:.4g}",
+                vmean=f"{st['mean']:.4g}", ny=st['ny'], nx=st['nx'])
+                + "\n" + text)
+        caption_lbl.configure(text=text, text_color=CLR_TEXT_SEC)
 
     def _open_spatial_maps(self):
-        """공간 분포 맵 설정 창 — 4종 각각 불러오기 / 해제 / 미리보기."""
+        """공간 분포 맵 설정 창 — 대상별 불러오기 / 해제 / 미리보기.
+
+        대상 수를 문구에 박지 않는다(v28.62에 4종 → 5종이 됐다). 실제 목록은
+        ``SPATIAL_TARGET_INFO``가 정한다.
+        """
         win = ctk.CTkToplevel(self)
         win.title(f"2L-FEST - {_t('sp_title')}")
         win.geometry("980x620")
+        # v28.63: 카드 목록이 스크롤되므로 창을 줄여도 전부 접근할 수 있다.
+        # minsize를 두는 이유는 반대다 — 무한정 줄이면 오른쪽 미리보기 축이
+        # 겹쳐 matplotlib가 경고를 뱉는다. 목록 접근성은 스크롤이 보장한다.
+        try:
+            win.minsize(720, 420)
+        except Exception:
+            pass
         self._raise_once(win)
 
         # 상단: 규약 안내. 첫 줄이 아래쪽이라는 사실을 여기서 못 박는다 — 모르면
@@ -11047,17 +11209,27 @@ class FESTProApp(ctk.CTk):
                      text_color="white").pack(anchor="w", padx=12, pady=(8, 0))
         ctk.CTkLabel(hdr, text=_t('sp_convention'),
                      font=ctk.CTkFont(size=10), text_color="#CBD5E1",
-                     wraplength=930, justify="left").pack(
+                     wraplength=800, justify="left").pack(
                          anchor="w", padx=12, pady=(2, 8))
+        # v28.63: 파일 양식 안내를 GUI 안으로. 지금까지 docs/와 examples/에만
+        # 있어서 화면만 보고는 무엇을 만들지 알 수 없었다.
+        ctk.CTkButton(hdr, text=_t('sp_help'), width=118, height=26,
+                      font=ctk.CTkFont(size=10, weight="bold"),
+                      fg_color="#334155", hover_color="#1E293B",
+                      text_color="white", corner_radius=5,
+                      command=self._show_spatial_format_help).place(
+                          relx=1.0, x=-12, y=10, anchor="ne")
 
         body = ctk.CTkFrame(win, fg_color="#F8FAFC")
         body.pack(fill="both", expand=True)
 
-        left = ctk.CTkFrame(body, fg_color=CLR_SIDEBAR, width=430,
-                            corner_radius=0, border_width=1,
-                            border_color=CLR_CARD_BD)
+        # v28.63: 대상이 5종이 되면서 카드 목록이 창 높이를 넘어 아래 카드가
+        # 잘렸다. 스크롤 프레임으로 감싼다 — pack_propagate(False)는 쓰지
+        # 않는다(스크롤 프레임은 내부 캔버스가 크기를 직접 관리한다).
+        left = ctk.CTkScrollableFrame(body, fg_color=CLR_SIDEBAR, width=430,
+                                      corner_radius=0, border_width=1,
+                                      border_color=CLR_CARD_BD)
         left.pack(side="left", fill="y")
-        left.pack_propagate(False)
 
         right = ctk.CTkFrame(body, fg_color="white")
         right.pack(side="left", fill="both", expand=True)
@@ -11135,6 +11307,10 @@ class FESTProApp(ctk.CTk):
 
             self._refresh_spatial_row(target)
 
+        # v28.63: 휠 스크롤. **카드를 전부 만든 뒤** 건다 — 하위 트리를 훑어
+        # 바인딩하므로 그 전에 걸면 카드가 빠진다.
+        self._bind_wheel_to_scrollframe(left)
+
         # 창을 닫으면 라벨 위젯이 죽는다 — _refresh_spatial_row가 사라진 위젯을
         # 건드리지 않도록 등록을 해제한다(다음에 열면 다시 채운다).
         def _on_close():
@@ -11148,6 +11324,157 @@ class FESTProApp(ctk.CTk):
             self._preview_spatial_map(active[0], pfig, pcanvas, cap)
         else:
             cap.configure(text=_t('sp_convention'), text_color=CLR_TEXT_SEC)
+
+    def _bind_wheel_to_scrollframe(self, frame):
+        """CTkScrollableFrame과 그 하위 위젯 전부에 휠 스크롤을 건다.
+
+        **왜 하위 트리를 직접 훑는가.** 두 가지 쉬운 방법을 다 버렸다.
+          · ``bind_all`` — 태그가 전역이라 이 창이 떠 있는 동안 **다른 창의**
+            휠까지 잡아간다. CustomTkinter가 내부적으로 쓰는 방식이라 그대로
+            둬도 대개 동작하지만, 우리 창은 오른쪽에 matplotlib 캔버스를 두고
+            있어 그쪽 휠 처리와 겹칠 여지가 있다.
+          · Toplevel에 한 번 ``bind`` — Tk 바인드태그가 (위젯 → 클래스 →
+            토플레벨 → all)이라 **미리보기 캔버스 위에서도** 왼쪽 목록이
+            움직인다. 그림을 보려고 굴렸는데 목록이 스크롤되는 동작이다.
+        하위 트리 바인딩은 커서가 목록 위에 있을 때만 반응한다.
+
+        Windows는 ``event.delta`` ±120, macOS는 ±1, X11은 Button-4/5로 온다.
+        크기가 아니라 **부호만** 본다 — 배율을 곱하면 플랫폼마다 감도가 달라진다.
+        """
+        canvas = getattr(frame, "_parent_canvas", None)
+        if canvas is None:
+            return                      # CTk 구현이 바뀌었거나 목 위젯이다
+
+        def _on_wheel(event):
+            try:
+                num = getattr(event, "num", None)
+                if num == 4:
+                    canvas.yview_scroll(-1, "units")
+                elif num == 5:
+                    canvas.yview_scroll(1, "units")
+                else:
+                    delta = int(getattr(event, "delta", 0) or 0)
+                    if delta:
+                        canvas.yview_scroll(-1 if delta > 0 else 1, "units")
+            except Exception:
+                pass
+            return "break"
+
+        def _walk(w, depth=0):
+            if depth > 12:              # 병적인 중첩에서 재귀가 터지지 않게
+                return
+            try:
+                w.bind("<MouseWheel>", _on_wheel)
+                w.bind("<Button-4>", _on_wheel)
+                w.bind("<Button-5>", _on_wheel)
+            except Exception:
+                pass
+            try:
+                children = w.winfo_children()
+            except Exception:
+                return
+            for c in children:
+                _walk(c, depth + 1)
+
+        _walk(frame)
+
+    def _show_spatial_format_help(self):
+        """파일 양식 안내 창 — 예시 행렬 · 규칙 · 방향 주의 · 예제 폴더.
+
+        내용을 여기서 **새로 쓰지 않는다.** 규칙 문구는 ``load_spatial_map_txt``
+        의 거부 조건과 1:1이고, 예시 행렬은 모듈 상수 ``SPATIAL_HELP_SAMPLE``,
+        방향이 뒤집히는 대상 목록은 ``SPATIAL_INVERTED_TARGETS``에서 받는다.
+        여기에 목록을 다시 적으면 대상이 6종이 되는 날 안내만 5종으로 남는다 —
+        `'{n} of 4 active'`가 냈던 실패와 같은 종류다.
+        """
+        win = ctk.CTkToplevel(self)
+        win.title(f"2L-FEST - {_t('sp_help_title')}")
+        win.geometry("660x680")
+        try:
+            win.minsize(520, 400)
+        except Exception:
+            pass
+        self._raise_once(win)
+
+        hdr = ctk.CTkFrame(win, fg_color=CLR_HEADER, corner_radius=0)
+        hdr.pack(fill="x")
+        ctk.CTkLabel(hdr, text=_t('sp_help_title'),
+                     font=ctk.CTkFont(size=13, weight="bold"),
+                     text_color="white").pack(anchor="w", padx=12, pady=8)
+
+        body = ctk.CTkScrollableFrame(win, fg_color="#F8FAFC")
+        body.pack(fill="both", expand=True)
+
+        def section(key):
+            ctk.CTkLabel(body, text=_t(key),
+                         font=ctk.CTkFont(size=12, weight="bold"),
+                         text_color=CLR_BLUE, anchor="w").pack(
+                             anchor="w", padx=12, pady=(12, 3))
+
+        def para(text, color=CLR_TEXT, mono=False):
+            font = (ctk.CTkFont(family=MONO_FONT, size=10) if mono
+                    else ctk.CTkFont(size=10))
+            ctk.CTkLabel(body, text=text, font=font, text_color=color,
+                         anchor="w", justify="left", wraplength=590).pack(
+                             anchor="w", padx=14, pady=(0, 2))
+
+        # --- 예시 행렬 (복사 가능) ---
+        section('sp_help_sample_hdr')
+        # 라벨이 아니라 Textbox다 — 라벨은 드래그 선택이 안 돼서 "복사해 쓰라"는
+        # 안내가 성립하지 않는다. 버튼은 그 위에 얹는 편의일 뿐이다.
+        sample = ctk.CTkTextbox(body, height=132, wrap="none",
+                                font=ctk.CTkFont(family=MONO_FONT, size=11))
+        sample.pack(fill="x", padx=14, pady=(0, 4))
+        try:
+            sample.insert("1.0", SPATIAL_HELP_SAMPLE)
+        except Exception:
+            pass
+
+        def _copy():
+            try:
+                self.clipboard_clear()
+                self.clipboard_append(SPATIAL_HELP_SAMPLE)
+                self._status(_t('sp_help_copied'))
+            except Exception:
+                pass
+
+        ctk.CTkButton(body, text=_t('sp_help_copy'), width=110, height=26,
+                      font=ctk.CTkFont(size=10),
+                      fg_color="#00695C", hover_color="#004D40",
+                      text_color="white", corner_radius=5,
+                      command=_copy).pack(anchor="w", padx=14, pady=(0, 2))
+
+        # --- 규칙 ---
+        section('sp_help_rules_hdr')
+        para(_t('sp_help_rules'), color=CLR_TEXT, mono=True)
+
+        # --- 방향 주의 ---
+        section('sp_help_inverted_hdr')
+        para(_t('sp_help_inverted').format(
+            targets=", ".join(SPATIAL_INVERTED_TARGETS)), color=CLR_AMBER)
+
+        # --- 예제 폴더 ---
+        section('sp_help_dir_hdr')
+        ex_dir = spatial_examples_dir()
+        if ex_dir:
+            para(ex_dir, mono=True)
+            try:
+                names = sorted(n for n in os.listdir(ex_dir)
+                               if n.lower().endswith(('.txt', '.csv')))
+            except Exception:
+                names = []
+            for n in names:
+                para(f"  - {n}", color=CLR_TEXT_SEC, mono=True)
+        else:
+            para(_t('sp_help_dir_missing'), color=CLR_AMBER)
+
+        ctk.CTkButton(win, text=_t('sp_close'), width=90, height=28,
+                      font=ctk.CTkFont(size=10),
+                      fg_color="#94A3B8", hover_color="#64748B",
+                      text_color="white", corner_radius=5,
+                      command=win.destroy).pack(pady=(4, 8))
+
+        self._bind_wheel_to_scrollframe(body)
 
     def _apply_diode_params(self):
         """Read n1/n2 top/bot and LC coupling from DIODE PARAMS card and apply to DP."""

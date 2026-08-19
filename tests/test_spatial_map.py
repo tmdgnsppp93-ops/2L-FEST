@@ -1407,3 +1407,321 @@ def test_usage_doc_points_at_the_example_files():
         os.path.join(_EXAMPLES_DIR, n))}
     assert not missing, (
         f"사용 안내가 실재하지 않는 예제 파일을 가리킨다: {sorted(missing)}")
+
+
+# =============================================================================
+# 13. 설정 창 개선 (v28.63) — 스크롤 · 형식 도움말 · 예제 경로 · 미리보기 통계
+# =============================================================================
+#
+# **물리 무관한 GUI 변경이다.** 그래서 여기서 지키는 것은 계산값이 아니라
+# "화면이 말하는 것과 코드가 하는 것이 같은가"다. 세 결합을 묶는다:
+#
+#   1. 안내 문구 ↔ 로더  — 예시 행렬이 실제로 로더를 통과하는가.
+#   2. 안내 문구 ↔ 레지스트리 — 방향 주의가 SPATIAL_INVERTED_TARGETS에서
+#      오는가(목록을 GUI에 다시 적으면 6종이 되는 날 안내만 5종으로 남는다).
+#   3. 통계 ↔ 행렬 — 미리보기에 적히는 수가 실제 행렬의 수인가.
+#
+# 스크롤 자체(휠이 몇 픽셀 움직이는가)는 Tk 없이 검증할 수 없다. 대신 **바인딩
+# 경로가 실제로 도는지**를 목으로 밟는다 — 거기 오타가 나면 창을 띄워 굴려 봐야
+# 발견된다.
+
+
+def _t_any(fest, key, haystack):
+    """어느 언어로 렌더됐든 그 키의 문구가 들어 있는지."""
+    return any(v[:24] in haystack for v in fest._TR[key].values())
+
+
+# --- 13-a. 예시 행렬이 로더를 통과한다 ---------------------------------------
+
+def test_help_sample_actually_loads(fest, tmp_path):
+    """GUI가 "복사해 쓰라"고 내주는 행렬이 **실제 로더로 읽힌다.**
+
+    안내와 로더가 갈라지면 사용자는 안내대로 만든 파일이 거부당하고, 자기
+    파일이 아니라 프로그램을 의심한다. 상수를 GUI 문자열에 묻지 않고
+    `SPATIAL_HELP_SAMPLE`로 뺀 이유가 이 한 줄을 쓸 수 있게 하기 위해서다.
+    """
+    path = _write(tmp_path, fest.SPATIAL_HELP_SAMPLE, name="help_sample.txt")
+    sm = fest.load_spatial_map_txt(path)
+    assert sm.matrix.shape == (4, 4), "안내가 4x4라고 말한다"
+    assert np.all(sm.matrix > 0.0) and np.all(np.isfinite(sm.matrix))
+    # 주석 줄이 실제로 건너뛰어졌다 — "# 로 주석 가능"이라는 안내의 근거다.
+    assert sm.load_report["skipped_lines"] >= 1
+
+
+def test_help_sample_is_not_uniform(fest, tmp_path):
+    """예시가 전부 1.0이면 무엇을 고쳐야 하는지 안 보인다.
+
+    "복사해서 숫자만 고치세요"라는 안내가 성립하려면 고칠 자리가 예시 안에
+    보여야 한다. 균일 확인용 파일은 examples/uniform_4x4.txt가 따로 있다.
+    """
+    path = _write(tmp_path, fest.SPATIAL_HELP_SAMPLE, name="help_sample.txt")
+    M = fest.load_spatial_map_txt(path).matrix
+    assert M.min() < M.max(), "예시 행렬이 균일하다 — 구조가 보이지 않는다"
+
+
+# --- 13-b. 예제 폴더 경로 ------------------------------------------------------
+
+def test_examples_dir_helper_points_at_the_shipped_folder(fest):
+    """`spatial_examples_dir()`가 §12가 검사하는 그 폴더를 가리킨다.
+
+    Load 대화상자의 시작 경로가 여기서 온다. 두 경로가 갈리면 대화상자만
+    엉뚱한 곳에서 열리는데, 테스트는 전부 초록불이라 아무도 모른다.
+    """
+    d = fest.spatial_examples_dir()
+    assert d is not None, "저장소에는 예제 폴더가 있다"
+    assert os.path.isdir(d)
+    assert (os.path.normcase(os.path.abspath(d))
+            == os.path.normcase(os.path.abspath(_EXAMPLES_DIR)))
+
+
+def test_examples_dir_returns_none_when_missing(fest, monkeypatch):
+    """폴더가 없으면 **None**이다 — 빈 문자열도 CWD도 아니다.
+
+    호출부가 `initialdir` 키 자체를 빼도록 하기 위해서다. Tk는 initialdir=None을
+    "지정 없음"이 아니라 CWD로 해석하므로, 그대로 넘기면 폴더가 없는 배포에서만
+    시작 경로가 조용히 달라진다.
+    """
+    monkeypatch.setattr(fest.os.path, "isdir", lambda p: False)
+    assert fest.spatial_examples_dir() is None
+
+
+def test_load_dialog_starts_in_the_examples_folder(fest, clean_dp, tmp_path,
+                                                   monkeypatch):
+    """불러오기 대화상자가 예제 폴더에서 열린다 — 처음 쓰는 사람이 예제부터 본다."""
+    seen = {}
+    target_file = _write(tmp_path, "1,2\n3,4\n", name="dlg.csv")
+
+    def _fake(**kw):
+        seen.update(kw)
+        return target_file
+
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", _fake)
+    app = _bare_app(fest)
+    fest.FESTProApp._load_spatial_map(app, "gen")
+
+    assert seen.get("initialdir") == fest.spatial_examples_dir()
+    assert fest.get_spatial_map(fest.DP, "gen") is not None
+
+
+def test_load_dialog_omits_initialdir_when_examples_missing(fest, clean_dp,
+                                                            monkeypatch):
+    """예제 폴더가 없으면 initialdir을 **키째로** 넘기지 않는다."""
+    seen = {}
+
+    def _fake(**kw):
+        seen.update(kw)
+        return ""            # 취소 — DP는 건드리지 않는다
+
+    monkeypatch.setattr(fest, "spatial_examples_dir", lambda: None)
+    monkeypatch.setattr(fest.filedialog, "askopenfilename", _fake)
+    app = _bare_app(fest)
+    fest.FESTProApp._load_spatial_map(app, "j01")
+
+    assert "initialdir" not in seen
+    assert fest.active_spatial_maps(fest.DP) == ()
+
+
+# --- 13-c. 미리보기 통계 -------------------------------------------------------
+
+def test_map_stats_reports_matrix_values(fest):
+    """min/max/mean/형상이 실제 행렬에서 나온다."""
+    M = np.array([[1.0, 2.0], [3.0, 6.0]])
+    st = fest.spatial_map_stats(fest.SpatialMap(mode="csv", matrix=M))
+    assert (st["ny"], st["nx"]) == (2, 2)
+    assert st["min"] == 1.0
+    assert st["max"] == 6.0
+    assert st["mean"] == pytest.approx(3.0)
+
+
+def test_map_stats_none_without_matrix(fest):
+    """맵이 없거나 행렬이 없으면 None — 캡션이 통계 줄을 아예 안 붙인다."""
+    assert fest.spatial_map_stats(None) is None
+    assert fest.spatial_map_stats(fest.SpatialMap(mode="uniform")) is None
+
+
+def test_map_stats_distinguishes_uniform_levels(fest):
+    """전부 1.0인 맵과 전부 2.0인 맵을 **수치가** 구분한다.
+
+    그림은 구분하지 못한다 — imshow가 자동 정규화하므로 둘 다 단색이다.
+    통계 줄을 붙인 이유가 이것이고, 그 이유가 사라지지 않았음을 고정한다.
+    """
+    a = fest.spatial_map_stats(
+        fest.SpatialMap(mode="csv", matrix=np.ones((3, 3))))
+    b = fest.spatial_map_stats(
+        fest.SpatialMap(mode="csv", matrix=np.full((3, 3), 2.0)))
+    assert a["min"] == a["max"] == 1.0
+    assert b["min"] == b["max"] == 2.0
+    assert a != b
+
+
+def test_preview_caption_carries_the_numbers(fest, clean_dp):
+    """미리보기 콜백이 캡션에 통계 문자열을 실제로 넣는다.
+
+    `spatial_map_stats`가 맞아도 캡션에 안 붙으면 화면에서는 아무 소용이 없다.
+    콜백 본문을 목으로 밟아 `configure(text=...)`에 들어간 문자열을 본다.
+    """
+    from matplotlib.figure import Figure
+
+    class _Cap:
+        def __init__(self):
+            self.text = ""
+
+        def configure(self, **kw):
+            self.text = kw.get("text", self.text)
+
+    class _Canvas:
+        def draw(self):
+            pass
+
+    M = np.array([[1.0, 2.0], [3.0, 6.0]])
+    fest.set_spatial_map(fest.DP, "j01", fest.SpatialMap(mode="csv", matrix=M))
+    app = _bare_app(fest)
+    cap = _Cap()
+    fest.FESTProApp._preview_spatial_map(app, "j01", Figure(), _Canvas(), cap)
+
+    assert "6" in cap.text and "1" in cap.text, cap.text
+    # 뒤집힘 안내는 통계를 붙인 뒤에도 남아 있어야 한다 — 규약 안내가 통계에
+    # 밀려 사라지면 사용자가 파일을 거꾸로 만든다.
+    assert _t_any(fest, "sp_flip_note", cap.text)
+
+
+# --- 13-d. 형식 도움말 창 -------------------------------------------------------
+
+def test_format_help_window_builds(fest):
+    """도움말 창 빌더가 끝까지 돈다 — 위젯 목이 삼켜도 파이썬 오타는 여기서 터진다."""
+    app = _bare_app(fest)
+    fest.FESTProApp._show_spatial_format_help(app)
+
+
+def test_help_button_and_callback_exist(fest):
+    """헤더 버튼이 부를 메서드가 실제로 있다."""
+    for name in ("_show_spatial_format_help", "_bind_wheel_to_scrollframe"):
+        assert callable(getattr(fest.FESTProApp, name, None)), f"{name} 없음"
+
+
+def test_inverted_warning_text_comes_from_the_registry(fest):
+    """방향 주의가 `SPATIAL_INVERTED_TARGETS`를 그대로 렌더한다.
+
+    안내에 목록을 다시 적으면 대상이 6종이 되는 날 화면만 5종으로 남는다 —
+    v28.62가 고친 하드코딩 총 개수와 같은 종류의 실패다.
+    """
+    for lang in ("EN", "KR"):
+        rendered = fest._TR["sp_help_inverted"][lang].format(
+            targets=", ".join(fest.SPATIAL_INVERTED_TARGETS))
+        for t in fest.SPATIAL_INVERTED_TARGETS:
+            assert t in rendered, f"{lang}: {t}가 안내에 없다"
+
+
+def test_help_rules_state_every_rejection_the_loader_performs(fest):
+    """규칙 안내가 로더의 거부 조건을 **전부** 말한다.
+
+    로더가 거부하는데 안내가 말하지 않으면 사용자는 이유를 모른 채 막힌다.
+    문구가 아니라 **개념 단어**로 확인한다 — 번역을 다듬을 때마다 깨지면
+    아무도 안 고치고 지워 버린다.
+    """
+    rules = fest._TR["sp_help_rules"]
+    assert "2x2" in rules["EN"] and "2x2" in rules["KR"]
+    assert "NaN" in rules["EN"] and "NaN" in rules["KR"]
+    assert "inf" in rules["EN"] and "inf" in rules["KR"]
+    assert "#" in rules["EN"] and "#" in rules["KR"]
+    for txt in rules.values():
+        assert chr(10) in txt, "규칙은 여러 줄이다 — 한 줄로 뭉치면 안 읽힌다"
+
+
+def test_help_rules_state_the_bottom_row_convention(fest):
+    """가장 틀리기 쉬운 규약(첫 줄 = 아래쪽)이 도움말에도 있다.
+
+    `sp_convention`은 설정 창 헤더에만 뜬다. 도움말만 보고 파일을 만드는
+    사람이 있으므로 여기서도 말해야 한다.
+    """
+    rules = fest._TR["sp_help_rules"]
+    assert "BOTTOM" in rules["EN"].upper() and "y=0" in rules["EN"]
+    assert "아래" in rules["KR"] and "y=0" in rules["KR"]
+
+
+# --- 13-e. 휠 바인딩 경로 -------------------------------------------------------
+
+def test_wheel_binding_walks_the_subtree(fest):
+    """휠 바인딩이 스크롤 프레임 **하위 트리 전체**에 걸린다.
+
+    카드가 하위에 있으므로 프레임에만 걸면 목록 위에서 굴려도 안 움직인다.
+    (bind_all을 쓰지 않는 이유는 `_bind_wheel_to_scrollframe` 도크스트링.)
+    """
+    bound = []
+
+    class _W:
+        def __init__(self, children=()):
+            self._children = list(children)
+
+        def bind(self, seq, fn):
+            bound.append((self, seq))
+
+        def winfo_children(self):
+            return self._children
+
+    leaf = _W()
+    card = _W([leaf])
+    frame = _W([card])
+    frame._parent_canvas = object()
+
+    fest.FESTProApp._bind_wheel_to_scrollframe(
+        object.__new__(fest.FESTProApp), frame)
+    for w in (frame, card, leaf):
+        seqs = {seq for obj, seq in bound if obj is w}
+        assert seqs == {"<MouseWheel>", "<Button-4>", "<Button-5>"}, seqs
+
+
+def test_wheel_binding_is_a_noop_without_a_canvas(fest):
+    """캔버스를 못 찾으면 조용히 아무것도 하지 않는다.
+
+    CustomTkinter 내부 속성(`_parent_canvas`)에 기대는 코드다. 버전이 바뀌어
+    이름이 사라지면 **창이 안 뜨는** 것이 아니라 휠만 안 되는 것이 맞다.
+    """
+    class _W:
+        def bind(self, *a):
+            raise AssertionError("바인딩을 시도하면 안 된다")
+
+        def winfo_children(self):
+            return []
+
+    fest.FESTProApp._bind_wheel_to_scrollframe(
+        object.__new__(fest.FESTProApp), _W())
+
+
+def test_wheel_scroll_direction_by_platform(fest):
+    """Windows delta · macOS delta · X11 Button-4/5 셋 다 위/아래가 맞는다.
+
+    부호만 본다(크기를 곱하지 않는다) — 곱하면 플랫폼마다 감도가 달라진다.
+    """
+    moved = []
+
+    class _Canvas:
+        def yview_scroll(self, n, what):
+            moved.append(n)
+
+    handlers = []
+
+    class _W:
+        def bind(self, seq, fn):
+            handlers.append((seq, fn))
+
+        def winfo_children(self):
+            return []
+
+    frame = _W()
+    frame._parent_canvas = _Canvas()
+    fest.FESTProApp._bind_wheel_to_scrollframe(
+        object.__new__(fest.FESTProApp), frame)
+    on_wheel = dict(handlers)["<MouseWheel>"]
+
+    class _Ev:
+        def __init__(self, **kw):
+            self.__dict__.update(kw)
+
+    on_wheel(_Ev(delta=120))       # Windows 위로
+    on_wheel(_Ev(delta=-120))      # Windows 아래로
+    on_wheel(_Ev(delta=1))         # macOS 위로
+    on_wheel(_Ev(delta=-1))        # macOS 아래로
+    on_wheel(_Ev(num=4))           # X11 위로
+    on_wheel(_Ev(num=5))           # X11 아래로
+    assert moved == [-1, 1, -1, 1, -1, 1]
