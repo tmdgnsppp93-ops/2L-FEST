@@ -5,6 +5,8 @@
 > **관련**: 계획 `docs/superpowers/plans/2026-08-17-spatial-map-io.md` 단위 3 ·
 > 대조 절차 `docs/crosscheck/2026-08-18-spatial-map-griddler.md` (보류) ·
 > 회귀 `tests/test_spatial_map.py`
+> **쓰는 법**: `docs/spatial_map_usage.md` · 예제 `examples/spatial_maps/` (4종).
+> 이 문서는 **왜 그렇게 정했는지**를, 그쪽은 **그대로 쓰는 법**을 적는다.
 
 > ## ✅ 사용 보류 해제 — 2026-08-19 (v28.61)
 >

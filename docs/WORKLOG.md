@@ -818,6 +818,8 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check
 | `docs/front_electrode_model_scope.md` | 전면전극 모델 범위 |
 | `_experiments_README.md` | 루트 `_*_results.csv`의 실행 조건. **수치 인용 전 반드시 확인** |
 | `docs/spatial_map_convention.md` | **규범 문서** — 공간 분포 파일 규약(행 방향·격자 정렬). 여기 적힌 것이 공식 규약이고 코드·테스트·GUI가 이를 따른다 |
+| `docs/spatial_map_usage.md` | **사용 설명서** — 공간 분포 맵을 쓰는 법(형식·GUI 순서·활용 예시·자주 하는 실수). 규약 문서와 어긋나면 규약 문서가 맞다 |
+| `examples/spatial_maps/` | 공간 분포 예제 파일 4종. 각 파일 머리에 용도와 값의 의미가 주석으로 있다 |
 | `docs/base_lateral_convention.md` | **규범 문서** — 벌크 횡전도(β 토폴로지·Ω/sq·저주입 한정) |
 | `docs/crosscheck/` | 외부 도구 대조 절차와 판정. 대조가 **불가능해도 절차는 보존**한다 — 도구를 확보하면 그대로 재개한다 |
 | `docs/superpowers/specs/` · `plans/` | 기능별 설계·구현 계획 |
