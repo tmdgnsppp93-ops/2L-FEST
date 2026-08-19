@@ -50,22 +50,26 @@ def _pts(*xy):
 # =============================================================================
 
 def test_spatial_targets_registry(fest):
-    """대상 물성 확정 — 4종(2026-08-17 박사님 확정) + `rsh`(v28.62).
+    """대상 물성 확정 — 4종(2026-08-17 박사님 확정) + `rsh`(v28.62) + `rcj`(v28.66).
 
-    `rsh`는 **끝에 붙인다.** 순서가 GUI 행 순서이자 `active_spatial_maps()`의
+    새 대상은 **끝에 붙인다.** 순서가 GUI 행 순서이자 `active_spatial_maps()`의
     반환 순서라, 중간에 끼우면 그 순서에 기대는 것들이 조용히 어긋난다.
+
+    ⚠ `rcj`를 `rc` 옆에 두고 싶은 유혹이 있다(이름도 의미도 이웃이다). 그렇게
+    하지 않는다 — 논리적 이웃이라는 이유로 재배열하는 것이 정확히 이 규약이
+    막는 행위다. `rsh`가 j01/j02의 논리적 이웃인데도 끝에 붙은 것과 같다.
     """
-    assert fest.SPATIAL_TARGETS == ("j01", "j02", "gen", "rc", "rsh")
+    assert fest.SPATIAL_TARGETS == ("j01", "j02", "gen", "rc", "rsh", "rcj")
 
 
 def test_inverted_targets_registry(fest):
-    """맵이 **저항**을 곱하는 대상 목록 — `rc`와 `rsh` 둘뿐이다.
+    """맵이 **저항**을 곱하는 대상 목록 — `rc` · `rsh` · `rcj` 셋이다.
 
     이 목록이 GUI의 앰버 강조를 결정한다. 방향이 뒤집힌다는 것은 **모델의
     사실**이지 화면의 사실이 아니므로 엔진 쪽에 둔다. 새 대상을 추가하는 사람이
     여기를 안 보면 경고 없이 반대로 쓰이게 되므로 목록을 테스트로 고정한다.
     """
-    assert fest.SPATIAL_INVERTED_TARGETS == ("rc", "rsh")
+    assert fest.SPATIAL_INVERTED_TARGETS == ("rc", "rsh", "rcj")
     assert set(fest.SPATIAL_INVERTED_TARGETS) <= set(fest.SPATIAL_TARGETS)
 
 
@@ -389,6 +393,135 @@ def test_rsh_map_is_in_the_build_cache_hash(fest, make_mono):
     m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
                PARAMS["Rs"], PARAMS["cf"], dp)
     assert m.S._cache_hash == h0, "맵을 떼면 해시가 원래대로 돌아와야 한다"
+
+
+def test_rcj_map_multiplies_the_junction_contact_resistivity(fest, make_mono):
+    """rcj 맵은 **서브셀 사이 수직 접촉 비저항 Rc_junction**을 곱한다 (v28.66).
+
+    `rc`(전극↔반도체, B 계층)와 **다른 물성**이다 — 단위가 둘 다 Ω·cm²라
+    바꿔 걸어도 오류가 안 나므로, 여기서 "어느 값이 움직이는가"로 구분한다.
+    """
+    m = make_mono()
+    dp0 = fest.DiodeParams()
+    base = m.S._diode_node_arrays(dp0, mode="tandem")
+
+    dp2 = fest.DiodeParams()
+    dp2.spatial_rcj = fest.SpatialMap(mode="uniform", background=2.0)
+    got = m.S._diode_node_arrays(dp2, mode="tandem")
+
+    assert np.allclose(got.Rc_j, dp0.Rc_junction * 2.0, rtol=0, atol=0)
+    # rcj는 다이오드 포화전류·션트를 건드리지 않는다 — 계층은 같아도 물성이 다르다
+    assert np.array_equal(np.atleast_1d(got.Rsh), np.atleast_1d(base.Rsh))
+    assert np.array_equal(np.atleast_1d(got.J01), np.atleast_1d(base.J01))
+
+
+def test_rcj_no_map_returns_the_scalar_itself(fest, make_mono):
+    """맵이 없으면 `dp.Rc_junction` **스칼라 그 객체**다 — 무맵 비트 동일 근거.
+
+    소비 지점이 전부 `Rc_j * Jb` / `1.0 - Rc_j * dJb` 형태이므로, 스칼라를
+    그대로 넘기면 식이 v28.65와 문자 그대로 같다(`rsh`의 근거 (5)와 같다).
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    t = m.S._diode_node_arrays(dp, mode="tandem")
+    assert t.Rc_j is dp.Rc_junction
+
+
+def test_rcj_map_does_not_break_the_on_off_gate(fest, make_mono):
+    """`Rc_junction > 0` 게이트는 **스칼라**로 판정한다 — 맵이 붙어도 살아 있다.
+
+    이것이 이 배선에서 가장 깨지기 쉬운 자리다. 소비 지점 여섯 곳이
+    `if Rc_j > 0:`로 켜짐을 판정하고 있었는데, `Rc_j`가 배열이 되면 파이썬이
+    "truth value of an array is ambiguous" ValueError를 던진다. **조용한
+    오답이 아니라 즉시 예외**라 발견은 쉽지만, 맵을 붙인 사용자에게만 터진다.
+
+    v28.66은 게이트를 `dp.Rc_junction`(스칼라)로 남겼다. 배율은 항상 양수이므로
+    (`SpatialMap.evaluate`가 강제한다) 켜짐 여부는 스칼라만으로 정해진다 —
+    즉 판정을 스칼라로 두는 것은 편의가 아니라 **옳다.**
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    dp.spatial_rcj = fest.SpatialMap(mode="gaussian", background=1.0,
+                                     feature=3.0, cx=1.0, cy=1.0,
+                                     sigma_x=0.4, sigma_y=0.4)
+    got = m.S._diode_node_arrays(dp, mode="tandem")
+    assert np.ndim(got.Rc_j) == 1, "맵을 붙였는데 배열이 아니다"
+    assert np.all(got.Rc_j > 0), "배율이 양수인데 Rc_j에 0/음수가 생겼다"
+
+    # 실제 solve가 게이트에서 터지지 않는지 — 여기서 ValueError가 나면 배선이
+    # 게이트를 배열로 판정하고 있다는 뜻이다.
+    m.S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+              PARAMS["Rs"], 0.5, PARAMS["cf"], dp, "tandem")
+
+
+def test_rcj_map_is_in_the_build_cache_hash(fest, make_mono):
+    """rcj 맵을 바꾸면 `_build` 캐시가 무효화된다.
+
+    `_build`는 이 맵을 **쓰지 않는다**(A 계층). 그래도 슬롯을 둔다 — 대상마다
+    슬롯 하나라는 규약이 깨지면 나중에 어느 맵이 B 계층으로 옮겨질 때 캐시가
+    조용히 낡는다. 비용은 rcj만 바뀔 때의 재빌드 한 번이다.
+    """
+    m = make_mono()
+    dp = fest.DiodeParams()
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    h0 = m.S._cache_hash
+    dp.spatial_rcj = fest.SpatialMap(mode="uniform", background=2.0)
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    assert m.S._cache_hash != h0, "rcj 맵이 캐시 해시에 없다"
+    fest.clear_spatial_map(dp, "rcj")
+    m.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+               PARAMS["Rs"], PARAMS["cf"], dp)
+    assert m.S._cache_hash == h0, "맵을 떼면 해시가 원래대로 돌아와야 한다"
+
+
+def test_rcj_is_distinct_from_rc(fest, make_mono):
+    """`rc`와 `rcj`가 **서로 다른 것을 움직인다.**
+
+    이름·단위가 겹쳐 바꿔 거는 사고가 가장 그럴듯한 자리다. 오류가 나지 않으므로
+    (둘 다 양수 배율) 값으로 구분해 둔다.
+      - rc  → `_Gc`(강성 조립, 금속 노드 컨덕턴스)를 바꾸고 `Rc_j`는 그대로
+      - rcj → `Rc_j`를 바꾸고 `_Gc`는 그대로
+    """
+    sm = fest.SpatialMap(mode="uniform", background=2.0)
+
+    m1 = make_mono()
+    dp1 = fest.DiodeParams()
+    dp1.spatial_rc = sm
+    m1.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+                PARAMS["Rs"], PARAMS["cf"], dp1)
+    assert m1.S._diode_node_arrays(dp1, mode="tandem").Rc_j is dp1.Rc_junction, (
+        "rc 맵이 Rc_junction까지 건드렸다 — 계층을 넘었다")
+
+    m2 = make_mono()
+    dp2 = fest.DiodeParams()
+    dp2.spatial_rcj = sm
+    m2.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+                PARAMS["Rs"], PARAMS["cf"], dp2)
+    dp0 = fest.DiodeParams()
+    m3 = make_mono()
+    m3.S._build(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
+                PARAMS["Rs"], PARAMS["cf"], dp0)
+    assert np.array_equal(m2.S._Gc, m3.S._Gc), (
+        "rcj 맵이 접촉 컨덕턴스 _Gc까지 건드렸다 — rc의 자리를 침범했다")
+
+
+def test_rcj_example_file_loads_and_targets_rcj(fest):
+    """배포 예제가 실제로 로드되고 `rcj`에 붙는다.
+
+    예제 파일이 문서에만 있고 로더를 통과하지 못하면 처음 쓰는 사람이 그
+    파일로 막힌다 — 안내와 구현이 갈리는 전형적인 자리다.
+    """
+    import os
+    path = os.path.join(fest.spatial_examples_dir(), "edge_delam_rcj.txt")
+    assert os.path.exists(path), f"예제 파일이 없다: {path}"
+    sm = fest.load_spatial_map_txt(path)
+    dp = fest.DiodeParams()
+    fest.set_spatial_map(dp, "rcj", sm)
+    assert fest.active_spatial_maps(dp) == ("rcj",)
+    # 가장자리가 중앙보다 나쁘다(값이 크다) — 파일 주석이 말하는 방향
+    assert sm.matrix[0][0] > sm.matrix[len(sm.matrix) // 2][len(sm.matrix) // 2]
 
 
 # =============================================================================

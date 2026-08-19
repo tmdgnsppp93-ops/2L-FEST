@@ -100,6 +100,11 @@ from test_base_lateral import BRANCH_CASES, PARAMS, VB, _INLINE  # noqa: E402
 
 SRC_PATH = os.path.join(_ROOT, "2L_FEST.py")
 
+# 줄바꿈 문자. 이 파일은 소스를 줄 단위로 다루는 코드가 많은데, 그 안에
+# 이스케이프를 쓰면 "이 파일 자신"을 편집하는 스크립트에서 한 번 더 해석돼
+# 조용히 실제 줄바꿈으로 바뀐다(v28.67에서 실제로 겪었다). 상수로 둔다.
+_NL = chr(10)
+
 # 단위 1이 만들 중앙 헬퍼. 이 이름이 T1의 유일한 허용 소유자다.
 HELPER_NAME = "_diode_node_arrays"
 
@@ -144,6 +149,9 @@ TARGET_LOCALS = {
     # rsh는 j01/j02와 **같은 계층**(A, 노드 잔차)이다. 분기마다 이름이 다른
     # j01/j02와 달리 헬퍼 도입 이후 도입되므로 **모든 분기에서 같은 이름**을 쓴다.
     "rsh": ("Rsh_arr", "Rshb_arr"),
+    # rcj도 A 계층이고, v28.66이 6개 분기 전부에서 **같은 이름** `Rc_j`로
+    # 받게 했다(예전에는 각자 `dp.Rc_junction`을 직독했다).
+    "rcj": ("Rc_j",),
 }
 
 _ALL_LOCALS = tuple(sorted({n for v in TARGET_LOCALS.values() for n in v}))
@@ -336,6 +344,35 @@ RESIDUAL_SEES_MAP = {
     ("phaseA_bifacial", "rsh"): True,      # v28.62
     ("single_full_area", "rsh"): True,     # v28.62
     ("single_bifacial", "rsh"): True,      # v28.62
+
+    # --- 6번째 대상: rcj (Rc_junction) --------------------------------------
+    # v28.66. `rsh`와 **같은 계층**(A, 노드 잔차)이고 배선 방식도 같다 —
+    # `_diode_node_arrays`가 노드 배열을 돌려주고 6개 분기가 그것을 받는다.
+    #
+    # **single 두 칸은 True가 아니다.** 중간층 자체가 없으므로 `Rc_junction`이
+    # 잔차에 나타나지 않는다 — 결함이 아니라 **모델의 사실**이다. 여기에 True를
+    # 적으면 "고쳐야 할 것"으로 읽히고, xfail 사유가 "결함"으로 나가 다음 사람이
+    # 없는 결함을 찾게 된다. 그래서 이 두 칸은 아래 `MODE_INAPPLICABLE`로 따로
+    # 뺀다 — `NOT_YET_IMPLEMENTED`(미구현)와도 다른 세 번째 범주다.
+    ("phaseA_full_area", "rcj"): True,     # v28.66
+    ("phaseB_full_area", "rcj"): True,     # v28.66 — 기본 설정
+    ("phaseB_bifacial", "rcj"): True,      # v28.66
+    ("phaseA_bifacial", "rcj"): True,      # v28.66
+    ("single_full_area", "rcj"): True,     # 해당 없음 — MODE_INAPPLICABLE
+    ("single_bifacial", "rcj"): True,      # 해당 없음 — MODE_INAPPLICABLE
+}
+
+# (분기, 대상) → 그 조합이 **물리적으로 성립하지 않는** 경우.
+#
+# `RESIDUAL_SEES_MAP`의 False(결함)와도, `NOT_YET_IMPLEMENTED`(미구현)와도
+# 다르다. 고칠 것이 없고 앞으로도 없다 — single 모드에는 재결합 접합이 없다.
+# 표에 담지 않고 코드에서 조용히 건너뛰면 "왜 4칸만 도나"를 다음 사람이 다시
+# 조사하게 되므로, **사유를 붙여 명시적으로 건너뛴다.**
+MODE_INAPPLICABLE = {
+    ("single_full_area", "rcj"): "single 모드에는 중간층이 없다 — Rc_junction이 "
+                                 "잔차에 나타나지 않는다 (결함 아님)",
+    ("single_bifacial", "rcj"): "single 모드에는 중간층이 없다 — Rc_junction이 "
+                                "잔차에 나타나지 않는다 (결함 아님)",
 }
 
 # 실제 도달 분기. `BRANCH_CASES`의 `expected_branch`와 일치한다 — 단, 그쪽은
@@ -353,7 +390,7 @@ ACTUAL_BRANCH = {
 # 이 표가 덮으려는 대상. **`fest.SPATIAL_TARGETS`와 다를 수 있다** — 아직
 # 구현되지 않은 대상을 여기 먼저 올리고 결함 칸을 `False`로 두는 것이 단위 0의
 # 방식이기 때문이다(그 칸에 strict xfail이 붙어 구현되는 순간 XPASS로 뒤집힌다).
-TARGETS = ("j01", "j02", "gen", "rc", "rsh")
+TARGETS = ("j01", "j02", "gen", "rc", "rsh", "rcj")
 
 # 아직 엔진에 없는 대상. 구현되면 여기를 비운다.
 #   - `set_spatial_map(dp, <t>, ...)`가 ValueError를 던진다(레지스트리에 없다)
@@ -384,6 +421,15 @@ def _cross(targets=TARGETS):
     for case in BRANCH_CASES:
         for t in targets:
             marks = ()
+            why_na = MODE_INAPPLICABLE.get((case.id, t))
+            if why_na is not None:
+                # xfail이 아니라 **skip**이다. xfail(strict)로 두면 "언젠가
+                # 통과해야 할 것"이라는 뜻이 되는데, 이 칸은 통과할 수도 없고
+                # 통과해서도 안 된다.
+                marks = pytest.mark.skip(reason=why_na)
+                out.append(pytest.param(case.values, t, marks=marks,
+                                        id=f"{case.id}-{t}"))
+                continue
             if not RESIDUAL_SEES_MAP[(case.id, t)]:
                 if t in NOT_YET_IMPLEMENTED:
                     why = (f"미구현 — spatial_{t}가 SPATIAL_TARGETS에 아직 없다. "
@@ -611,8 +657,20 @@ def test_branch_local_diode_arrays_carry_the_map(fest, geo_factory, case,
 
 # `dp.J01_top_pass * (1 - mf)` 계열. 공백 유무를 흡수한다(`_tab_current`는
 # `DP.J01_top_pass*(1-mf)`로 붙여 쓴다).
+#
+# **v28.66에서 넓혔다.** v28.65까지 이 정규식은 금속분율 변수 이름이 정확히
+# `mf`일 때만 잡았다. `_tab_waterfall`의 J0 Decomposition 패널이 같은 조립을
+# `avg_mf`라는 지역 이름으로 하고 있었고, 글자가 다르다는 이유 하나로 census를
+# 통째로 비껴갔다 — 그래서 그 패널이 `DP` 스칼라를 직독해 맵을 무시하는 것을
+# 1년 가까이 아무도 몰랐다(오류도 경고도 없는 조용한 오답).
+#
+# 교훈은 "이름을 하나 더 넣자"가 아니다. **이름을 열거하는 방식 자체가 새는
+# 감시**라는 것이다. 그래서 `mf`를 임의 식별자(`avg_mf` · `metal_frac` ·
+# `S.metal_frac` 전부)로 바꿨다. 새 우회를 만들려면 `(1 - x)` 형태를 벗어나야
+# 하는데, 그건 조립식 자체를 바꾸는 일이라 눈에 띈다.
 INLINE_ASSEMBLY_RE = re.compile(
-    r"J0\d_(?:top|single)_pass\s*\*\s*\(\s*1\s*-\s*mf\s*\)")
+    r"J0\d_(?:top|single)_pass\s*\*\s*\(\s*1\s*-\s*"
+    r"[A-Za-z_][A-Za-z0-9_.]*\s*\)")
 
 # census. **v28.61에서 13개 함수 34줄 → 1개 함수 4줄이 됐다.**
 #
@@ -628,6 +686,16 @@ INLINE_ASSEMBLY_RE = re.compile(
 #
 # 헬퍼 안의 4줄은 mode별 top/single × J01/J02 조합이다. 지점이 늘면(=결함 재발
 # 경로) 여기가 먼저 실패해서 갱신을 요구한다.
+#
+# **v28.66 기준으로도 여전히 4줄이다 — 그런데 그 사실이 안전하다는 뜻은 아니었다.**
+# 정규식을 임의 식별자로 넓혀 다시 세어도 4줄이 나온다. v28.65까지 새고 있던
+# `_tab_waterfall`의 J0 패널은 그 사이에 헬퍼로 배선됐기 때문이다. 즉 이 숫자는
+# **넓힌 자와 고친 코드가 같은 커밋에 있어서** 그대로인 것이지, 예전 정규식이
+# 옳았기 때문이 아니다.
+#
+# 이 census가 "4"를 계속 보여 주는 동안 실제 결함이 하나 살아 있었다는 것을
+# 기록해 둔다. 숫자가 안 변한다는 것은 감시가 촘촘하다는 증거가 아니다 —
+# **무엇을 세고 있는지**가 감시의 전부다(§7).
 INLINE_ASSEMBLY_CENSUS = {
     "_diode_node_arrays": 4,
 }
@@ -647,14 +715,83 @@ def _owner_functions(src):
     return {ln: v[0] for ln, v in owner.items()}
 
 
+def _code_only(src):
+    """주석과 문자열 리터럴을 지운 소스. **줄 번호는 보존한다.**
+
+    v28.67에 추가했다. v28.66이 정규식을 임의 식별자로 넓힌 직후, 그 변경을
+    설명하는 **변경이력 문장 자체가** census에 걸렸다 — 결함이 있던 식을
+    원문 그대로 인용한 산문인데 감시가 코드로 읽었다.
+
+    이 저장소는 주석·독스트링에 "무엇이 잘못됐었나"를 원문 그대로 적는다.
+    넓힌 정규식을 그대로 두면 **결함을 문서화할 때마다 테스트가 깨진다** —
+    문서를 못 쓰게 만드는 감시는 오래 못 간다. 다음 사람은 감시를 지우거나
+    문서를 흐리게 쓴다. 둘 다 나쁘다.
+
+    그렇다고 정규식을 다시 좁히면 v28.66이 고친 구멍이 돌아온다. 그래서
+    **무엇을 세는가**를 정확히 한다: 조립은 코드에서 일어나지 산문에서
+    일어나지 않는다. `tokenize`로 COMMENT·STRING 토큰을 공백으로 지우고
+    남은 **실행 코드**에만 정규식을 건다.
+
+    감시가 약해지지 않는다 — 문자열 리터럴 안에서 다이오드 배열을 조립하는
+    경로는 없다. 오히려 검사가 정확해진다.
+    """
+    import io as _io
+    import tokenize as _tk
+
+    out = src.split(_NL)          # 줄 끝을 떼고 다룬다 — 줄 수가 그대로 유지된다
+
+    def _blank_span(srow, scol, erow, ecol):
+        """토큰이 차지한 자리를 공백으로. 열 위치를 유지해야 정규식이 옳게 본다."""
+        for row in range(srow, erow + 1):
+            if not (1 <= row <= len(out)):
+                continue
+            body = out[row - 1]
+            a = scol if row == srow else 0
+            b = ecol if row == erow else len(body)
+            b = min(b, len(body))
+            if a < b:
+                out[row - 1] = body[:a] + (" " * (b - a)) + body[b:]
+
+    try:
+        toks = list(_tk.generate_tokens(_io.StringIO(src).readline))
+    except (_tk.TokenError, IndentationError, SyntaxError):
+        return src        # 토큰화 실패 시 원본 그대로 — 검사를 건너뛰지 않는다
+    for tok in toks:
+        if tok.type in (_tk.COMMENT, _tk.STRING):
+            _blank_span(tok.start[0], tok.start[1], tok.end[0], tok.end[1])
+    return _NL.join(out)
+
+
 def _inline_assembly_sites():
-    """(줄번호, 함수명) 목록."""
+    """(줄번호, 함수명) 목록. **실행 코드만 본다** — 위 `_code_only` 참조."""
     with open(SRC_PATH, encoding="utf-8") as fh:
         src = fh.read()
-    owner = _owner_functions(src)
+    owner = _owner_functions(src)      # 함수 귀속은 원본 AST로 (줄 번호가 같다)
+    code = _code_only(src)
     return [(i, owner.get(i, "<module>"))
-            for i, line in enumerate(src.splitlines(), 1)
+            for i, line in enumerate(code.split(_NL), 1)
             if INLINE_ASSEMBLY_RE.search(line)]
+
+
+def test_census_ignores_prose_but_not_code():
+    """`_code_only`가 **산문은 빼고 코드는 남기는지** 직접 확인한다.
+
+    이 테스트가 없으면 `_code_only`가 지나치게 지워도(토큰화가 통째로
+    실패해 전부 공백이 되는 등) census가 조용히 0건을 세고 **영원히
+    초록불**이 된다. 감시를 감시한다.
+    """
+    sample = _NL.join([
+        "# 주석: dp.J01_top_pass * (1 - avg_mf) 를 직독하던 결함",
+        'DOC = "문자열: J01_top_pass * (1 - mf) 설명"',
+        "J01_pass = dp.J01_top_pass * (1 - mf)",
+        "",
+    ])
+    code = _code_only(sample)
+    hits = [i for i, line in enumerate(code.split(_NL), 1)
+            if INLINE_ASSEMBLY_RE.search(line)]
+    assert hits == [3], (
+        f"주석(1행)·문자열(2행)은 세면 안 되고 코드(3행)는 세야 한다 — 실제 {hits}")
+    assert len(code.split(_NL)) == len(sample.split(_NL)), "줄 수가 바뀌었다"
 
 
 def test_inline_assembly_census_is_pinned():
@@ -854,3 +991,143 @@ def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
         f"gen 맵이 걸렸는데 cell_current가 거의 변하지 않았다 "
         f"(ΔJ={with_map.J - no_map.J:+.5e}) — 전압장은 변했으므로 "
         f"cell_current 쪽 배선이 끊겼을 수 있다")
+
+
+# =============================================================================
+# 7. v28.66 — GUI 표시 경로도 헬퍼를 지난다 (J0 Decomposition 패널)
+# =============================================================================
+#
+# 이 절이 생긴 이유는 §4의 감시에 **구멍이 있었다**는 사실이다.
+#
+# `_tab_waterfall`의 "J0 Decomposition at Voc" 패널은 v28.61이 배선한 13곳에
+# 들어 있지 않았다. `losses`·`recomb_currents`·`_tab_current`는 배선했는데 이
+# 패널만 빠졌고, 이유는 단순하다 — 그 줄이 금속분율 평균에 `avg_mf`라는 지역
+# 이름을 써서 `INLINE_ASSEMBLY_RE`(당시 `mf` 고정)에 걸리지 않았다. census는
+# "1개 함수 4줄"이라는 초록불을 계속 보여 줬고, 그 초록불이 틀렸다.
+#
+# 증상은 v28.61이 `cell_current`에서 없앤 것과 **같은 종류**다: 맵이 반영된
+# 워터폴 막대와 맵이 무시된 J0 막대가 한 화면에 나란히 그려졌다. 오류도 경고도
+# 없는 조용한 오답이라 눈으로는 구분할 수 없다.
+#
+# 그래서 두 겹으로 막는다.
+#   (1) 정규식을 임의 식별자로 넓혔다 (위 `INLINE_ASSEMBLY_RE`)
+#   (2) 조립을 GUI 밖 `FESTSolver.j0_decomposition`으로 옮겨 **Tk 없이 값으로**
+#       검증한다 — 아래 테스트들. 식이 GUI 안에 있었던 것이 이 자리가 그동안
+#       테스트 밖이었던 직접적인 원인이다.
+# (1)만 두면 다음 우회는 또 다른 이름으로 새고, (2)만 두면 새 GUI 패널이 다시
+# 자기 식을 갖는 것을 막지 못한다.
+
+J0_PANEL_OWNER = "j0_decomposition"
+
+
+def test_j0_panel_helper_exists(fest):
+    """v28.66이 만든 조립 지점. GUI 밖이라 Tk 없이 부를 수 있다."""
+    assert hasattr(fest.FESTSolver, J0_PANEL_OWNER), (
+        f"FESTSolver.{J0_PANEL_OWNER}가 없다 — J0 패널 조립을 GUI 밖으로 "
+        f"꺼낸 것이 v28.66의 핵심이다")
+
+
+def test_waterfall_tab_does_not_read_diode_scalars():
+    """**결함 자체의 회귀 감시.** `_tab_waterfall`이 DP 다이오드 스칼라를 읽지 않는다.
+
+    v28.65의 그 패널이 하던 일이 정확히 이것이다 — `DP.J01_top_pass` 같은
+    스칼라를 직독하면 `_spatial_mult`를 지나지 않으므로 맵이 반영될 방법이
+    없다. 정규식이 아니라 **AST 속성 접근**으로 보므로 이름을 바꾸거나 줄을
+    나눠도 우회되지 않는다.
+
+    `n1_top` 같은 지수 계수는 노드 배열이 아니라 스칼라 물성이므로 대상이
+    아니다 — 여기서 보는 것은 **노드마다 달라질 수 있는 것을 스칼라로 읽는
+    행위**뿐이다.
+    """
+    with open(SRC_PATH, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+
+    target_fn = None
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == "_tab_waterfall":
+            target_fn = node
+            break
+    assert target_fn is not None, "_tab_waterfall를 찾지 못했다"
+
+    banned = re.compile(r"^J0\d_(?:top|bot|single)(?:_pass|_metal)?$|^Rsh_(?:top|bot|single)$")
+    offenders = [
+        (n.lineno, n.attr)
+        for n in ast.walk(target_fn)
+        if isinstance(n, ast.Attribute) and banned.match(n.attr)
+    ]
+    assert not offenders, (
+        f"_tab_waterfall가 다이오드 스칼라를 직독한다: {offenders} — "
+        f"맵이 반영될 수 없는 경로다. FESTSolver.{J0_PANEL_OWNER}를 쓸 것")
+
+
+@pytest.mark.parametrize("mode,rs_j", [("tandem", None), ("single", 0.0)])
+def test_j0_decomposition_sees_the_map(fest, make_mono, mode, rs_j):
+    """맵을 붙이면 J0 분해가 **실제로** 움직인다.
+
+    v28.65에서는 이 단언이 실패했다 — 맵을 붙여도 네 값이 1비트도 변하지
+    않았다. 그것이 결함의 정의다.
+
+    j01 맵은 n1 두 칸(pass/metal)만, j02 맵은 n2 두 칸만 움직여야 한다.
+    한쪽 맵이 반대쪽 칸까지 움직이면 헬퍼의 성분 분리가 깨진 것이다.
+    """
+    m = make_mono()
+    base = m.S.j0_decomposition(_dp(fest, rs_j, mode, None), mode=mode)
+
+    for target, moved, still in (("j01", ("pass_n1", "met_n1"),
+                                  ("pass_n2", "met_n2")),
+                                 ("j02", ("pass_n2", "met_n2"),
+                                  ("pass_n1", "met_n1"))):
+        got = m.S.j0_decomposition(_dp(fest, rs_j, mode, target), mode=mode)
+        for k in moved:
+            if base[k] == 0.0:
+                continue          # 기본값이 0인 칸은 배율로 움직일 수 없다
+            assert got[k] != base[k], (
+                f"{mode}/{target}: {k}가 맵을 반영하지 않았다 "
+                f"({base[k]!r} → {got[k]!r}) — v28.65 결함의 회귀")
+        for k in still:
+            assert got[k] == base[k], (
+                f"{mode}/{target}: {k}까지 움직였다 — 성분 분리가 깨졌다")
+
+
+def test_j0_decomposition_uses_area_weighting(fest, make_mono):
+    """면적 가중이다 — 노드 단순 평균이 아니다.
+
+    메시는 핑거 근처가 촘촘하다. 단순 평균은 그 영역을 과대 가중하므로,
+    **국부 결함 맵의 표시값이 메시 밀도에 따라 달라진다.** 맵을 배선하면서
+    함께 고친 이유가 이것이다(v28.65는 `np.mean`이었다).
+
+    무맵에서 두 방식의 차이가 유의미하다는 것부터 보인다 — 차이가 없으면
+    이 단언은 무엇도 구분하지 못한다.
+    """
+    m = make_mono()
+    dp = _dp(fest, None, "tandem", None)
+    got = m.S.j0_decomposition(dp, mode="tandem")
+
+    _dna = m.S._diode_node_arrays(dp, mode="tandem")
+    A_ = m.S.geo.area
+    area_w = float(np.sum(_dna.J01_pass * m.S._nodal_areas()) / A_)
+    plain = float(np.mean(_dna.J01_pass))
+
+    assert plain != area_w, (
+        "이 메시에서는 단순 평균과 면적 가중이 같다 — 두 방식을 구분하지 "
+        "못하므로 이 테스트가 무력하다. 노드 밀도가 불균일한 메시로 바꿀 것")
+    assert got["pass_n1"] == area_w, (
+        f"면적 가중이 아니다 (got={got['pass_n1']!r}, "
+        f"area={area_w!r}, mean={plain!r})")
+
+
+def test_j0_decomposition_weights_sum_to_one(fest, make_mono):
+    """가중치의 합이 1이다 — `recomb_currents`와 같은 규약.
+
+    이게 깨지면 J0가 통째로 배율만큼 어긋나는데, 표시 전용 값이라
+    아무도 눈치채지 못한다. 무맵·균일 물성에서 스칼라와 같아야 한다.
+    """
+    m = make_mono()
+    dp = _dp(fest, None, "tandem", None)
+    dp.J01_top_pass = 1.0e-15
+    dp.J01_top_metal = 1.0e-15      # pass/metal이 같으면 합은 metal_frac 무관
+    got = m.S.j0_decomposition(dp, mode="tandem")
+
+    assert got["pass_n1"] + got["met_n1"] == pytest.approx(1.0e-15, rel=1e-12), (
+        f"pass+metal이 원래 스칼라로 복원되지 않는다 "
+        f"({got['pass_n1'] + got['met_n1']!r}) — 면적 가중치 합 ≠ 1")

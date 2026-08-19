@@ -157,33 +157,50 @@ def collect_env():
     return out
 
 
-_SUMMARY_RE = re.compile(
-    r"(?:(?P<passed>\d+)\s+passed)"
-    r"(?:,\s*(?P<deselected>\d+)\s+deselected)?"
-    r"(?:,\s*(?P<xfailed>\d+)\s+xfailed)?"
-    r"(?:,\s*(?P<failed>\d+)\s+failed)?")
+# 요약 줄의 각 항목을 **이름으로** 뽑는다. 순서·인접성에 기대지 않는다.
+#
+# v28.67에서 고쳤다. 이전 정규식은 `passed → deselected → xfailed → failed`가
+# 그 순서로 **붙어 있을 때만** 맞았다. pytest는 값이 0인 항목을 아예 빼고
+# 출력하므로 항목 집합이 실행마다 달라지는데, 중간에 새 항목이 하나 끼면
+# 뒤쪽이 통째로 None이 된다. 실제로 그렇게 됐다:
+#
+#     600 passed, 4 skipped, 2 deselected, 6 xfailed
+#                 ^^^^^^^^^ 새 항목
+#
+# `4 skipped`가 끼자 deselected·xfailed가 매칭되지 않아 **둘 다 0으로 기록**됐다.
+# 등록 자료에 "xfail 0건 / 느린 핀 0건"이라고 적힐 뻔했다 — 오류도 경고도 없이,
+# 그냥 숫자가 틀린 채로. 문서가 사실을 말해야 하는 자리라 조용한 오답이 특히 나쁘다.
+_COUNT_RE = re.compile(
+    "([0-9]+)[ \t]+"
+    "(passed|failed|skipped|deselected|xfailed|xpassed|errors?|warnings?)"
+    "(?![a-zA-Z])")
+
+_KNOWN = ("passed", "failed", "skipped", "deselected", "xfailed", "xpassed",
+          "error", "warning")
 
 
 def parse_pytest_summary(text):
-    """pytest -q 요약 줄에서 통과/xfail/deselect 수를 뽑는다.
+    """pytest -q 요약 줄에서 항목별 건수를 뽑는다.
 
     실패 건수가 있으면 그대로 담는다 — 등록 자료에 '실패 0건'이라고 쓰려면
     실제로 0인지 확인해야 한다.
+
+    요약 줄 판정: `N passed`를 포함하는 **마지막** 줄. 진행 표시(`....`)와
+    실패 상세 블록에는 그 형태가 없다.
     """
     best = None
     for line in text.splitlines():
-        m = _SUMMARY_RE.search(line)
-        if m and m.group("passed"):
-            best = m
+        counts = {}
+        for n, kind in _COUNT_RE.findall(line):
+            counts[kind.rstrip("s") if kind.startswith(("error", "warning"))
+                   else kind] = int(n)
+        if "passed" in counts:
+            best = counts
     if best is None:
-        raise ValueError("pytest 요약 줄을 찾지 못했다 (예: '147 passed, ... 6 xfailed')")
-    g = best.groupdict()
-    return {
-        "passed": int(g["passed"]),
-        "deselected": int(g["deselected"] or 0),
-        "xfailed": int(g["xfailed"] or 0),
-        "failed": int(g["failed"] or 0),
-    }
+        raise ValueError(
+            "pytest 요약 줄을 찾지 못했다 (예: '600 passed, 4 skipped, "
+            "2 deselected, 6 xfailed')")
+    return {k: int(best.get(k, 0)) for k in _KNOWN}
 
 
 def run_tests():
@@ -228,10 +245,13 @@ def block_version(v):
 
 
 def block_tests(t, env):
+    # v28.67: 건너뜀도 적는다. 빼 두면 "통과+xfail+실패"의 합이 수집
+    # 수와 안 맞아, 합을 맞춰 보는 사람에게 문서가 틀린 것처럼 보인다.
     fail_txt = "실패 0건" if t["failed"] == 0 else f"**실패 {t['failed']}건**"
+    skip_txt = (f" / 건너뜀 {t['skipped']}건" if t["skipped"] else "")
     return (
         f"`pytest -m \"not slow\"` 실행 결과 **{t['passed']}건 통과 / "
-        f"{t['xfailed']}건 예상된 실패(xfail) / {fail_txt}**\n"
+        f"{t['xfailed']}건 예상된 실패(xfail){skip_txt} / {fail_txt}**\n"
         f"(측정 환경: Python {env['python']}, numpy {env['numpy']}, "
         f"scipy {env['scipy']}).\n\n"
         f"느린 전체 크기 셀 핀 {t['deselected']}건은 실행 시간(조합당 약 17분) 때문에 "

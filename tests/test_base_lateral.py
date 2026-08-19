@@ -49,6 +49,11 @@ import scipy.sparse.linalg as _sla
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# v28.66 §7이 카드 행 목록을 AST로 읽는다 — 인덱스 상수와 실제 행이
+# 갈리는 것을 소스에서 확인해야 Tk 없이 판정할 수 있다.
+SRC_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "2L_FEST.py")
+
 # 핀 테스트와 같은 solve 인자 (tests/test_default_pin.py:19,
 # tests/test_spatial_map.py:34). 값이 갈리면 다른 파일과의 비교가 깨진다.
 PARAMS = dict(rm=3e-6, hf=10e-4, wf=50e-4, rc=5e-3, Rs=15.0, cf=1.0)
@@ -1135,3 +1140,350 @@ def test_rejection_message_names_the_actual_rear_mode(fest, make_mono):
     msg = str(exc.value)
     assert repr(m.S.geo.rear_mode) in msg or str(m.S.geo.rear_mode) in msg
     assert "500" in msg          # 사용자가 넣은 값
+
+
+# =============================================================================
+# 7. GUI 입력란 (v28.66)
+# =============================================================================
+#
+# v28.65까지 `Rs_base`에는 **GUI 입력란이 없었다.** 엔진은 v28.59부터 완성돼
+# 있었고 full_area 거부 게이트(§6)까지 있었지만, `DP`에 값을 넣는 GUI 지점
+# 44곳 어디에도 `Rs_base`가 없어 스크립트에서 `dp.Rs_base = ...`로만 켤 수
+# 있었다. 기능이 있는데 화면에서 닿지 않는 상태였다.
+#
+# 여기서 고정하는 것은 **입력칸의 판단 규칙**이지 위젯 배치가 아니다. 판단을
+# `parse_rs_base_input`으로 GUI 밖에 꺼내 둔 이유가 그것이다 —
+# `_apply_diode_params` 안에 있으면 Tk 없이 확인할 수 없고, 확인할 수 없는
+# 규칙은 조용히 어긋난다(§같은 판단: v28.66의 J0 패널).
+
+def test_rs_base_input_blank_means_off(fest):
+    """빈칸 = None(끔). 공백만 있어도 같다."""
+    for text in ("", "   ", "\t", None):
+        val, err = fest.parse_rs_base_input(text, "bifacial")
+        assert err is None, f"{text!r}: 빈칸인데 거부됐다 ({err})"
+        assert val is None, f"{text!r}: 빈칸인데 {val!r}이 됐다"
+
+
+def test_rs_base_input_zero_is_not_off(fest):
+    """**0은 "끔"이 아니다.**
+
+    엔진이 `Rs_base <= 0`을 거부한다(0은 무한 컨덕턴스 →
+    `1/(4·A·Rs)`가 0으로 나눈다, §5-c). GUI가 0을 None으로 조용히 번역하면
+    "완전 전도"를 의도한 사용자가 정반대(꺼짐)를 얻고 **아무 신호도 남지
+    않는다.** 그래서 거부하고 안내한다.
+    """
+    for text in ("0", "0.0", "-1", "-0.5"):
+        val, err = fest.parse_rs_base_input(text, "bifacial")
+        assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
+        assert val is None
+
+
+def test_rs_base_input_rejects_non_numeric(fest):
+    for text in ("abc", "5 ohm", "1e", "--3"):
+        val, err = fest.parse_rs_base_input(text, "bifacial")
+        assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
+
+
+def test_rs_base_input_rejects_non_finite(fest):
+    """inf/nan은 숫자로 읽히지만 면저항이 아니다."""
+    for text in ("inf", "-inf", "nan"):
+        val, err = fest.parse_rs_base_input(text, "bifacial")
+        assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
+
+
+@pytest.mark.parametrize("rear_mode", ["bifacial", "patterned"])
+def test_rs_base_input_accepts_on_conducting_rear(fest, rear_mode):
+    val, err = fest.parse_rs_base_input("500", rear_mode)
+    assert err is None
+    assert val == 500.0
+
+
+@pytest.mark.parametrize("rear_mode", ["full_area", "", None, "mono"])
+def test_rs_base_input_rejected_on_full_area(fest, rear_mode):
+    """§6의 엔진 게이트와 **같은 사실**을 GUI에서 먼저 말한다.
+
+    조용히 None으로 떨어뜨리지 않는다 — 값을 받아 놓고 아무 효과가 없는 것이
+    이 저장소가 반복해서 거부해 온 실패 형태다(v28.43 · v28.54 · v28.57).
+    """
+    val, err = fest.parse_rs_base_input("500", rear_mode)
+    assert err == 'rs_base_full_area', f"{rear_mode!r}에서 통과했다 (val={val!r})"
+    assert val is None
+
+
+def test_rs_base_gui_rejection_agrees_with_the_engine(fest, make_mono):
+    """GUI가 막는 조건과 엔진이 던지는 조건이 **같아야** 한다.
+
+    둘이 갈리면 두 가지 중 하나가 된다 — GUI만 막으면 스크립트 경로가 뚫리고,
+    엔진만 막으면 사용자가 COMPARE 도중 예외를 본다. 여기서 두 판단을 맞대어
+    고정한다.
+    """
+    m = make_mono()
+    assert m.S.geo.rear_mode == 'full_area'
+
+    _, err = fest.parse_rs_base_input("500", m.S.geo.rear_mode)
+    assert err == 'rs_base_full_area', "GUI가 막지 않는다"
+
+    dp = _dp(fest, 100.0)
+    dp.Rs_base = 500.0
+    with pytest.raises(ValueError):
+        _solve(m, dp)          # 엔진도 막는다 — 같은 조건
+
+
+def test_rs_base_i18n_keys_exist_in_both_languages(fest):
+    """라벨·안내가 KO/EN 양쪽에 있어야 한다.
+
+    한쪽만 넣으면 그 자리만 다른 언어로 뜬다. `_TR` 테이블은
+    `front_electrode.i18n`과 별개라 그쪽 누락 검사가 여기까지 오지 않는다.
+    """
+    for key in ('rs_base', 'rs_base_off', 'rs_base_bad',
+                'rs_base_full_area', 'rs_base_disabled',
+                'rs_base_hint',                       # v28.67
+                'rs_junction', 'rs_junction_hint',    # v28.67
+                'rc_junction', 'rc_junction_hint'):   # v28.67
+        assert key in fest._TR, f"{key}가 _TR에 없다"
+        for lang in ('EN', 'KR'):
+            assert fest._TR[key].get(lang), f"{key}[{lang}]가 비었다"
+
+
+def test_rs_base_guidance_names_the_way_out(fest):
+    """안내가 **어떻게 하면 되는지**까지 말한다.
+
+    §6의 엔진 메시지가 지키는 규약과 같다 — "안 된다"만 적으면 사용자는
+    추측하게 된다.
+    """
+    for lang in ('EN', 'KR'):
+        msg = fest._TR['rs_base_full_area'][lang]
+        assert 'bifacial' in msg, f"[{lang}] 대안(bifacial)을 말하지 않는다"
+        assert 'full_area' in msg, f"[{lang}] 원인(full_area)을 말하지 않는다"
+
+
+def test_rs_base_entry_is_locked_on_full_area(fest):
+    """후면이 full_area면 입력칸을 **잠그고 비운다**.
+
+    숫자가 보이는데 계산에 안 들어가는 상태를 만들지 않기 위해서다. 값을 남긴
+    채 잠그면 화면이 거짓말을 한다 — Suns Rear가 같은 이유로 받는 처리와 같다.
+
+    Tk 없이 확인한다: `_sync_rs_base_entry`는 위젯 목록만 보므로 최소 스텁으로
+    충분하다. 이 메서드를 `_toggle_rear_mode`에서 뽑아낸 이유가 이것이다.
+    """
+    class _Entry:
+        def __init__(self, v=""):
+            self.value = v
+            self.state = "normal"
+
+        def configure(self, **kw):
+            if "state" in kw:
+                self.state = kw["state"]
+
+        def get(self):
+            return self.value
+
+        def delete(self, *a):
+            self.value = ""
+
+    class _App:
+        TB_DIODE_RS_BASE = 7
+        _sync_rs_base_entry = fest.FESTProApp._sync_rs_base_entry
+
+        def __init__(self, entry):
+            self.tb_diode = [None] * 7 + [entry]
+            self.status_msgs = []
+
+        def _status(self, msg):
+            self.status_msgs.append(msg)
+
+    ent = _Entry("500")
+    app = _App(ent)
+    app._sync_rs_base_entry('full_area')
+    assert ent.state == "disabled", "full_area인데 입력칸이 열려 있다"
+    assert ent.value == "", "잠그면서 값을 비우지 않았다 — 화면과 계산이 갈린다"
+    assert app.status_msgs, "값을 지우면서 아무 안내도 하지 않았다"
+
+    app._sync_rs_base_entry('bifacial')
+    assert ent.state == "normal", "bifacial인데 입력칸이 잠겨 있다"
+
+
+def test_rs_base_entry_index_matches_the_card(fest):
+    """`TB_DIODE_RS_BASE`가 실제 카드의 rs_base 행을 가리킨다.
+
+    카드 정의와 인덱스 상수가 갈리면 **다른 칸을 Rs_base로 읽는다** — 예를
+    들어 Rs_junction 값이 Rs_base로 들어가도 둘 다 Ω/sq라 오류가 안 난다.
+    소스에서 카드 행 목록을 읽어 위치를 확인한다.
+    """
+    import ast
+    with open(SRC_PATH, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+
+    idx_const = None
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Assign)
+                and any(isinstance(t, ast.Attribute)
+                        and t.attr == "TB_DIODE_RS_BASE" for t in node.targets)
+                and isinstance(node.value, ast.Constant)):
+            idx_const = node.value.value
+            break
+    assert idx_const is not None, "TB_DIODE_RS_BASE 대입을 찾지 못했다"
+
+    # DIODE PARAMS 카드 행 목록: _make_card(..., [ (label, default, unit), ... ])
+    rows = None
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "_make_card"
+                and node.args and isinstance(node.args[-1], ast.List)):
+            elts = node.args[-1].elts
+            labels = [ast.unparse(e.elts[0]) for e in elts
+                      if isinstance(e, ast.Tuple) and e.elts]
+            if any("rs_base" in s for s in labels):
+                rows = labels
+                break
+    assert rows is not None, "rs_base 행을 가진 _make_card 호출을 찾지 못했다"
+    assert idx_const < len(rows), (
+        f"TB_DIODE_RS_BASE={idx_const}인데 카드 행은 {len(rows)}개다")
+    assert "rs_base" in rows[idx_const], (
+        f"TB_DIODE_RS_BASE={idx_const}가 가리키는 행은 {rows[idx_const]!r}이다 — "
+        f"rs_base 행이 아니다")
+
+
+
+# =============================================================================
+# 8. 중간층 3형제 라벨 (v28.67)
+# =============================================================================
+#
+# `Rc_junction`(↕) · `Rs_junction`(↔) · `Rs_base`(↔)는 사이드바 DIODE PARAMS
+# 카드에 나란히 있는데, v28.66까지 이름이 층을 말하지 않았다.
+#
+#     Recomb.J Contact ρ ↕    Recomb.J Sheet R ↔    Base lateral R ↔
+#
+# 뒤의 둘은 **둘 다 Ω/sq 횡저항(↔)** 이라 화살표로 구분되지 않았고, 앞의 둘은
+# 같은 층인데 접두어가 `Recomb.J` / `Base`로 갈려 있었다. 즉 이름만으로는
+# "어느 층인가"도 "같은 층인가"도 알 수 없었다.
+#
+# v28.67이 층 이름을 접두어로 올렸다.
+#
+#     Interlayer Contact ρ ↕   Interlayer Sheet R ↔   Si Bulk Lateral R ↔
+#         └────────── 같은 층 ──────────┘              └── 다른 층 ──┘
+#
+# 이 절이 고정하는 것은 **그 규칙**이지 특정 문구가 아니다. 문구를 그대로 박으면
+# 오탈자 수정에도 테스트가 깨진다 — 접두어 공유/분리 관계만 본다.
+
+_INTERLAYER_KEYS = ('rc_junction', 'rs_junction')
+_LABEL_KEYS = _INTERLAYER_KEYS + ('rs_base',)
+
+
+@pytest.mark.parametrize("key", _LABEL_KEYS)
+def test_diode_card_labels_are_translated(fest, key):
+    """세 라벨 모두 KO/EN이 **서로 다르다** — 즉 실제로 번역돼 있다.
+
+    `Recomb.J Sheet R ↔`는 v28.66까지 영문 리터럴이라 한국어 모드에서도 영어로
+    떴다. i18n 새로고침 표에도 없어 전환 대상조차 아니었다 — 두 겹으로 빠져
+    있었고, 시작 언어가 영어면 아무 증상이 없다.
+    """
+    en = fest._TR[key]['EN']
+    kr = fest._TR[key]['KR']
+    assert en and kr, f"{key}: 비어 있다"
+    assert en != kr, (
+        f"{key}: KO/EN이 같다 ({en!r}) — 번역되지 않은 영문 리터럴일 수 있다")
+
+
+def test_interlayer_labels_share_a_prefix(fest):
+    """`Rc_junction`과 `Rs_junction`은 **같은 층**임이 이름에 드러나야 한다.
+
+    둘은 같은 재결합층의 수직(↕)·면내(↔) 성분이다. 접두어가 갈리면 사용자는
+    서로 다른 층으로 읽는다 — 실제로 그렇게 읽혀서 이 변경이 나왔다.
+    """
+    for lang in ('EN', 'KR'):
+        labels = [fest._TR[k][lang] for k in _INTERLAYER_KEYS]
+        head = labels[0].split()[0]
+        for lbl in labels[1:]:
+            assert lbl.startswith(head), (
+                f"[{lang}] 중간층 라벨의 접두어가 갈렸다: {labels} — "
+                f"같은 층인데 이름이 다른 층처럼 읽힌다")
+
+
+def test_bulk_label_does_not_share_the_interlayer_prefix(fest):
+    """반대로 `Rs_base`는 **다른 층**이므로 접두어를 공유하면 안 된다.
+
+    이 단언이 없으면 "전부 Interlayer로 맞춘다"가 통과해 버린다. 구분이
+    목적인데 통일이 답으로 나오는 것을 막는다.
+    """
+    for lang in ('EN', 'KR'):
+        head = fest._TR['rs_junction'][lang].split()[0]
+        base = fest._TR['rs_base'][lang]
+        assert not base.startswith(head), (
+            f"[{lang}] Rs_base가 중간층 접두어 {head!r}를 쓴다 ({base!r}) — "
+            f"실리콘 벌크는 중간층이 아니다")
+
+
+@pytest.mark.parametrize("key,arrow", [('rc_junction', '↕'),
+                                       ('rs_junction', '↔'),
+                                       ('rs_base', '↔')])
+def test_labels_keep_the_direction_arrow(fest, key, arrow):
+    """방향 화살표(↕ 수직 / ↔ 면내)를 유지한다.
+
+    접두어가 층을, 화살표가 방향을 말한다. 화살표가 빠지면 같은 층의 두 항목이
+    이름으로 구분되지 않는다.
+    """
+    for lang in ('EN', 'KR'):
+        assert arrow in fest._TR[key][lang], (
+            f"[{lang}] {key} 라벨에 {arrow}가 없다: {fest._TR[key][lang]!r}")
+
+
+@pytest.mark.parametrize("key", ['rc_junction_hint', 'rs_junction_hint',
+                                 'rs_base_hint'])
+def test_hints_name_the_layer(fest, key):
+    """힌트가 **어느 층인지** 한 줄로 말한다.
+
+    라벨은 100px이라 층 이름까지가 한계다. "무엇과 무엇 사이인가"는 힌트가
+    담당하므로, 힌트가 비거나 층을 말하지 않으면 라벨 변경의 절반이 빈다.
+    """
+    for lang in ('EN', 'KR'):
+        msg = fest._TR[key][lang]
+        assert msg and msg.strip().endswith('.'), f"[{lang}] {key}: 한 문장이 아니다"
+    kr = fest._TR[key]['KR']
+    if key.startswith('r') and 'junction' in key:
+        assert '재결합층' in kr, f"{key}: 중간층 힌트가 층을 말하지 않는다 ({kr!r})"
+    else:
+        assert '벌크' in kr, f"{key}: 벌크 힌트가 층을 말하지 않는다 ({kr!r})"
+
+
+def test_diode_card_index_constants_match_the_card(fest):
+    """세 인덱스 상수가 실제 카드 행 순서와 맞는지 — 소스에서 확인한다.
+
+    상수와 카드가 갈리면 **다른 칸을 읽는다.** Rc(Ω·cm²)와 Rs(Ω/sq)는 단위가
+    달라 값이 이상해지지만, Rs_junction과 Rs_base는 **둘 다 Ω/sq**라 서로
+    바뀌어도 오류가 나지 않는다 — 조용히 다른 층을 계산한다.
+    """
+    import ast
+    with open(SRC_PATH, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+
+    consts = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            for t in node.targets:
+                if isinstance(t, ast.Attribute) and t.attr.startswith("TB_DIODE_"):
+                    consts[t.attr] = node.value.value
+
+    rows = None
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "_make_card"
+                and node.args and isinstance(node.args[-1], ast.List)):
+            labels = [ast.unparse(e.elts[0]) for e in node.args[-1].elts
+                      if isinstance(e, ast.Tuple) and e.elts]
+            if any("rs_base" in s for s in labels):
+                rows = labels
+                break
+    assert rows is not None, "DIODE PARAMS 카드를 찾지 못했다"
+
+    expected = {"TB_DIODE_RC_JUNCTION": "rc_junction",
+                "TB_DIODE_RS_JUNCTION": "rs_junction",
+                "TB_DIODE_RS_BASE": "rs_base"}
+    for const, key in expected.items():
+        assert const in consts, f"{const} 상수가 없다"
+        idx = consts[const]
+        assert idx < len(rows), f"{const}={idx}인데 카드 행은 {len(rows)}개다"
+        assert key in rows[idx], (
+            f"{const}={idx}가 가리키는 행은 {rows[idx]!r}이다 — {key} 행이 아니다")

@@ -221,7 +221,7 @@ n_i(T) = 9.15e19 × ( (T+273.15)/300 )^2 × exp( -6880 / (T+273.15) )
 | 1 | Power loss bar graph | mW/cm². MPP 출력 + shading 손실 + recombination 손실 + 저항 손실 분해 | **A** | ? |
 | 2 | Recombination pie @ MPP | mA/cm². 합계 × wafer area = MPP에서의 총 recombination 전류 | B | ? |
 | 3 | Recombination pie @ OC | 포화전류밀도. MPP 값을 `exp(qVoc/kT)`로 나눈 것이며 통상 fA/cm² 단위 → J0 항들과 직접 비교 가능 | B | ? |
-| 4 | **FF drops waterfall** | 아래 참조 | **A** | ? |
+| 4 | **FF drops waterfall** | 아래 참조 | **A** | **원리가 다른 물건** — `docs/ff_waterfall_convention.md` |
 
 **FF drops waterfall 계산 순서 (Griddler 정의 그대로)**
 
@@ -236,6 +236,18 @@ n_i(T) = 9.15e19 × ( (T+273.15)/300 )^2 × exp( -6880 / (T+273.15) )
 **핵심 해석 규칙 두 가지 (반드시 함께 구현):**
 - 마지막 시뮬레이션 FF와 ideal FF의 **차이는 전부 직렬 저항 탓으로 귀속**된다
 - 그 직렬 저항 내부에서 각 성분(finger / busbar / emitter / contact)의 FF 침식 기여 비율은 **MPP에서의 전력 소산 기여 비율과 같다고 가정**한다
+
+> ### ⚠ 2L-FEST의 워터폴은 이 정의가 **아니다** — 수치를 직접 대조할 수 없다
+>
+> Griddler는 위 6단계 **순차 재시뮬레이션**이고, 2L-FEST `_tab_waterfall`은
+> 재시뮬레이션 없이 단일 해의 **FEM 손실 분해를 누적**한다. 그래서
+> 2단계(중앙값 치환)가 우리에게는 필요 없지만 — 그 단계는 0D 재구성을 위해
+> 공간 분포를 스칼라로 접는 장치이고 우리 막대는 손실 적분의 항이다 —
+> 같은 이유로 **두 워터폴의 막대는 이름이 같아도 같은 양이 아니다.**
+>
+> 물리적으로는 우리 쪽이 강하다(잔차 귀속·전력 비율 가정이 불필요). 그러나
+> 교차검증에서 이 차이를 모르면 **불일치를 결함으로 오인한다.** 대조 가능한
+> 양의 목록과 6단계 러너 착수 전제: **`docs/ff_waterfall_convention.md`**
 
 > 이 차트는 구축에 시간이 걸린다고 매뉴얼이 명시 (여러 시나리오를 순차 시뮬레이션하므로). 성능 최적화 시 참고.
 >

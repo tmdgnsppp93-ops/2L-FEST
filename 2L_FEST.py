@@ -773,6 +773,78 @@ v28.65: [fix] 공간 분포 창이 **누를 때마다 새로 뜬다** — 싱글
          테스트: 콜백이 정확히 1회만 바인딩되는지 · 휠 바인딩이 버튼 이벤트를
          건드리지 않는지 · 이미 열려 있으면 새 창을 만들지 않는지 ·
          닫으면 다시 열 수 있는지.
+v28.66: [fix] **FF 워터폴 탭의 J0 Decomposition 패널이 공간 분포 맵을 무시했다.**
+         `DP.J01_top_pass * (1 - avg_mf)`처럼 DP 스칼라를 직독하고 metal_frac
+         평균으로 가중했다 — `_diode_node_arrays`도 `_spatial_mult`도 지나지
+         않았다. 바로 왼쪽의 워터폴 막대는 `losses()`를 통해 맵이 반영된
+         값이므로 **한 화면 안에서 두 값이 다른 물리를 말했고, 오류도 경고도
+         없었다.** v28.61이 배선한 13곳에 이 패널만 빠져 있었다.
+         왜 감시를 통과했나: census 정규식 `INLINE_ASSEMBLY_RE`가 금속분율
+         변수 이름을 **`mf`로 고정**하고 있었고 이 패널은 `avg_mf`를 썼다.
+         글자가 다르다는 이유 하나로 census가 계속 "1함수 4줄" 초록불을
+         보여 줬다. 정규식을 **임의 식별자**까지 넓혔다 — 이름을 열거하는
+         방식 자체가 새는 감시라는 것이 교훈이고, 숫자가 안 변한다는 것은
+         감시가 촘촘하다는 증거가 아니다.
+         [refactor] 조립을 GUI 밖 `FESTSolver.j0_decomposition`으로 옮겼다.
+         식이 GUI 안에 있었던 것이 이 자리가 테스트 밖이었던 직접적 원인이다.
+         가중치도 노드 단순 평균 → `recomb_currents`와 같은 **면적 가중**으로
+         고쳤다(메시가 핑거 근처에서 촘촘해 단순 평균은 그 영역을 과대 가중
+         한다 — 국부 결함 맵의 표시값이 메시 밀도에 따라 흔들렸다).
+         **표시 전용 경로라 비트 핀 대상이 아니다.** 무맵에서도 v28.65와
+         표시값이 미세하게 달라진다.
+         [refactor] `assemble_K`의 노드 면적 계산을 모듈 함수 `nodal_areas`로
+         뽑고 `FESTSolver._nodal_areas()`(지연 계산) 추가 — 표시 경로가
+         강성 조립을 강제하지 않게 한다.
+
+        [feat] **벌크 횡전도 `Rs_base` GUI 입력란 추가** [Ω/sq, ↔].
+         엔진은 v28.59부터 완성돼 있었는데 GUI가 DP에 값을 넣는 44곳 어디에도
+         `Rs_base`가 없어 **스크립트에서만** 켤 수 있었다. DIODE PARAMS 카드의
+         `Recomb.J Sheet R ↔` 바로 아래(`tb_diode[7]`, 상수
+         `TB_DIODE_RS_BASE`)에 둔다 — 둘 다 Ω/sq 횡방향 시트저항이라
+         "어느 평면의 횡전도인가"로 나란히 읽힌다.
+         **빈칸 = None(끔)**이고 0은 끔이 아니다(엔진이 `Rs_base ≤ 0`을
+         거부한다 — 0은 무한 컨덕턴스). full_area에서는 **거부하고 안내한다**
+         — 엔진 `_build`의 ValueError와 같은 사실을 GUI가 먼저 말한다.
+         후면이 full_area면 입력칸을 잠그고 **비운다**(숫자가 보이는데 계산에
+         안 들어가는 상태를 만들지 않는다 — Suns Rear와 같은 처리).
+         판단은 `parse_rs_base_input`(모듈 수준)과 `_sync_rs_base_entry`로
+         GUI 밖에 꺼내 Tk 없이 검증한다. i18n 한/영.
+         [fix] 그 카드의 i18n 새로고침이 **위치 zip이라 어긋나 있었다.**
+         `_make_card`가 모든 행의 라벨을 돌려주는데 키 2개를 앞에서부터
+         zip해서, 언어를 바꾸면 0행("n1 Top")이 n2_top으로, 1행("n2 Top")이
+         n2_bot으로 덮여 "n2 Bot (Si)"가 두 번 나오고 n1 Top이 사라졌다.
+         **시작 언어에서는 멀쩡하고 전환한 뒤에만** 틀리는 종류라 오래 남았다.
+         인덱스를 명시하는 표로 바꿨다.
+
+        [feat] **공간 분포 6번째 대상 — `rcj` (`Rc_junction`).**
+         SPATIAL_TARGETS = (j01, j02, gen, rc, rsh, **rcj**) — **끝에 붙였다.**
+         계층은 A(노드 잔차)로 `rsh`와 동형이다. 이미 A 계층에 있는데 6개
+         솔버 분기 + 진단 3곳이 각자 `dp.Rc_junction`을 직독하고 있었고,
+         v28.61(J01/J02/gen)·v28.62(Rsh)가 해소한 것과 **똑같은 분산 패턴**
+         이었다. 새 평면도 새 미지수도 필요 없다. 근거: Griddler 매뉴얼 §7 항목 4.
+         ⚠ **이름을 `rc`로 줄이지 않는다.** 기존 `rc`는 전극↔반도체 접촉
+         (B 계층, `_Gc`)이고 `rcj`는 상·하부 서브셀 사이 수직 접촉(A 계층)
+         이다. 단위가 둘 다 Ω·cm²라 바꿔 걸어도 **오류가 나지 않는다.**
+         ⚠ 게이트(`if Rc_j > 0` / `== 0`)는 **스칼라 `dp.Rc_junction`으로
+         남겼다.** 맵이 붙으면 `Rc_j`가 배열이 되어 `if`가 ValueError를
+         던진다. 배율은 항상 양수이므로(SpatialMap.evaluate가 강제) 켜짐
+         여부는 스칼라만으로 정해진다 — 편의가 아니라 옳은 판정이다.
+         `SPATIAL_INVERTED_TARGETS`에 추가(맵이 저항을 곱한다).
+         `_sm_tag`에 슬롯 추가 — `_build`는 이 맵을 쓰지 않지만 대상마다
+         슬롯 하나라는 규약이 깨지면 나중에 조용히 낡는다.
+         예제 `examples/spatial_maps/edge_delam_rcj.txt` · 문서 갱신.
+         single 모드 2칸은 **결함도 미구현도 아닌 "해당 없음"**이라
+         `MODE_INAPPLICABLE`(skip)로 따로 뺐다 — xfail로 두면 "언젠가 통과해야
+         할 것"이 되는데 통과해서도 안 된다.
+
+        [docs] **FF 워터폴이 Griddler §2.8과 원리가 다르다는 것을 명문화.**
+         `docs/ff_waterfall_convention.md` 신설. Griddler는 6단계 순차
+         재시뮬레이션, 우리는 단일 해의 FEM 손실 분해 누적이다. 그래서
+         매뉴얼 2단계(공간 분포 J01의 **중앙값 치환**)가 우리에게는 불필요
+         하지만 — 그건 0D 재구성을 위해 분포를 스칼라로 접는 장치다 —
+         **같은 이유로 두 도구의 워터폴 수치를 직접 대조할 수 없다.**
+         물리적으로는 우리 쪽이 강하다(잔차 귀속·전력 비율 가정 불필요).
+         교차검증에서 이 차이를 모르면 불일치를 결함으로 오인한다.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -872,7 +944,7 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.65",
+    "version": "v28.66",
     "date": "2026-08-19",
 }
 _BUILD_SHA_CACHE = None
@@ -1156,6 +1228,63 @@ _TR = {
     'diode_params': {'EN': 'DIODE PARAMS', 'KR': '다이오드 파라미터'},
     'n2_top': {'EN': 'n2 Top (Pvsk)', 'KR': 'n2 상부 (Pvsk)'},
     'n2_bot': {'EN': 'n2 Bot (Si)', 'KR': 'n2 하부 (Si)'},
+    # --- v28.66: 벌크 횡전도 Rs_base [Ω/sq, ↔] 입력란 ----------------------
+    # 라벨에 ↔를 남기는 이유: 같은 카드에 ↕(Rc_junction)가 있고, 사이드바
+    # BEFORE/AFTER 카드에는 `bulk_res`("벌크 비저항 ↔", GridDesign.rho_bulk,
+    # Ω·cm)가 있다. 이름이 셋 다 "벌크/횡"으로 겹쳐 화살표가 유일한 구분자다.
+    # ⚠ `bulk_res`는 **전극 금속 비저항**이고 이쪽은 **웨이퍼 벌크 시트저항**이다.
+    'rs_base': {'EN': 'Si Bulk Lateral R ↔', 'KR': 'Si 벌크 횡저항 ↔'},
+    # v28.67: 라벨에 **층 이름**을 박는다. v28.66의 "Base lateral R ↔"과
+    # "Recomb.J Sheet R ↔"은 둘 다 Ω/sq 횡저항(↔)이라 화살표로 구분되지 않았고,
+    # 이름만으로 **어느 층인지** 알 수 없었다. 이제 'Si Bulk'와 'Interlayer'가
+    # 층을 직접 말한다.
+    'rs_junction': {'EN': 'Interlayer Sheet R ↔', 'KR': '중간층 면저항 ↔'},
+    # Rc_junction과 Rs_junction은 **같은 층**이다 — 하나는 수직(↕) 접촉저항,
+    # 하나는 면내(↔) 면저항. v28.66까지 접두어가 'Recomb.J'와 'Base'로 갈려
+    # 같은 층이라는 것이 이름에 드러나지 않았다. 'Interlayer'로 통일하고
+    # 화살표가 방향을 구분하게 한다.
+    'rc_junction': {'EN': 'Interlayer Contact ρ ↕', 'KR': '중간층 접촉저항 ↕'},
+    'rc_junction_hint': {
+        'EN': 'Contact resistivity of the recombination layer that joins the '
+              'top and bottom cells.',
+        'KR': '상부 셀과 하부 셀을 잇는 재결합층의 접촉저항.'},
+    # 한 줄 설명 — 마우스를 올리면 뜬다(_attach_hint). 라벨은 100px이라 층
+    # 이름까지가 한계이고, "무엇과 무엇 사이인가"는 여기서 말한다.
+    'rs_junction_hint': {
+        'EN': 'Sheet resistance of the recombination layer that joins the top '
+              'and bottom cells.',
+        'KR': '상부 셀과 하부 셀을 잇는 재결합층의 면저항.'},
+    'rs_base_hint': {
+        'EN': 'Lateral conduction inside the silicon wafer bulk.',
+        'KR': '실리콘 웨이퍼 벌크 내부의 횡방향 전도.'},
+    # 빈칸 = 끔. 0을 센티넬로 쓰지 않는 이유는 엔진이 Rs_base ≤ 0을 거부하기
+    # 때문이다(0은 무한 컨덕턴스라 강성 계수 1/(4·A·Rs)가 0으로 나눈다).
+    'rs_base_off': {'EN': 'blank = off', 'KR': '빈칸 = 끔'},
+    'rs_base_bad': {
+        'EN': 'Base lateral R must be a finite positive sheet resistance '
+              '[Ω/sq]. Leave it blank to turn it off — 0 is not "off", it is '
+              'infinite conductance.',
+        'KR': '벌크 횡전도 R은 유한하고 양수인 면저항이어야 한다 [Ω/sq]. '
+              '끄려면 빈칸으로 둘 것 — 0은 "끔"이 아니라 무한 컨덕턴스다.'},
+    # full_area 거부 안내. 엔진의 ValueError(2L_FEST.py `_build`)와 **같은
+    # 사실**을 말한다. GUI에서 먼저 막는 이유는 그 예외가 COMPARE 도중에
+    # 터져서 사용자가 어느 입력 탓인지 알기 어렵기 때문이다.
+    'rs_base_full_area': {
+        'EN': 'Base lateral R needs a rear plane that actually conducts. '
+              'full_area (mono) fixes the rear at V_rear = 0 (ideal contact), '
+              'so changing the rear sheet conductance cannot change the result '
+              '— the value would be accepted and silently do nothing. '
+              'Switch the rear to bifacial, or leave this blank.',
+        'KR': '벌크 횡전도 R은 후면이 **실제로 전도하는 평면**일 때만 의미가 '
+              '있다. full_area(모노)는 후면을 이상적 접촉(V_rear ≡ 0)으로 두므로 '
+              '후면 면전도를 바꿔도 결과가 수학적으로 변하지 않는다 — 값을 '
+              '받아도 조용히 아무 효과가 없다. 후면을 bifacial로 바꾸거나 '
+              '빈칸으로 둘 것.'},
+    'rs_base_disabled': {
+        'EN': 'Base lateral R disabled (full_area rear). It applies to '
+              'bifacial / patterned rears only.',
+        'KR': '벌크 횡전도 R 입력을 비활성화했다 (후면 full_area). '
+              'bifacial / patterned 후면에서만 적용된다.'},
     # Tabs
     'compare': {'EN': 'COMPARE', 'KR': '비교'},
     'current': {'EN': 'CURRENT', 'KR': '전류맵'},
@@ -1243,6 +1372,17 @@ _TR = {
                          '2.0 = double R, poorly pressed)',
                    'KR': '값이 클수록 접촉이 나쁨  (0.5 = 접촉저항 절반, 잘 눌린 영역; '
                          '2.0 = 두 배, 덜 눌린 영역)'},
+    'sp_rcj': {'EN': 'Recomb.J contact ρ multiplier (Rc_j)',
+               'KR': '재결합접합 접촉 비저항 배율 (Rc_j)'},
+    # rcj도 rc/rsh와 같이 저항을 곱한다 — 값이 크면 그 자리의 서브셀 사이
+    # 수직 접촉이 나빠진다. **전면 접촉(rc)과 혼동하지 않게** 라벨에서 위치를
+    # 밝힌다: rc는 전극-반도체(↕, B 계층), rcj는 상·하부 서브셀 사이(A 계층).
+    'sp_rcj_hint': {'EN': 'higher = WORSE contact between the subcells  '
+                          '(0.5 = half Rc_j; 2.0 = double).  This is the '
+                          'recombination junction, NOT the front metal contact (rc)',
+                    'KR': '값이 클수록 상·하부 서브셀 사이 접촉이 나쁨  '
+                          '(0.5 = 절반, 2.0 = 두 배).  전면 금속 접촉(rc)이 아니라 '
+                          '재결합 접합이다'},
     'sp_rsh': {'EN': 'Shunt R multiplier (Rsh)', 'KR': '션트 저항 배율 (Rsh)'},
     # rsh도 rc와 같이 의미가 반대다 — 맵이 션트 **저항**을 곱하므로 값이 크면
     # 누설이 줄어 셀이 좋아진다. "shunt 값을 키우면 셀이 나빠진다"는 직관은
@@ -2170,6 +2310,12 @@ class DiodeParams:
     spatial_gen = None
     spatial_rc  = None
     spatial_rsh = None
+    #   spatial_rcj : multiplies the vertical contact resistivity BETWEEN the two
+    #                 subcells (Rc_junction, Ohm.cm2). v28.66. Inverted sense like
+    #                 rc/rsh — higher = worse recombination-junction contact.
+    #                 DISTINCT from spatial_rc, which is the front metal-to-
+    #                 semiconductor contact (layer B, stiffness assembly).
+    spatial_rcj = None
 
     # --- Luminescent Coupling J01 (Zeder 2025; Jäger 2021) ---
     # J_LC = J01_coupling × (exp(qV_top/kT)-1), added to bot photocurrent.
@@ -2978,6 +3124,30 @@ def _compute_rear_metal_frac(points, simplices, areas, geo):
 # =============================================================
 # FEM ASSEMBLY
 # =============================================================
+def nodal_areas(simplices, areas):
+    """노드 면적 [cm2] — 각 요소 면적을 세 꼭짓점에 1/3씩 나눠 담는다.
+
+    v28.66에서 `assemble_K` 본문에서 뽑아냈다. `assemble_K`는 `_build`가 부르는데,
+    `_build`를 거치지 않고도 노드 면적이 필요한 곳이 생겼기 때문이다
+    (`FESTSolver.j0_decomposition` — 표시 전용이라 강성 조립을 요구할 이유가 없다).
+
+    **복제하지 않고 뽑아낸 이유**: 두 벌이 되면 `valid` 판정이나 1/3 분배가 한쪽만
+    바뀌어도 아무 오류 없이 값이 갈린다. 노드 면적은 손실 적분의 가중치라 그 갈림이
+    곧바로 잘못된 수치가 된다.
+
+    면적이 1e-15 이하인 퇴화 요소는 제외한다 — `assemble_K`가 coeff의 0-나눗셈을
+    피하려고 쓰는 것과 **같은 마스크**다.
+    """
+    N_out = int(simplices.max()) + 1 if len(simplices) else 0
+    valid = areas > 1e-15
+    idx = simplices[valid]
+    A = areas[valid]
+    na = np.zeros(N_out)
+    for m in range(3):
+        np.add.at(na, idx[:, m], A / 3.0)
+    return na
+
+
 def assemble_K(points, simplices, Rs, areas, b, c):
     """Emitter (or rear) stiffness matrix from sheet resistance.
        Rs can be a scalar (uniform) or a per-element array."""
@@ -3008,10 +3178,12 @@ def assemble_K(points, simplices, Rs, areas, b, c):
                      (np.concatenate(rows), np.concatenate(cols))),
                     shape=(N, N)).tocsr()
 
-    # Nodal areas
+    # Nodal areas — 계산은 nodal_areas() 한 곳에만 둔다 (v28.66).
+    # 길이는 len(points)로 맞춘다: 어느 요소에도 안 들어가는 노드가 있으면
+    # simplices.max()+1이 N보다 작을 수 있다(그 노드의 면적은 0이다).
     na = np.zeros(N)
-    for m in range(3):
-        np.add.at(na, idx[:, m], A / 3.0)
+    _na_mesh = nodal_areas(simplices, areas)
+    na[:len(_na_mesh)] = _na_mesh
 
     return K, na
 
@@ -3826,11 +3998,21 @@ class SpatialMap:
 # active_spatial_maps()의 반환 순서라, 중간에 끼우면 기존 순서에 기대는 것들이
 # 조용히 어긋난다. 논리적으로는 j01/j02와 같은 A 계층이지만 그 이유로
 # 재배열하지 않는다.
-SPATIAL_TARGETS = ("j01", "j02", "gen", "rc", "rsh")
+# v28.66: 6번째 대상 `rcj`(Rc_junction, 서브셀 사이 수직 접촉 비저항). 역시
+# **끝에 붙인다.** 계층은 A(노드 잔차)로 `rsh`와 같다 — 이미 6개 솔버 분기가
+# 각자 `dp.Rc_junction`을 직독하고 있었고, v28.61이 J01/J02/gen에서, v28.62가
+# Rsh에서 해소한 것과 **똑같은 분산 패턴**이었다. 근거: Griddler 매뉴얼 §7 항목 4.
+#
+# ⚠ 이름을 `rc`로 줄이지 않는다. 기존 `rc`는 **전극-반도체 접촉 비저항**(전면
+# 금속 접촉, B 계층 `_Gc`)이고 `rcj`는 **상·하부 서브셀 사이 수직 접촉**(A 계층)
+# 이다. 단위가 둘 다 Ω·cm²라 이름이 겹치면 어느 쪽 맵인지 구분할 방법이 없다.
+SPATIAL_TARGETS = ("j01", "j02", "gen", "rc", "rsh", "rcj")
 
 # 맵이 **저항**을 곱하는 대상 — 값이 클수록 그 대상이 나빠진다.
 #   rc  : 맵이 접촉 저항 R_contact를 곱한다  -> 컨덕턴스 Gc를 나눈다
 #   rsh : 맵이 션트 저항 Rsh를 곱한다        -> 컨덕턴스 1/Rsh를 나눈다
+#   rcj : 맵이 서브셀 사이 수직 접촉 비저항 Rc_junction을 곱한다 (v28.66)
+#         -> 값이 클수록 그 자리의 재결합 접합 접촉이 나쁘다
 # 나머지(j01/j02/gen)는 "값이 크다 = 그 물성이 크다"로 곧바로 읽힌다.
 # GUI가 이 목록을 보고 힌트를 앰버로 강조한다. **목록을 GUI에 두지 않고 여기
 # 두는 이유**: 방향이 뒤집힌다는 것은 모델의 사실이지 화면의 사실이 아니다.
@@ -3839,7 +4021,56 @@ SPATIAL_TARGETS = ("j01", "j02", "gen", "rc", "rsh")
 # **컨덕턴스 G_shunt [S/cm²]**로 두는데 우리는 **저항 Rsh [Ω·cm²]**로 둔다.
 # 같은 물리를 같은 배율 파일로 기술하려면 한쪽이 역수여야 한다 —
 # docs/spatial_map_convention.md §7.
-SPATIAL_INVERTED_TARGETS = ("rc", "rsh")
+SPATIAL_INVERTED_TARGETS = ("rc", "rsh", "rcj")
+
+
+def parse_rs_base_input(text, rear_mode):
+    """GUI의 벌크 횡전도 입력칸 한 칸을 해석한다 (v28.66).
+
+    **GUI 밖에 두는 이유**는 이 저장소가 이미 두 번 배운 것이다 — 판단이
+    `_apply_diode_params` 안에 있으면 Tk 없이는 확인할 수 없고, 확인할 수 없는
+    규칙은 조용히 어긋난다(v28.65의 J0 패널이 정확히 그랬다).
+
+    Parameters
+    ----------
+    text : str
+        입력칸 원문. 공백만 있으면 빈칸으로 본다.
+    rear_mode : str
+        현재 후면 모드. 'bifacial' / 'patterned'만 벌크 횡전도를 표현할 수 있다.
+
+    Returns
+    -------
+    (value, err_key)
+        `err_key`가 None이면 `value`가 `DP.Rs_base`에 넣을 값이다
+        (빈칸이면 None = 끔). `err_key`가 있으면 그 i18n 키로 안내하고
+        **입력을 거부한다** — 값을 받아 놓고 아무 효과가 없는 상태를 만들지
+        않는다.
+
+    규칙
+    ----
+    빈칸 → None(끔). **0은 끔이 아니다** — 엔진이 `Rs_base <= 0`을 거부한다
+    (0은 무한 컨덕턴스라 강성 계수 `1/(4·A·Rs)`가 0으로 나눈다). 여기서 0을
+    None으로 조용히 번역하면 "완전 전도"를 의도한 사용자가 정반대(꺼짐)를
+    얻고 아무 신호도 남지 않는다.
+
+    full_area → 거부. 그 모드는 후면을 이상적 접촉(`V_rear ≡ 0`)으로 두므로
+    후면 면전도를 바꿔도 결과가 수학적으로 불변이다. 엔진 `_build`도 같은
+    이유로 ValueError를 던지지만, 그건 COMPARE 도중에 터져서 어느 입력 탓인지
+    알기 어렵다 — 여기서 먼저 막고 같은 사실을 말한다
+    (docs/base_lateral_convention.md §3-4).
+    """
+    s = (text or "").strip()
+    if not s:
+        return None, None
+    try:
+        val = float(s)
+    except (TypeError, ValueError):
+        return None, 'rs_base_bad'
+    if not np.isfinite(val) or val <= 0.0:
+        return None, 'rs_base_bad'
+    if rear_mode not in ('bifacial', 'patterned'):
+        return None, 'rs_base_full_area'
+    return val, None
 
 
 def make_uniform(n):
@@ -3987,6 +4218,7 @@ SPATIAL_TARGET_INFO = (
     ("gen", "sp_gen", "sp_gen_hint"),
     ("rc",  "sp_rc",  "sp_rc_hint"),
     ("rsh", "sp_rsh", "sp_rsh_hint"),
+    ("rcj", "sp_rcj", "sp_rcj_hint"),
 )
 
 
@@ -4542,6 +4774,9 @@ class FESTSolver:
         self._Krm = None      # Rear metal grid
         self._Km = None
         self._na = None
+        # _build 전에도 노드 면적이 필요한 표시 경로가 있다(j0_decomposition).
+        # 메시만으로 정해지는 값이라 빌드 상태와 무관하게 캐시한다.
+        self._na_mesh = None
         self._Gc = None       # Front contact conductance
         self._Gc_rear = None  # Rear contact conductance
         self._Km_rows = None
@@ -4706,6 +4941,11 @@ class FESTSolver:
             Rsh, Rshb      : 션트 **저항** 노드 배열 (v28.62). top(또는 single)과
                              bottom. 맵이 없으면 `dp.Rsh_*` **스칼라 그 객체**를
                              그대로 돌려준다 — 아래 근거 (5).
+            Rc_j           : 서브셀 사이 수직 접촉 비저항 노드 배열 (v28.66).
+                             맵이 없으면 `dp.Rc_junction` **스칼라 그 객체**다
+                             (근거 (5)와 같다). single 모드에서는 쓰이지 않는다.
+                             **`if Rc_j > 0` 같은 게이트에 쓰지 말 것** — 맵이
+                             붙으면 배열이다.
 
         비트 동일 근거 (무맵 경로)
         --------------------------
@@ -4734,6 +4974,7 @@ class FESTSolver:
         _m_j02 = self._spatial_mult(dp, 'j02')
         _m_gen = self._spatial_mult(dp, 'gen')
         _m_rsh = self._spatial_mult(dp, 'rsh')
+        _m_rcj = self._spatial_mult(dp, 'rcj')
 
         if mode == 'single':
             J01_pass = dp.J01_single_pass * (1 - mf)
@@ -4773,12 +5014,26 @@ class FESTSolver:
             Rsh = Rsh * _m_rsh
             Rshb = Rshb * _m_rsh
 
+        # 재결합 접합 수직 접촉 (v28.66). rsh와 **같은 처지**였다 — 이미 A 계층에
+        # 있는데 6개 분기가 각자 `dp.Rc_junction`을 직독하고 있었다.
+        # 근거 (5)와 같은 이유로 맵이 없으면 **스칼라 그 객체**를 돌려준다:
+        # 소비 지점이 전부 `Rc_j * Jb` / `1.0 - Rc_j * dJb` 형태라 스칼라를 그대로
+        # 넘기면 식이 v28.65와 문자 그대로 같다.
+        #
+        # ⚠ `Rc_j > 0` 같은 **게이트는 여기 값으로 판정하지 않는다.** 맵이 붙으면
+        # 배열이 되어 `if`가 ValueError를 던진다. 게이트는 소비 지점에서
+        # `dp.Rc_junction`(스칼라)으로 본다 — 배율은 양수이므로
+        # (`SpatialMap.evaluate`가 강제한다) "켜져 있는가"는 스칼라만으로 정해진다.
+        Rc_j = dp.Rc_junction
+        if _m_rcj is not None:
+            Rc_j = Rc_j * _m_rcj
+
         return types.SimpleNamespace(
             J01=J01, J02=J02, J01b=J01b, J02b=J02b,
             gen_t=gen_t, gen_b=gen_b,
             J01_pass=J01_pass, J01_met=J01_met,
             J02_pass=J02_pass, J02_met=J02_met,
-            Rsh=Rsh, Rshb=Rshb)
+            Rsh=Rsh, Rshb=Rshb, Rc_j=Rc_j)
 
     def _build(self, rm, hf, wf, rc, Rs_front, cf, dp):
         """Build/cache stiffness matrices AND pre-assembled static Jacobians.
@@ -4871,7 +5126,13 @@ class FESTSolver:
                    dp.spatial_j02.content_key() if dp.spatial_j02 is not None else 0,
                    dp.spatial_gen.content_key() if dp.spatial_gen is not None else 0,
                    dp.spatial_rc.content_key()  if dp.spatial_rc  is not None else 0,
-                   dp.spatial_rsh.content_key() if dp.spatial_rsh is not None else 0)
+                   dp.spatial_rsh.content_key() if dp.spatial_rsh is not None else 0,
+                   # v28.66 rcj. `_build`는 이 맵을 **쓰지 않는다**(A 계층이라
+                   # 잔차에서만 곱해진다) — 그래도 슬롯을 둔다. 대상마다 슬롯이
+                   # 하나라는 규약이 깨지면, 나중에 어느 맵이 B 계층으로 옮겨질
+                   # 때 캐시가 조용히 낡는다. 무맵에서 상수 0이라 무맵 경로의
+                   # 캐시 거동은 이전과 같다. 비용은 rcj만 바뀔 때의 재빌드 한 번.
+                   dp.spatial_rcj.content_key() if dp.spatial_rcj is not None else 0)
         # 벌크 태그: 꺼져 있으면 **상수 0**. _sm_tag가 "맵 없으면 0"인 것과 같은
         # 처리다(위 주석) — off 슬롯이 상수라야 캐시 hit/miss 판정이 예전
         # 필드들만으로 결정되고, 무벌크 경로의 캐시 거동이 이전과 완전히 같아진다.
@@ -5372,7 +5633,10 @@ class FESTSolver:
         # 3-step Newton on V_diode_bot (박사님 지시 2026.04.10).
         # Equation: Jb = Jb(V_diode_bot), V_diode_bot = (Ve-Vtop-Vr) - Rc*Jb
         # When Rc=0 this collapses to V_diode_bot = Ve-Vtop-Vr (original).
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
 
         res_list = []
         for it in range(250):
@@ -5402,7 +5666,7 @@ class FESTSolver:
             # less cell J → standard series-R FF reduction. ✓
             # Solved via inner Newton in V_diode_bot. Rc=0 → trivial.
             # (v28.16 ③: _J01b/_J02b/_gen_b carry the spatial multiplier.)
-            if Rc_j > 0:
+            if dp.Rc_junction > 0:
                 Vbot = Vbot_lump.copy()
                 # LC additive term (V_top dependent, fixed during inner Newton)
                 if dp.J01_coupling > 0:
@@ -5446,7 +5710,7 @@ class FESTSolver:
             # dJb/dVbot_lump = dJb/dVbot * dVbot/dVbot_lump
             #                = dJb_raw / (1 - Rc*dJb_raw)
             # Since dJb_raw < 0, denominator > 1, so |dJb_eff| < |dJb_raw|.
-            if Rc_j > 0:
+            if dp.Rc_junction > 0:
                 dJb = dJb_raw / (1.0 - Rc_j * dJb_raw)
             else:
                 dJb = dJb_raw
@@ -5460,7 +5724,7 @@ class FESTSolver:
                 eLC = np.exp(np.minimum(Vtop / VT, 80))
                 J_LC = dp.J01_coupling * (eLC - 1)
                 dJLC_dVtop = dp.J01_coupling * eLC / VT  # dJ_LC/dVtop
-                if Rc_j == 0:
+                if dp.Rc_junction == 0:
                     Jb = Jb + J_LC  # bottom cell gets extra generation
                 # else: already included via inner Newton's J_LC_in
             else:
@@ -5649,7 +5913,10 @@ class FESTSolver:
         _gen_t = _dna.gen_t
         _gen_b = _dna.gen_b
 
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
 
         bc_front = np.array([oVm + k for k in pmk], dtype=np.int64)
         bc_rear = np.array([oVr + gi for gi in rear_probe_idx], dtype=np.int64)
@@ -6028,7 +6295,10 @@ class FESTSolver:
         _gen_t = _dna.gen_t
         _gen_b = _dna.gen_b
 
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
         bc_front = np.array([oVm + k for k in pmk], dtype=np.int64)
         bc_rear = np.array([oVrm + kr for kr in rear_pad_kr], dtype=np.int64)
         idx_N = np.arange(N, dtype=np.int64)
@@ -6049,7 +6319,7 @@ class FESTSolver:
         res_list = []
         DBG = False  # debug off (6-plane disabled)
         if DBG:
-            print(f"\n[6plane] Vb={Vb:.4f} Rc_j={Rc_j:.3f} Rs_j={dp.Rs_junction:.1f} DOF={Ns}")
+            print(f"\n[6plane] Vb={Vb:.4f} Rc_j={dp.Rc_junction:.3f} Rs_j={dp.Rs_junction:.1f} DOF={Ns}")
         for it in range(120):  # augmented gauge removed singularity; allow full convergence
             Ve = V[oVe:oVe + N]
             Vml = V[oVm:oVm + Nm]
@@ -6363,7 +6633,10 @@ class FESTSolver:
         _J02b = _dna.J02b
         _gen_t = _dna.gen_t
 
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
         bc_front = np.array([oVm + k for k in pmk], dtype=np.int64)
         bc_rear  = np.array([oVrm + kr for kr in rear_pad_kr], dtype=np.int64)
         idx_N = np.arange(N, dtype=np.int64)
@@ -6654,7 +6927,10 @@ class FESTSolver:
         gc_rear_nz = np.where(self._Gc_rear > 0)[0]
 
         # Interlayer vertical contact R (Phase A, 박사님 지시 2026.04.10)
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
 
         res_list = []
         for it in range(250):
@@ -6678,7 +6954,7 @@ class FESTSolver:
             # See full_area solver for KVL derivation. Sign: +Rc*Jb (not -).
             # gen 맵은 전면 항에만 곱한다 — 후면 입사광은 별개 광원이다.
             Jph_b_eff = (_gen_b + dp.bifacial_gain * self.rear_illum_frac) * dp.Jph_bot
-            if Rc_j > 0:
+            if dp.Rc_junction > 0:
                 Vbot = Vbot_lump.copy()
                 if dp.J01_coupling > 0:
                     J_LC_in = dp.J01_coupling * (np.exp(np.minimum(Vtop/VT, 80)) - 1)
@@ -6713,7 +6989,7 @@ class FESTSolver:
             Jb = Jph_b - _J01b * (e1b - 1) - _J02b * (e2b - 1) - Vbot / Rshb_arr
             dJb_raw = -(_J01b * e1b / (dp.n1_bot * VT) +
                          _J02b * e2b / (dp.n2_bot * VT) + 1 / Rshb_arr)
-            if Rc_j > 0:
+            if dp.Rc_junction > 0:
                 dJb = dJb_raw / (1.0 - Rc_j * dJb_raw)
             else:
                 dJb = dJb_raw
@@ -6723,7 +6999,7 @@ class FESTSolver:
                 eLC = np.exp(np.minimum(Vtop / VT, 80))
                 J_LC = dp.J01_coupling * (eLC - 1)
                 dJLC_dVtop = dp.J01_coupling * eLC / VT
-                if Rc_j == 0:
+                if dp.Rc_junction == 0:
                     Jb = Jb + J_LC
                 # else: already in Jb via inner Newton's J_LC_in
             else:
@@ -7298,7 +7574,9 @@ class FESTSolver:
         rms_A = float(np.sqrt(np.mean(residual_A ** 2)))
         max_A = float(np.max(np.abs(residual_A)))
 
-        top_kvl_mV = (Vtop - Ve + V_int - dp.Rc_junction * Jt) * 1000.0
+        # v28.66: 잔차와 **같은 식**이어야 하므로 맵이 반영된 배열을 쓴다.
+        # 진단이 스칼라를 읽으면 "KVL이 안 맞는다"가 맵 때문에 생긴다.
+        top_kvl_mV = (Vtop - Ve + V_int - _dna.Rc_j * Jt) * 1000.0
         top_kvl_rms_mV = float(np.sqrt(np.mean(top_kvl_mV ** 2)))
         top_kvl_max_mV = float(np.max(np.abs(top_kvl_mV)))
 
@@ -7407,12 +7685,15 @@ class FESTSolver:
 
         # Bot subcell — reconstruct Vbot (Phase A assumption)
         Vbot_lump = Ve - Vtop - Vr
-        Rc_j = dp.Rc_junction
+        # v28.66 spatial_rcj — 무맵이면 dp.Rc_junction **스칼라 그 객체**다.
+        # 게이트(`> 0` / `== 0`)는 이 값이 아니라 dp.Rc_junction으로 본다:
+        # 맵이 붙으면 배열이라 `if`가 ValueError를 던진다.
+        Rc_j = _dna.Rc_j
         if dp.J01_coupling > 0:
             J_LC = dp.J01_coupling * (np.exp(np.minimum(Vtop / VT, 80)) - 1)
         else:
             J_LC = 0.0
-        if Rc_j > 0:
+        if dp.Rc_junction > 0:
             Vbot = Vbot_lump.copy()
             for _ in range(8):
                 e1b = np.exp(np.minimum(Vbot / (dp.n1_bot * VT), 80))
@@ -8089,7 +8370,9 @@ class FESTSolver:
                     e2 = np.exp(np.minimum(Vbot / (dp.n2_bot * VT), 80))
                     Jb_loc = (Jph_b_loc - _dna.J01b * (e1 - 1)
                               - _dna.J02b * (e2 - 1) - Vbot / Rshb_arr)
-                    Vbot_new = Vbot_lump + dp.Rc_junction * Jb_loc
+                    # v28.66: 산술은 맵이 반영된 배열로. 게이트(위 `if`)는
+                    # 스칼라 그대로 — 배율은 양수라 켜짐 여부를 바꾸지 않는다.
+                    Vbot_new = Vbot_lump + _dna.Rc_j * Jb_loc
                     if np.max(np.abs(Vbot_new - Vbot)) < 1e-10:
                         break
                     Vbot = Vbot_new
@@ -8136,7 +8419,7 @@ class FESTSolver:
         # the interlayer recombination junction by vertical contact R.
         # Only meaningful in tandem mode with Rc_junction > 0.
         if mode == 'tandem' and dp.Rc_junction > 0 and Jb_local_for_int is not None:
-            P_Rc_junction = np.sum(dp.Rc_junction * Jb_local_for_int**2 * self._na)
+            P_Rc_junction = np.sum(_dna.Rc_j * Jb_local_for_int**2 * self._na)
         else:
             P_Rc_junction = 0.0
 
@@ -8221,6 +8504,70 @@ class FESTSolver:
             'met_n1': Jr_met_n1 / A_ * 1000,
             'met_n2': Jr_met_n2 / A_ * 1000,
             'pass_n2': Jr_pass_n2 / A_ * 1000,
+        }
+
+    def _nodal_areas(self):
+        """노드 면적 [cm2]. **`_build` 전에도 쓸 수 있다.**
+
+        빌드가 끝났으면 `self._na`(그 객체)를 그대로 돌려준다 — 기존 소비
+        지점과 비트 동일하다. 아직이면 메시에서 한 번 계산해 캐시한다. 값은
+        `assemble_K`가 담는 것과 같다(둘 다 모듈 `nodal_areas`를 쓴다).
+
+        표시 전용 경로가 강성 조립을 강제하지 않게 하려고 둔다. `_build`를
+        부르게 하면 GUI 탭 하나 그리는 데 캐시 무효화·재빌드가 딸려 온다.
+        """
+        if self._na is not None:
+            return self._na
+        if self._na_mesh is None:
+            na = np.zeros(self.N)
+            _m = nodal_areas(self.simp, self.areas)
+            na[:len(_m)] = _m
+            self._na_mesh = na
+        return self._na_mesh
+
+    def j0_decomposition(self, dp=None, mode='tandem'):
+        """면적 가중 평균 J0의 pass/metal x n1/n2 분해 [A/cm2] (v28.66).
+
+        FF 워터폴 탭의 "J0 Decomposition at Voc" 패널이 쓴다. **GUI 안에서
+        조립하지 않고 여기에 두는 이유**는 v28.65까지의 결함 그 자체다 —
+        그 패널은 `DP`의 J01/J02 **스칼라를 직독**하고 metal_frac 평균으로
+        가중해서 `spatial_j01`/`spatial_j02` 맵을 조용히 무시했다. 바로 왼쪽의
+        워터폴 막대는 `losses()`를 통해 맵이 반영된 값이었으므로, 한 화면 안에서
+        두 값이 다른 물리를 말했고 오류도 경고도 나지 않았다.
+
+        조립을 GUI에서 걷어내면 세 가지가 동시에 해결된다.
+          1. `_diode_node_arrays`를 반드시 지나므로 맵이 자동으로 반영된다.
+          2. Tk 없이 단위 테스트할 수 있다 — 결함이 있던 자리가 그동안 테스트
+             밖이었던 것도 GUI 안에 식이 있었기 때문이다.
+          3. 같은 값을 보고서·다른 탭에서 다시 쓸 때 식이 복제되지 않는다.
+
+        가중치
+        ------
+        `recomb_currents`와 **같은 면적 가중**(`self._na`)을 쓴다. v28.65의
+        `np.mean(...)`은 노드 단순 평균이었는데, 메시는 핑거 근처가 촘촘해
+        노드 밀도가 균일하지 않다 — 단순 평균은 촘촘한 영역을 과대 가중한다.
+        공간 분포 맵을 붙이면 이 편향이 그대로 표시값에 실리므로(국부 결함이
+        메시 밀도에 따라 커졌다 작아졌다 한다) 맵을 배선하면서 함께 고쳤다.
+        **무맵에서도 v28.65와 표시값이 미세하게 달라진다.** 표시 전용 경로라
+        비트 핀 대상이 아니며, 물리 경로(잔차·손실)는 이 함수를 지나지 않는다.
+
+        Returns
+        -------
+        dict
+            'pass_n1' · 'met_n1' · 'met_n2' · 'pass_n2' [A/cm2].
+            fA/cm2로 보이려면 1e15를 곱한다(호출부가 한다 — 단위 변환을 여기
+            넣으면 이 값을 물리 계산에 쓰려는 다음 사람이 걸려 넘어진다).
+        """
+        if dp is None:
+            dp = DiodeParams()
+        _dna = self._diode_node_arrays(dp, mode=mode)
+        _na = self._nodal_areas()
+        A_ = self.geo.area
+        return {
+            'pass_n1': float(np.sum(_dna.J01_pass * _na) / A_),
+            'met_n1': float(np.sum(_dna.J01_met * _na) / A_),
+            'met_n2': float(np.sum(_dna.J02_met * _na) / A_),
+            'pass_n2': float(np.sum(_dna.J02_pass * _na) / A_),
         }
 
 
@@ -9383,10 +9730,32 @@ class FESTProApp(ctk.CTk):
             # v28.51: "(Griddler PRO equiv.)" 제거 — _make_card 라벨 폭(100px)을 훨씬
             # 넘겨 카드/사이드바가 터졌다. Griddler PRO 등가 설명은 MODEL 탭과 검증
             # 배너에 이미 있다(v28.47 edge_margin 라벨과 같은 처리: 라벨은 짧게, 설명은 밖에).
-            ("Recomb.J Contact ρ ↕", f"{DP.Rc_junction:.2f}", "Ω·cm²"),
-            ("Recomb.J Sheet R ↔", f"{DP.Rs_junction:.1f}", "Ω/sq"),
+            (_t('rc_junction'), f"{DP.Rc_junction:.2f}", "Ω·cm²"),
+            # v28.67: 영문 리터럴이었다 — 한국어 모드에서도 영어로 떴고,
+            # 아래 i18n 새로고침 표에도 없어 전환 대상이 아니었다.
+            (_t('rs_junction'), f"{DP.Rs_junction:.1f}", "Ω/sq"),
+            # v28.66: 벌크 횡전도. Rs_junction 바로 아래에 둔다 — 둘 다 Ω/sq
+            # 횡방향 시트저항이고, 사용자가 "어느 평면의 횡전도인가"로 나란히
+            # 읽는 것이 맞다(Rs_rear_tco는 아직 GUI 입력란이 없다).
+            # **기본값은 빈칸이다.** DiodeParams.Rs_base 기본이 None(끔)이므로
+            # 숫자를 미리 채우면 기본 동작이 바뀐다.
+            (_t('rs_base'), "", "Ω/sq"),
         ])
         self._card_headers.append(hdr_d)
+        # 입력란 인덱스를 이름으로 고정한다. 아래 파싱·활성화 코드가 전부 이
+        # 상수를 쓰므로, 카드에 행을 끼워 넣어도 한 곳만 고치면 된다
+        # (v28.66 이전에는 tb_diode[5]/[6]이 코드 여기저기에 숫자로 박혀 있었다).
+        self.TB_DIODE_RS_BASE = 7
+        self.TB_DIODE_RS_JUNCTION = 6
+        self.TB_DIODE_RC_JUNCTION = 5
+        # v28.67: 두 횡저항(↔) 행에 한 줄 설명을 붙인다. 라벨이 층 이름까지는
+        # 말하지만 "무엇과 무엇 사이인가"는 100px에 안 들어간다.
+        for _i, _k in ((self.TB_DIODE_RC_JUNCTION, 'rc_junction_hint'),
+                       (self.TB_DIODE_RS_JUNCTION, 'rs_junction_hint'),
+                       (self.TB_DIODE_RS_BASE, 'rs_base_hint')):
+            if _i < len(self._sidebar_labels_d):
+                self._attach_hint(self._sidebar_labels_d[_i], _k)
+                self._attach_hint(self.tb_diode[_i], _k)
 
         # === v28.1: TOP cell diode params — Tandem mode only (Perovskite) === [STEP 3]
         ctk.CTkFrame(step3, height=8, fg_color="transparent").pack()
@@ -11699,6 +12068,32 @@ class FESTProApp(ctk.CTk):
                 self._status(f"Rs_junction parse error: {e}")
                 return False
 
+            # Rs_base — 벌크 횡전도 [Ω/sq, ↔] (v28.66)
+            #
+            # **빈칸 = None(끔)이다.** 0을 "끔"으로 받지 않는 이유는 엔진이
+            # Rs_base ≤ 0을 거부하기 때문이다(0은 무한 컨덕턴스). 여기서 0을
+            # None으로 조용히 번역하면 사용자가 "0 = 완전 전도"를 의도했을 때
+            # 정반대(꺼짐)가 되고 아무 신호도 남지 않는다.
+            #
+            # full_area는 **거부한다.** 엔진 `_build`가 이미 ValueError를 던지지만
+            # 그건 COMPARE 도중에 터져서 어느 입력 탓인지 알기 어렵다. 여기서
+            # 먼저 막고 같은 사실을 말해 준다. 조용히 None으로 떨어뜨리지 않는
+            # 이유는 이 저장소가 반복해서 거부해 온 실패 형태이기 때문이다 —
+            # 입력을 받아 놓고 아무 효과가 없는 것.
+            try:
+                _idx_rb = getattr(self, 'TB_DIODE_RS_BASE', 7)
+                _rear_now = (self._rear_mode_var.get()
+                             if hasattr(self, '_rear_mode_var') else 'full_area')
+                rb_val, rb_err = parse_rs_base_input(
+                    self.tb_diode[_idx_rb].get(), _rear_now)
+                if rb_err is not None:
+                    self._status(_t(rb_err))
+                    return False
+                DP.Rs_base = rb_val
+            except (ValueError, IndexError) as e:
+                self._status(f"Rs_base parse error: {e}")
+                return False
+
             # === v28.1: Read TOP DIODE card (J01, J02, Jph, Rsh, Rs_lumped) ===
             # TOP = Perovskite top subcell (Tandem mode only, ignored in Single mode)
             current_mode = self._mode_var.get() if hasattr(self, '_mode_var') else 'tandem'
@@ -11841,6 +12236,62 @@ class FESTProApp(ctk.CTk):
             self._status(f"Diode param error: {e}")
             return False
 
+
+    def _attach_hint(self, widget, key):
+        """위젯에 마우스를 올리면 한 줄 설명을 띄운다 (v28.67).
+
+        **왜 새로 만드나**: 사이드바 카드에는 힌트 자리가 없다. 라벨 폭이
+        100px이라 층 이름까지가 한계인데, "무엇과 무엇 사이의 저항인가"는
+        거기 들어가지 않는다. 공간 분포 창은 이미 힌트 라벨을 갖고 있으므로
+        (`sp_*_hint`) 개념은 새것이 아니고, 사이드바에만 위젯이 없었다.
+
+        **언어 전환**: 텍스트를 `_t(key)`로 **뜨는 시점에** 읽는다. 미리
+        만들어 두면 언어를 바꿔도 옛 문자열이 남는다 — 이 저장소가 v28.64에서
+        상태 라벨로 겪은 것과 같은 함정이다(전환 시 자동으로 안 바뀌는 위젯).
+
+        **창을 미리 만들지 않는다**: 호버할 때 만들고 벗어나면 없앤다. 카드
+        행마다 Toplevel을 하나씩 들고 있으면 창 수가 늘고, 사이드바를 다시
+        만들 때 유령 창이 남는다.
+
+        조용히 실패한다 — 힌트는 보조 정보라, 이것 때문에 창 조립이 깨지면
+        안 된다. (테스트의 가짜 위젯에서 `bind`는 무동작이므로 여기서 걸리는
+        일도 없다.)
+        """
+        state = {"win": None}
+
+        def _hide(_evt=None):
+            w = state.pop("win", None)
+            state["win"] = None
+            if w is not None:
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+
+        def _show(evt=None):
+            _hide()
+            try:
+                text = _t(key)
+                tip = tk.Toplevel(self)
+                tip.wm_overrideredirect(True)
+                tip.attributes("-topmost", True)
+                tk.Label(tip, text=text, justify="left", wraplength=280,
+                         background="#1E293B", foreground="white",
+                         font=("Segoe UI", 9), padx=8, pady=5,
+                         borderwidth=0).pack()
+                x = widget.winfo_rootx() + 12
+                y = widget.winfo_rooty() + widget.winfo_height() + 4
+                tip.wm_geometry(f"+{x}+{y}")
+                state["win"] = tip
+            except Exception:
+                state["win"] = None
+
+        try:
+            widget.bind("<Enter>", _show, add="+")
+            widget.bind("<Leave>", _hide, add="+")
+            widget.bind("<Destroy>", _hide, add="+")
+        except Exception:
+            pass
 
     def _make_card(self, parent, title, color, params):
         """Create a parameter input card. Returns (entries, label_widgets, header_label)."""
@@ -12132,6 +12583,36 @@ class FESTProApp(ctk.CTk):
     # ---------------------------------------------------------
     # HELPERS
     # ---------------------------------------------------------
+    def _sync_rs_base_entry(self, rear_mode):
+        """후면 모드에 맞춰 Rs_base 입력란을 열거나 잠근다 (v28.66).
+
+        `_toggle_rear_mode`에서 뽑아낸 이유는 **테스트 때문**이다. 후면 모드에
+        따라 이 칸이 잠기는지는 GUI 규칙이 아니라 모델의 사실이고
+        (docs/base_lateral_convention.md §3-4), Tk 전체를 띄우지 않고 확인할 수
+        있어야 한다.
+
+        잠글 때 **값을 지운다.** 숫자가 보이는데 계산에 안 들어가는 상태를 만들지
+        않기 위해서다. 사용자가 넣은 값을 지우는 것이 손실처럼 보일 수 있지만,
+        그 값은 애초에 full_area에서 아무 효과가 없으므로 보존할 내용이 없다.
+        """
+        idx = getattr(self, 'TB_DIODE_RS_BASE', 7)
+        tb = getattr(self, 'tb_diode', None)
+        if tb is None or idx >= len(tb):
+            return
+        ent = tb[idx]
+        try:
+            if rear_mode in ('bifacial', 'patterned'):
+                ent.configure(state="normal")
+            else:
+                ent.configure(state="normal")     # 값 수정용 임시 활성
+                had = ent.get().strip()
+                ent.delete(0, "end")
+                ent.configure(state="disabled")
+                if had:
+                    self._status(_t('rs_base_disabled'))
+        except Exception:
+            pass
+
     def _toggle_rear_mode(self, value=None):
         """Show/hide rear H-pattern inputs + auto-disable Suns Rear in mono mode.
 
@@ -12140,6 +12621,12 @@ class FESTProApp(ctk.CTk):
         입력칸·preset 드롭다운을 disable한다.
         """
         mode = self._rear_mode_var.get()
+        # v28.66: 벌크 횡전도(Rs_base) 입력란은 후면이 실제 전도 평면일 때만
+        # 의미가 있다. full_area에서는 값을 받아도 결과가 수학적으로 불변이라
+        # **비활성화하고 비운다** — Suns Rear가 같은 이유로 받는 처리와 같다.
+        # 값이 남아 있는 채로 잠그면 화면에는 숫자가 보이는데 계산에는 안 들어가
+        # 정확히 이 저장소가 피하려는 상태가 된다.
+        self._sync_rs_base_entry(mode)
         if mode == 'bifacial':
             for row in self._rear_patt_rows:
                 row.pack(fill="x")
@@ -12379,9 +12866,22 @@ class FESTProApp(ctk.CTk):
             for lbl, key in zip(self._sidebar_labels_g, grid_keys):
                 lbl.configure(text=_t(key))
         if hasattr(self, '_sidebar_labels_d'):
-            diode_keys = ['n2_top', 'n2_bot']
-            for lbl, key in zip(self._sidebar_labels_d, diode_keys):
-                lbl.configure(text=_t(key))
+            # v28.66: **위치 zip이었고, 어긋나 있었다.** `_make_card`는 모든 행의
+            # 라벨을 돌려주는데 여기서는 키 2개를 앞에서부터 zip했다 — 그래서
+            # 언어를 바꾸면 0행("n1 Top (Pvsk)")이 n2_top으로, 1행("n2 Top")이
+            # n2_bot으로 덮여 "n2 Bot (Si)"가 두 번 나오고 n1 Top이 사라졌다.
+            # 시작 언어에서는 멀쩡하고 **전환한 뒤에만** 틀리는 종류라 오래 남았다.
+            #
+            # 행을 하나 더 붙이면서(rs_base) 같은 방식으로 두면 새 행이 다시
+            # 조용히 어긋나므로, 위치가 아니라 **인덱스를 명시**하는 표로 바꾼다.
+            # `_card_headers`가 5번째 카드에서 겪은 것과 같은 부류의 함정이다.
+            diode_keys = {1: 'n2_top', 3: 'n2_bot',
+                          getattr(self, 'TB_DIODE_RC_JUNCTION', 5): 'rc_junction',
+                          getattr(self, 'TB_DIODE_RS_JUNCTION', 6): 'rs_junction',
+                          getattr(self, 'TB_DIODE_RS_BASE', 7): 'rs_base'}
+            for idx, key in diode_keys.items():
+                if idx < len(self._sidebar_labels_d):
+                    self._sidebar_labels_d[idx].configure(text=_t(key))
         if hasattr(self, '_card_headers'):
             hdr_texts = [_t('before'), _t('after'), _t('grid_design'), _t('diode_params')]
             for hdr_lbl, txt in zip(self._card_headers, hdr_texts):
@@ -13140,6 +13640,26 @@ class FESTProApp(ctk.CTk):
     # TAB: FF WATERFALL
     # ---------------------------------------------------------
     def _tab_waterfall(self):
+        """FF/PCE 워터폴.
+
+        ⚠ **Griddler §2.8과 원리가 다르다 — 수치를 직접 대조할 수 없다.**
+        Griddler는 조건을 하나씩 끄며 **6단계 순차 재시뮬레이션**을 하고 시나리오
+        간 FF 차이를 막대로 쓴다. 이쪽은 재시뮬레이션 없이 단일 해의 **FEM 손실
+        분해를 누적**한다.
+
+        그래서 매뉴얼 §2.8 2단계(공간 분포 J01을 **중앙값으로 치환**)가 여기에는
+        없는데, 이는 미구현이 아니라 **필요가 없어서**다 — 그 단계는 0D 재구성을
+        위해 공간 분포를 스칼라로 접는 장치이고, 우리 막대는 0D 재구성이 아니라
+        손실 적분의 항이라 맵이 적분 안에 그대로 들어간다.
+
+        같은 이유로 두 도구의 막대는 이름이 같아도 **같은 양이 아니다**
+        (한쪽은 "항을 끄고 다시 푼 FF 차이", 다른 쪽은 "그 항의 전력 소산").
+        비선형 소자에서 두 값이 일치할 이유가 없으므로, 교차검증에서 이 차이를
+        모르면 **불일치를 결함으로 오인한다.**
+
+        대조 가능한 양·6단계 러너 착수 전제·J0 패널의 v28.66 결함 수정:
+        **docs/ff_waterfall_convention.md**
+        """
         self._last_tab = self._tab_waterfall
         self._clear_fig()
         if 'iv_b' not in self._cache:
@@ -13336,20 +13856,29 @@ class FESTProApp(ctk.CTk):
         # Get recomb currents at MPP (already computed)
         Rc_b = self._cache.get('Rc_b', {})
         if Rc_b and Voc > 0:
-            # Direct J0 from diode parameters (no solver needed)
-            # J0 = J01 * area_fraction, converted to fA/cm2 (*1e15 from A/cm2 to fA/cm2)
-            avg_mf = np.mean(S.metal_frac)  # average metal fraction
-
-            if mode == 'tandem':
-                j0_pass_n1 = DP.J01_top_pass * (1 - avg_mf) * 1e15   # A/cm2 -> fA/cm2
-                j0_met_n1 = DP.J01_top_metal * avg_mf * 1e15
-                j0_met_n2 = DP.J02_top_metal * avg_mf * 1e15
-                j0_pass_n2 = DP.J02_top_pass * (1 - avg_mf) * 1e15
-            else:
-                j0_pass_n1 = DP.J01_single_pass * (1 - avg_mf) * 1e15
-                j0_met_n1 = DP.J01_single_metal * avg_mf * 1e15
-                j0_met_n2 = DP.J02_single_metal * avg_mf * 1e15
-                j0_pass_n2 = DP.J02_single_pass * (1 - avg_mf) * 1e15
+            # v28.66: 중앙 헬퍼를 거친다. v28.65까지 이 패널은 DP의 J01/J02
+            # **스칼라를 직독**하고 metal_frac 평균으로 가중해서 spatial_j01 /
+            # spatial_j02 맵을 조용히 무시했다 — 같은 화면 왼쪽의 워터폴 막대는
+            # `losses()`를 통해 맵이 반영된 값이므로, 한 탭 안에서 두 값이 다른
+            # 물리를 말했다. 오류도 경고도 없었다.
+            #
+            # 그 줄이 metal_frac 평균에 `avg_mf`라는 **지역 이름**을 쓴 탓에
+            # `INLINE_ASSEMBLY_RE`가 찾던 `mf`와 글자가 달라 census에도 잡히지
+            # 않았다. v28.66은 배선과 함께 그 정규식을 임의 식별자까지 넓혔다 —
+            # test_spatial_branch_coverage.INLINE_ASSEMBLY_RE.
+            #
+            # 조립은 `FESTSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
+            # 있었던 것이 이 결함이 테스트 밖에 있었던 이유다. 가중치도 노드
+            # 단순 평균에서 `recomb_currents`와 같은 **면적 가중**으로 바꿨다
+            # (근거는 그 메서드 독스트링). 무맵에서도 표시값이 미세하게
+            # 달라지지만 **표시 전용 경로라 비트 핀 대상이 아니다** —
+            # 물리 경로(잔차·손실)는 이 함수를 지나지 않는다.
+            _j0 = S.j0_decomposition(DP, mode=mode)
+            j0_pass_n1 = _j0['pass_n1'] * 1e15   # A/cm2 -> fA/cm2
+            j0_met_n1 = _j0['met_n1'] * 1e15
+            j0_met_n2 = _j0['met_n2'] * 1e15
+            j0_pass_n2 = _j0['pass_n2'] * 1e15
+            _j0_maps = tuple(t for t in active_spatial_maps(DP) if t in ('j01', 'j02'))
 
             # Bar chart (log scale for wide dynamic range)
             j0_cats = ['Pass\nn=1', 'Metal\nn=1', 'Metal\nn=2', 'Pass\nn=2']
@@ -13366,7 +13895,11 @@ class FESTProApp(ctk.CTk):
                              fontsize=7, fontweight='bold', color=j0_colors[i])
             ax4.set_xticks(x_j0); ax4.set_xticklabels(j0_cats, fontsize=8)
             ax4.set_ylabel('J0 [fA/cm2]', fontsize=9)
-            ax4.set_title(f'J0 Decomposition at Voc ({Voc:.3f}V)', fontweight='bold', fontsize=9)
+            # 맵이 걸려 있으면 제목에 밝힌다 — 이 값이 노드 평균이라는 사실이
+            # 화면에 없으면 사용자는 다시 스칼라로 읽는다.
+            _j0_sfx = f'  [spatial: {", ".join(_j0_maps)}]' if _j0_maps else ''
+            ax4.set_title(f'J0 Decomposition at Voc ({Voc:.3f}V){_j0_sfx}',
+                          fontweight='bold', fontsize=9)
             ax4.grid(True, alpha=0.15, axis='y')
             ax4.spines['top'].set_visible(False); ax4.spines['right'].set_visible(False)
         else:
