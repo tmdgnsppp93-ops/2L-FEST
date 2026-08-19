@@ -1,7 +1,7 @@
 # 2L-FEST PRO — 프로그램 등록용 자료
 
 <!-- STATS:BEGIN header -->
-작성 기준: **v28.61** (2026-08-19), 커밋 `4b3d006`. 아래 수치는 `scripts/gen_registration_stats.py`가 저장소에서 실측해 생성한다 — 손으로 고치지 말 것.
+작성 기준: **v28.61** (2026-08-19), 커밋 `2df3358`. 아래 수치는 `scripts/gen_registration_stats.py`가 저장소에서 실측해 생성한다 — 손으로 고치지 말 것.
 <!-- STATS:END header -->
 
 등록 양식이 확정되기 전 단계이므로, 특정 서식에 맞추지 않고 **어떤 양식에도
@@ -179,7 +179,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 | 항목 | 값 |
 |---|---|
 | Python 소스 파일 | 52개 |
-| Python 총 라인 수 | 26,455줄 |
+| Python 총 라인 수 | 26,579줄 |
 | 저장소 추적 파일 총계 | 117개 |
 | 그중 `2L_FEST.py` (엔진+GUI 단일 파일) | 14,274줄 |
 
@@ -188,7 +188,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 | 단위 | 라인 수 |
 |---|---|
 | 본체 엔진 (루트) — 계산 엔진 + 메인 GUI + 검증 스크립트 | 15,167 |
-| `tests/` — 단위·회귀 테스트 | 6,645 |
+| `tests/` — 단위·회귀 테스트 | 6,769 |
 | `front_electrode/` — 전면전극 최적화 모듈 | 2,375 |
 | `scripts/` — 헤드리스 드라이버 | 1,150 |
 | `solcore_xval/` — 외부 솔버 교차검증 도구 | 1,118 |
@@ -245,11 +245,11 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 - **개발자**: 이승훈 (Seunghoon Lee)
 - **소속**: KIST(한국과학기술연구원) 광전하이브리드연구센터, 김인호 박사 태양전지 연구팀
 <!-- STATS:BEGIN version -->
-- **버전 관리 이력**: 2026-06-12 ~ 2026-08-19, 커밋 129건
+- **버전 관리 이력**: 2026-06-12 ~ 2026-08-19, 커밋 131건
   (형상관리 도입 시점의 버전이 이미 v28.18이므로, 실제 개발 착수는 그 이전이다.
    본 문서의 기간은 형상관리 기록이 남아 있는 구간을 뜻한다.)
 - **현재 버전**: v28.61 (2026-08-19)
-- **측정 시점 커밋**: `4b3d006`
+- **측정 시점 커밋**: `2df3358`
 <!-- STATS:END version -->
 
 ### 주요 마일스톤
@@ -285,7 +285,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 ### 5-1. 자동화 테스트
 
 <!-- STATS:BEGIN tests -->
-`pytest -m "not slow"` 실행 결과 **470건 통과 / 6건 예상된 실패(xfail) / 실패 0건**
+`pytest -m "not slow"` 실행 결과 **484건 통과 / 6건 예상된 실패(xfail) / 실패 0건**
 (측정 환경: Python 3.14.3, numpy 2.4.3, scipy 1.17.1).
 
 느린 전체 크기 셀 핀 2건은 실행 시간(조합당 약 17분) 때문에 기본 실행에서 제외하고 필요 시 별도로 돌린다.
