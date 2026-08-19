@@ -1,0 +1,50 @@
+  Font: Malgun Gothic
+  Mono : Consolas
+2L-FEST v28.66 build 4296313f88f7 (2026-08-19)
+2L-FEST PRO v5.0 -- Initializing...
+  Mesh: 48623 nodes, 96328 tri (0.83s)
+  Metal: 3671 nodes (7.5%)
+{
+  "w_f_um": 45.0,
+  "pitch_mm": 3.0,
+  "nodes": 81869,
+  "seconds": 1350.3,
+  "eff": 30.678660048999433,
+  "Voc": 1.9185826270131145,
+  "FF": 80.8963503571624,
+  "Jsc": 19.766371370140376,
+  "n_fingers": 60,
+  "metal_fraction": 0.03180050718512258,
+  "measured": "now"
+}
+{
+  "w_f_um": 45.0,
+  "pitch_mm": 0.9,
+  "nodes": 147725,
+  "seconds": 2432.7,
+  "eff": 30.311446476247728,
+  "Voc": 1.9170119735186293,
+  "FF": 82.88515292914805,
+  "Jsc": 19.0767809542468,
+  "n_fingers": 201,
+  "metal_fraction": 0.06566706919454174,
+  "measured": "now"
+}
+
+=== SOLVE-TIME SCALING (Run B, w_f=45 um, npts=8) ===
+ pitch mm    nodes       sec     min     eff %
+     3.00    81869    1350.3    22.5   30.6787
+     1.40    98433    1429.8    23.8   30.7341
+     0.90   147725    2432.7    40.5   30.3114
+
+local exponent p in  t ~ N^p :
+    81869 ->   98433 :  p = +0.31
+    98433 ->  147725 :  p = +1.31
+  overall 81869 -> 147725 :  p = +1.00
+  extrapolated  117535 nodes:    32.3 min (linear would say 32.3)
+  extrapolated  147725 nodes:    40.5 min (linear would say 40.5)
+  extrapolated  216899 nodes:    59.5 min (linear would say 59.5)
+  extrapolated  365085 nodes:   100.0 min (linear would say 100.2)
+EXIT=0
+
+[exited with code 0]

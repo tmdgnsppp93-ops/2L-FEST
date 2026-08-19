@@ -1,0 +1,18 @@
+EXIT=0
+  Font: Malgun Gothic
+  Mono : Consolas
+2L-FEST v28.66 build 4296313f88f7 (2026-08-19)
+2L-FEST PRO v5.0 -- Initializing...
+  Mesh: 48623 nodes, 96328 tri (0.80s)
+  Metal: 3671 nodes (7.5%)
+{
+  "nodes": 98433,
+  "efficiency_pct": 30.734126256223647,
+  "Voc_V": 1.9179160259560426,
+  "FF_pct": 82.47570887036262,
+  "Jsc_mA_cm2": 19.42966112022392,
+  "seconds": 1417.369389295578
+}
+TOTAL 1429.8s for one point (npts=8, budget 82000 nodes)
+
+[exited with code 0]
