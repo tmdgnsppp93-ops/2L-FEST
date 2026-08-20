@@ -1,0 +1,19 @@
+  Font: Malgun Gothic
+  Mono : Consolas
+2L-FEST v28.66 build 4296313f88f7 (2026-08-19)
+2L-FEST PRO v5.0 -- Initializing...
+  Mesh: 48623 nodes, 96328 tri (0.79s)
+  Metal: 3671 nodes (7.5%)
+nodes: 81869
+
+ npts   solve calls   vs npts=8
+    4            56       0.982  
+    5            56       0.982  
+    6            57       1.000  
+    8            57       1.000  
+   10            55       0.965  
+   12            60       1.053  
+   14            65       1.140  
+
+option 3 assumes npts 8 -> 5 costs 5/8 = 0.625 of npts=8
+EXIT=0

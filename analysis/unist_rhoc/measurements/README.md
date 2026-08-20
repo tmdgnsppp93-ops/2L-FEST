@@ -30,6 +30,8 @@
 | `logs/02_mesh_convergence.log` | 노드 예산 스캔 원본 |
 | `logs/03_mesh_cost_map.log` | 그리드 노드 수 맵 원본 (`RUNS`/`GRID_*` 설정 포함) |
 | `logs/04_solve_time_scaling.log` | 노드 수 대비 solve 시간 지수 측정 원본 |
+| `logs/05_npts_solve_count.log` | **npts별 solve 호출 수** — npts 8→5의 절감은 1.8 %뿐 |
+| `scripts/probe_npts_cost.py` | 위 카운트를 낸 프로브. 솔버를 해석적 스텁으로 바꿔 호출 수만 셈 (실계산 없음) |
 | `scripts/*.py` | 위 측정을 낸 프로브 3종. 저장소·솔버를 건드리지 않고 드라이버를 import해 상수만 덮어쓴다 |
 
 > `scripts/*.py`의 `ROOT`는 이 머신 경로(`C:\Users\A\Desktop\2L-FEST`)로 하드코딩돼
@@ -42,6 +44,9 @@
    15자리까지 동일. 비용을 낮추는 손잡이가 아니다.
 3. **비용은 pitch 단독 결정**, 시간은 노드 수에 **정확히 선형**(p = +1.00,
    0.0164 s/노드). 핑거 폭은 메시 비용에 영향 0.
+4. **npts도 손잡이가 아니다** — `calc_iv`의 MPP 구간이 `max(npts+4, 16)`으로
+   고정이라 npts 8→5는 solve 호출을 57→56회로 줄일 뿐이다(1.8 %). 노드 예산에
+   이어 두 번째 가짜 손잡이. **비용 손잡이는 pitch 하나뿐이다.**
 
 ## 부수 소득 — 버리지 말 것
 
