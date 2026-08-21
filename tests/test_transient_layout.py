@@ -1,9 +1,18 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""과도(capacitive) 해석 — 선형 시스템 레이아웃 특성화 (우선순위 3 단위 0).
+"""과도(capacitive) 해석 — 선형 시스템 레이아웃 특성화 (구 우선순위 3 단위 0).
 
-이 파일은 **새 기능을 정의하지 않는다.** 과도 항은 아직 없다(프로덕션 0줄).
+**2026-08-20: 과도 해석은 드롭 확정됐다** — 매뉴얼 §1.2 등가회로에 용량 소자가
+없고(따라갈 대상 부재), 실리콘에서 그 효과가 무시할 수준이라는 박사님 판단이다.
+근거 2건은 `docs/WORKLOG.md` §3-제외에 있다.
+
+**그래도 이 파일은 유지한다.** 여기서 고정하는 것은 과도 항이 아니라 **선형
+시스템의 모양 자체**(미지 벡터 레이아웃 · 희소성 패턴 · 대각 슬롯의 구조적 존재)
+이고, 시간 항의 유무와 무관하게 성립한다. 구조를 건드리는 어떤 작업이든 이 파일이
+먼저 깨진다. 아래 "왜 이것부터 하는가"는 작성 당시의 동기 기록이다.
+
+이 파일은 **새 기능을 정의하지 않는다.** 과도 항은 없다(프로덕션 0줄).
 여기서 고정하는 것은 **v28.61 시점에 각 분기가 푸는 선형 시스템의 모양**뿐이다 —
 미지 벡터 길이와 희소성 패턴.
 
@@ -450,7 +459,8 @@ def test_engine_has_no_transient_code_yet():
     found = {k: v for k, v in hits.items() if v}
     assert not found, (
         f"엔진에 과도 관련 식별자가 생겼다: {found}. "
-        "우선순위 3 단위 2 이상이 착수됐다면 이 테스트를 반전시킬 것")
+        "과도 해석은 2026-08-20에 드롭 확정됐다(WORKLOG §3-제외) — 판정이 뒤집혀 "
+        "실제로 착수한 것이 아니라면 이건 실수로 들어온 코드다")
 
 
 def test_calc_iv_is_untouched_and_still_the_only_sweep_path():
