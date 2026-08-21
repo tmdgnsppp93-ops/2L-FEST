@@ -11,7 +11,7 @@
 #   "션트가 심하니 값을 크게"라고 쓰면 정반대가 된다. rc와 같은 함정이다.
 #
 # ⚠⚠ Griddler와 곱셈 방향이 **반대**다.
-#   Griddler는 shunt를 **컨덕턴스 G_shunt [S/cm²]**로 두고 GEDO는
+#   Griddler는 shunt를 **컨덕턴스 G_shunt [S/cm²]**로 두고 GEDOS는
 #   **저항 Rsh [Ω·cm²]**로 둔다. Griddler용 맵을 그대로 가져오면 역효과가 난다 -
 #   역수를 취할 것. docs/spatial_map_convention.md §7.
 #

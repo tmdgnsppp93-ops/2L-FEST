@@ -1,9 +1,9 @@
-# GEDO — Grid Electrode Design Optimizer
+# GEDOS — Grid Electrode Design Optimization Simulator
 
 태양전지 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
 유한요소법(FEM) 기반으로 시뮬레이션하는 데스크톱 도구입니다.
 
-- **버전**: GEDO v1.0 (엔진 v28.68)
+- **버전**: GEDOS v1.0 (엔진 v28.69)
 - **개발**: Seunghoon Lee — KIST, Dr. Inho Kim's Solar Cell Research Team
 - **언어/UI**: Python 3.10+ / CustomTkinter (다크·라이트 테마)
 
@@ -118,7 +118,7 @@ V,J
 
 1. GitHub 저장소 **Actions** 탭 → "Build apps (macOS + Windows)" → **Run workflow**
    (또는 `vXX` 태그 push 시 자동 실행)
-2. 끝나면 **Artifacts** 에서 `GEDO-PRO-macOS`, `GEDO-PRO-Windows` 각각 다운로드.
+2. 끝나면 **Artifacts** 에서 `GEDOS-PRO-macOS`, `GEDOS-PRO-Windows` 각각 다운로드.
 
 ### 방법 B — 각 OS에서 직접 빌드
 
@@ -126,8 +126,8 @@ V,J
 # 1회: 의존성 + 빌드도구
 pip install numpy scipy matplotlib customtkinter ezdxf pyinstaller
 
-./build_app.command     # macOS  -> dist/"GEDO.app"  (~125 MB)
-build_app.bat           # Windows -> dist\"GEDO"\"GEDO.exe"
+./build_app.command     # macOS  -> dist/"GEDOS.app"  (~125 MB)
+build_app.bat           # Windows -> dist\"GEDOS"\"GEDOS.exe"
 ```
 
 - 미서명 빌드라 첫 실행 시: macOS는 **우클릭 → 열기**, Windows는 SmartScreen **추가 정보 → 실행**.

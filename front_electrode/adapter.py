@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""Adapter — 기존 GEDO 엔진 호출 래퍼 + busbar 반사광 회수(recovery).
+"""Adapter — 기존 GEDOS 엔진 호출 래퍼 + busbar 반사광 회수(recovery).
 
     기존 엔진(fest 모듈)
          ↓  evaluate_existing_simulation(fest, grid_params, ...)

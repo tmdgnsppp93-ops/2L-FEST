@@ -1,4 +1,4 @@
-# GEDO — 프로그램 등록용 자료
+# GEDOS — 프로그램 등록용 자료
 
 <!-- STATS:BEGIN header -->
 작성 기준: **v28.68** (2026-08-21), 커밋 `133a670`. 아래 수치는 `scripts/gen_registration_stats.py`가 저장소에서 실측해 생성한다 — 손으로 고치지 말 것.
@@ -23,7 +23,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 
 ### 1-1. 200자 버전
 
-> GEDO는 태양전지 전면 전극(그리드) 설계와 2단자 탠덤 셀 성능을 유한요소법
+> GEDOS는 태양전지 전면 전극(그리드) 설계와 2단자 탠덤 셀 성능을 유한요소법
 > 기반으로 시뮬레이션하는 데스크톱 프로그램이다. 전극 형상을 메시에 직접 반영해
 > 저항·음영 손실을 공간 분포로 계산하며, 전극 격자 파라미터를 다축으로 스윕해
 > 최적 설계를 찾는다. 태양전지 연구자가 시제품 제작 전에 전극 설계를 정량 비교하는
@@ -33,7 +33,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 
 ### 1-2. 500자 버전
 
-> GEDO는 태양전지의 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
+> GEDOS는 태양전지의 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
 > 유한요소법(FEM)으로 해석하는 데스크톱 시뮬레이션 프로그램이다.
 >
 > 기존의 해석식 기반 손실 계산은 전극을 평균값으로 다루지만, 이 프로그램은 핑거와
@@ -53,7 +53,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 
 ### 1-3. 1000자 버전
 
-> **GEDO**(Grid Electrode Design Optimizer)는 태양전지의 전면
+> **GEDOS**(Grid Electrode Design Optimization Simulator)는 태양전지의 전면
 > 전극(그리드) 설계와 2단자(2T) 탠덤 셀 성능을 유한요소법(FEM) 기반으로 해석하는
 > 데스크톱 시뮬레이션 프로그램이다.
 >
@@ -378,7 +378,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 Solcore는 정사각 픽셀을 회로 부품으로 치환한 SPICE 회로 해석이다. 모든 입력(그리드,
 다이오드, 저항, 온도)을 동일하게 두고 솔버만 달리했다.
 
-| 지표 | GEDO | Solcore | 차이 |
+| 지표 | GEDOS | Solcore | 차이 |
 |---|---|---|---|
 | Voc | 0.728 V | 0.726 V | −0.002 V (−0.3%) |
 | FF | 84.0% | 84.5% | +0.5%p (+0.6%) |

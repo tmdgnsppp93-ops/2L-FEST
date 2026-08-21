@@ -74,7 +74,7 @@ def main():
 
     fest = conftest._load_fest()
     cases = expand_cases(sc)
-    print(f"GEDO build {fest.__build__['version']} | "
+    print(f"GEDOS build {fest.__build__['version']} | "
           f"scenario: {sc['name']} ({sc['_meta']['file']} "
           f"sha {sc['_meta']['sha256']})")
     print(f"  {len(cases)}개 케이스 (baseline 포함), CSV: {csv_path}")

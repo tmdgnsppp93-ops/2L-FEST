@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================
-# GEDO launcher
+# GEDOS launcher
 # 이 폴더의 최신 빌드를 Python 3.10+(우선 3.12)로 항상 실행합니다.
 # Finder에서 더블클릭하거나 터미널에서 ./run.command 로 실행하세요.
 # =============================================================
@@ -15,7 +15,7 @@ fi
 # Python 3.10+ 인터프리터 탐색 (3.9는 임포트 실패하므로 제외)
 for PY in python3.12 python3.13 python3.11 python3.10; do
     if command -v "$PY" >/dev/null 2>&1; then
-        echo "Launching GEDO with $PY ..."
+        echo "Launching GEDOS with $PY ..."
         echo "(창 제목/콘솔의 build 라벨로 버전을 확인하세요)"
         exec "$PY" "$APP"
     fi

@@ -504,7 +504,7 @@ def main():
                  "default": [SCENARIO_ENGINE_DEFAULT],
                  "both": [SCENARIO_MEASURED, SCENARIO_AS_CURED]}[args.scenario]
 
-    print(f"GEDO build {fest.__build__['version']} | scenarios={[s['label'] for s in scenarios]}")
+    print(f"GEDOS build {fest.__build__['version']} | scenarios={[s['label'] for s in scenarios]}")
     for sc in scenarios:
         if args.stage in ("fingers", "both"):
             run_fingers(sc, args.quick, args.recovery, args.ax,
