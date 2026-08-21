@@ -2,7 +2,8 @@
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """
-2L-FEST PRO v5.0 -- 2-Layer Front Electrode Simulation Tool
+GEDO v1.0 -- Grid Electrode Design Optimizer
+태양전지 전·후면 그리드 전극 설계 최적화 소프트웨어
 =============================================================
 CustomTkinter Pro UI + Fixed Report
 
@@ -846,6 +847,23 @@ v28.66: [fix] **FF 워터폴 탭의 J0 Decomposition 패널이 공간 분포 맵
          물리적으로는 우리 쪽이 강하다(잔차 귀속·전력 비율 가정 불필요).
          교차검증에서 이 차이를 모르면 불일치를 결함으로 오인한다.
 
+v28.68: [naming] **제품명 변경 — 2L-FEST PRO → GEDO.**
+         GEDO = Grid Electrode Design Optimizer / 태양전지 전·후면 그리드 전극
+         설계 최적화 소프트웨어. 표시 버전도 새로 시작한다: **GEDO v1.0**.
+         화면 표기는 `GEDO v1.0  [v28.68]` — 제품 버전과 엔진 버전을 분리한다.
+         엔진 버전 v28.xx는 **끊지 않는다.** 개발 이력·등록 자료 마일스톤 표가
+         그 번호로 이어져 있어 리셋하면 그 연속성이 끊긴다.
+         바꾼 것은 **표시 계층뿐**이다 — 창 제목 · 헤더 · About · 모델 설명 창 ·
+         대화상자 제목 · 저장 대화상자 기본 파일명(`GEDO_Results.csv` 등).
+         ⚠ **바꾸지 않은 것**: 소스 파일명 `2L_FEST.py`, 클래스 `FESTProApp` /
+         `FESTSolver`, 환경변수 `FEST_LEGACY_LOCAL_MATCH`. 앞의 둘은 테스트
+         100여 곳이 `2L_FEST.py:줄번호`로 참조하고, 환경변수는 **외부 계약**이라
+         바꾸면 기존 스크립트가 조용히 기본 경로로 돌아간다(오류가 나지 않는다).
+         이름이 두 벌인 상태는 의도된 것이고, 정리하려면 별도 단위로 한다.
+         ⚠ 과거 changelog·주석의 "2L-FEST"는 **그대로 둔다.** 그 시점의 기록이다.
+         [note] v28.67은 changelog 항목 없이 인라인 주석으로만 남아 있다
+         (툴팁 · 층 이름 라벨 · 한국어 리터럴). 이 항목과 무관하다.
+
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
 """
@@ -944,8 +962,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.66",
-    "date": "2026-08-19",
+    "version": "v28.68",
+    "date": "2026-08-21",
 }
 _BUILD_SHA_CACHE = None
 
@@ -964,7 +982,7 @@ def _build_sha():
 
 def _build_label():
     return (
-        f"2L-FEST {__build__['version']} "
+        f"GEDO {__build__['version']} "
         f"build {_build_sha()} ({__build__['date']})"
     )
 
@@ -1494,7 +1512,7 @@ _C2 = '#5C6BC0'; _C3 = '#66BB6A'; _CH = '#1a237e'
 # =============================================================
 
 """
-2L-FEST Solver Engine v5.0
+GEDO Solver Engine v1.0
 ===========================
 Core solver module (no GUI) for validation and testing.
 
@@ -8579,7 +8597,7 @@ class FESTSolver:
 # =============================================================
 # INITIALIZE SOLVER (v5.0)
 # =============================================================
-print("2L-FEST PRO v5.0 -- Initializing...")
+print("GEDO v1.0 -- Initializing...")
 t0 = time.time()
 GEO = CellGeometry()
 DP = DiodeParams()
@@ -8630,7 +8648,7 @@ def _rpt_ftr(f):
     f.text(
         0.04,
         0.015,
-        f'2L-FEST PRO v5.0  |  {_build_label()}  |  KIST Solar Cell Research Team  |  Dr. Inho Kim',
+        f'GEDO v1.0  |  {_build_label()}  |  KIST Solar Cell Research Team  |  Dr. Inho Kim',
         fontsize=7,
         color='#bbb',
     )
@@ -9415,7 +9433,7 @@ class FESTProApp(ctk.CTk):
         # Build tag: bump this whenever the file changes so the window title
         # immediately tells you which build is running. If your title doesn't
         # show this tag, you are running an OLD copy of the file.
-        self.title(f"2L-FEST PRO v5.0  [{_build_label()}]")
+        self.title(f"GEDO v1.0  [{__build__['version']}]")
         print("=" * 64)
         print(f"  {_build_label()}")
         print("  DXF import: arbitrary-rect (multi-terminal) + spatial maps")
@@ -9475,9 +9493,9 @@ class FESTProApp(ctk.CTk):
         hdr.pack(fill="x", side="top")
         hdr.pack_propagate(False)
 
-        ctk.CTkLabel(hdr, text="2L-FEST", font=ctk.CTkFont(MONO_FONT, 22, "bold"),
+        ctk.CTkLabel(hdr, text="GEDO", font=ctk.CTkFont(MONO_FONT, 22, "bold"),
                      text_color="#FFFFFF").pack(side="left", padx=(20, 4), pady=10)
-        ctk.CTkLabel(hdr, text="2-Layer Front Electrode Simulation Tool",
+        ctk.CTkLabel(hdr, text="Grid Electrode Design Optimizer",
                      font=ctk.CTkFont(size=12), text_color="#94A3B8").pack(side="left", pady=10)
 
         # About button (right side)
@@ -11637,7 +11655,7 @@ class FESTProApp(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         self._spatial_win = win
-        win.title(f"2L-FEST - {_t('sp_title')}")
+        win.title(f"GEDO - {_t('sp_title')}")
         win.geometry("980x620")
         # v28.63: 카드 목록이 스크롤되므로 창을 줄여도 전부 접근할 수 있다.
         # minsize를 두는 이유는 반대다 — 무한정 줄이면 오른쪽 미리보기 축이
@@ -11851,7 +11869,7 @@ class FESTProApp(ctk.CTk):
 
         win = ctk.CTkToplevel(self)
         self._spatial_help_win = win
-        win.title(f"2L-FEST - {_t('sp_help_title')}")
+        win.title(f"GEDO - {_t('sp_help_title')}")
         win.geometry("660x680")
         try:
             win.minsize(520, 400)
@@ -12726,7 +12744,7 @@ class FESTProApp(ctk.CTk):
             f"GRIDDLER 2.5 FREE 입력 순서\n"
             f"{SEP}\n"
             f"  1) Tandem 체크박스 OFF (Single cell mode)\n"
-            f"  2) Cell geometry: 2L-FEST와 동일한 wafer/finger/busbar\n"
+            f"  2) Cell geometry: GEDO와 동일한 wafer/finger/busbar\n"
             f"  3) Front Diode Params:\n"
             f"     - 1-Sun JL = 위 Jsc 값\n"
             f"     - J01/J02/n 은 자유롭게 튜닝\n"
@@ -12764,7 +12782,7 @@ class FESTProApp(ctk.CTk):
     def _show_about(self):
         """About dialog with version, credits, and references."""
         win = ctk.CTkToplevel(self)
-        win.title("About 2L-FEST")
+        win.title("About GEDO")
         win.geometry("520x620+500+200")
         win.resizable(False, False)
         self._raise_once(win)  # v28.30: 뜰 때만 앞으로, 그 뒤 다른 창에 양보
@@ -12772,9 +12790,9 @@ class FESTProApp(ctk.CTk):
 
         hdr = ctk.CTkFrame(win, fg_color="#0F172A", height=80, corner_radius=0)
         hdr.pack(fill="x"); hdr.pack_propagate(False)
-        ctk.CTkLabel(hdr, text="2L-FEST", font=ctk.CTkFont(MONO_FONT, 26, "bold"),
+        ctk.CTkLabel(hdr, text="GEDO", font=ctk.CTkFont(MONO_FONT, 26, "bold"),
                      text_color="white").pack(pady=(12, 0))
-        ctk.CTkLabel(hdr, text="2-Layer Front Electrode Simulation Tool",
+        ctk.CTkLabel(hdr, text="Grid Electrode Design Optimizer",
                      font=ctk.CTkFont(size=11), text_color="#94A3B8").pack()
 
         body = ctk.CTkScrollableFrame(win, fg_color="#F8FAFC")
@@ -12788,7 +12806,9 @@ class FESTProApp(ctk.CTk):
                          text_color=color, anchor="w", justify="left").pack(fill="x", padx=8)
 
         section("Version")
-        line("2L-FEST PRO v5.0  (April 2026)")
+        line("GEDO v1.0  (August 2026)")
+        line("Grid Electrode Design Optimizer", 9, "#64748B")
+        line("태양전지 전·후면 그리드 전극 설계 최적화 소프트웨어", 9, "#64748B")
         line("Galerkin FEM + Newton-Raphson solver")
 
         section("Author")
@@ -12950,7 +12970,7 @@ class FESTProApp(ctk.CTk):
         # reset cancel flag for new operation
         self._prog_cancelled = False
         try:
-            w = ctk.CTkToplevel(self); w.title("2L-FEST")
+            w = ctk.CTkToplevel(self); w.title("GEDO")
             w.geometry("420x130+600+400"); w.resizable(False, False)
             # (Seunghoon, v28.30): 진행창을 일반적인, 최소화/이동 가능한 창으로 둔다.
             # 영구 always-on-top은 다른 창/앱을 클릭해도 계속 앞을 가려 동시 작업을
@@ -14413,7 +14433,7 @@ class FESTProApp(ctk.CTk):
         state = {'pg': 0, 'lang': 'EN'}
 
         mwin = ctk.CTkToplevel(self)
-        mwin.title("2L-FEST PRO \u2014 Model & Methodology")
+        mwin.title("GEDO \u2014 Model & Methodology")
         mwin.geometry("1300x850")
         self._raise_once(mwin)  # v28.30: \ub730 \ub54c\ub9cc \uc55e\uc73c\ub85c, \uadf8 \ub4a4 \ub2e4\ub978 \ucc3d\uc5d0 \uc591\ubcf4
 
@@ -14568,9 +14588,9 @@ class FESTProApp(ctk.CTk):
  transform=ax.transAxes)
 
     def _model_p1(self, f, lang):
-        self._model_hdr(f, 'What is 2L-FEST?', '2L-FEST\ub780 \ubb34\uc5c7\uc778\uac00?', 1, 7, lang)
+        self._model_hdr(f, 'What is GEDO?', 'GEDO\ub780 \ubb34\uc5c7\uc778\uac00?', 1, 7, lang)
         ax = f.add_axes([0, 0, 1, 0.91]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
-        ax.text(0.5, 0.95, '2-Layer Front Electrode Simulation Tool',
+        ax.text(0.5, 0.95, 'Grid Electrode Design Optimizer',
                 ha='center', fontsize=12, color='#64748B', transform=ax.transAxes)
         if lang == 'EN':
             cards = [
@@ -14579,7 +14599,7 @@ class FESTProApp(ctk.CTk):
                     'suffer from resistive losses in emitter, finger, and contact.',
                     'How much efficiency can we gain via hot pressing?']),
                 (0.54, 'OUR APPROACH', [
-                    '2L-FEST models the front surface as TWO coupled layers:',
+                    'GEDO models the front surface as TWO coupled layers:',
                     '  (1) Emitter/TCO layer  --  lateral photocurrent (R_sheet)',
                     '  (2) Metal electrode layer  --  finger/busbar collection (R_line)',
                     'Connected by contact resistance (rho_c) at every metal node.']),
@@ -14598,7 +14618,7 @@ class FESTProApp(ctk.CTk):
                     '\uc5d0\ubbf8\ud130, \ud551\uac70, \uc811\ucd09\uc5d0\uc11c \uc800\ud56d\uc131 \uc804\ub825\uc190\uc2e4\uc774 \ubc1c\uc0dd\ud569\ub2c8\ub2e4.',
                     '\ud56b \ud504\ub808\uc2f1\uc73c\ub85c \uc5bc\ub9c8\ub098 \ud6a8\uc728\uc744 \ub192\uc77c \uc218 \uc788\uc744\uae4c\uc694?']),
                 (0.54, '\uc811\uadfc \ubc29\ubc95', [
-                    '2L-FEST\ub294 \uc804\uba74\uc744 2\uac1c \uacb0\ud569 \ub808\uc774\uc5b4\ub85c \ubaa8\ub378\ub9c1:',
+                    'GEDO\ub294 \uc804\uba74\uc744 2\uac1c \uacb0\ud569 \ub808\uc774\uc5b4\ub85c \ubaa8\ub378\ub9c1:',
                     '  (1) \uc5d0\ubbf8\ud130/TCO \uce35 -- \uc218\ud3c9 \uad11\uc804\ub958 (R_sheet)',
                     '  (2) \uae08\uc18d \uc804\uadf9 \uce35 -- \ud551\uac70/\ubc84\uc2a4\ubc14 \uc804\ub958 \uc218\uc9d1 (R_line)',
                     '\ubaa8\ub4e0 \uae08\uc18d \ub178\ub4dc\uc5d0\uc11c \uc811\ucd09\uc800\ud56d(rho_c)\uc73c\ub85c \uc5f0\uacb0.']),
@@ -15016,7 +15036,7 @@ class FESTProApp(ctk.CTk):
             self._exp_data['V_exp'] = np.array(V_list)
             self._exp_data['J_exp'] = np.array(J_list)
             self._status(f'Loaded: {os.path.basename(fn)} ({len(V_list)} pts). Click COMPARE to overlay.')
-            messagebox.showinfo("2L-FEST PRO",
+            messagebox.showinfo("GEDO",
                 f"Loaded {len(V_list)} data points.\n"
                 f"V range: {min(V_list):.3f} ~ {max(V_list):.3f} V\n"
                 f"J range: {min(J_list):.2f} ~ {max(J_list):.2f} mA/cm2\n\n"
@@ -15038,7 +15058,7 @@ class FESTProApp(ctk.CTk):
         state = {'pg': 0}
 
         rwin = ctk.CTkToplevel(self)
-        rwin.title("2L-FEST PRO Report")
+        rwin.title("GEDO Report")
         rwin.geometry("1200x800")
         self._raise_once(rwin)  # v28.30: 뜰 때만 앞으로, 그 뒤 다른 창에 양보
 
@@ -15071,7 +15091,7 @@ class FESTProApp(ctk.CTk):
 
         def save_pdf():
             fn = filedialog.asksaveasfilename(
-                initialfile='2L-FEST_PRO_Report.pdf',
+                initialfile='GEDO_Report.pdf',
                 filetypes=[('PDF','*.pdf')], defaultextension='.pdf')
             if not fn: return
             with PdfPages(fn) as pdf:
@@ -15079,12 +15099,12 @@ class FESTProApp(ctk.CTk):
                     pg = Figure(figsize=(11,8.5), facecolor='white')
                     FigureCanvasAgg(pg)
                     pf_(pg, d); pdf.savefig(pg); plt.close(pg)
-            messagebox.showinfo("2L-FEST PRO",
+            messagebox.showinfo("GEDO",
                                  f"PDF saved ({len(_RPT_PAGES)} pages):\n{fn}")
 
         def save_png():
             fn = filedialog.asksaveasfilename(
-                initialfile=f'2L-FEST_p{state["pg"]+1}.png',
+                initialfile=f'GEDO_p{state["pg"]+1}.png',
                 filetypes=[('PNG','*.png')], defaultextension='.png')
             if fn:
                 rfig.savefig(fn, dpi=150, bbox_inches='tight', facecolor='white')
@@ -15221,13 +15241,13 @@ class FESTProApp(ctk.CTk):
         if 'iv_b' not in self._cache:
             self._status(_t('run_compare_first')); return
         fn = filedialog.asksaveasfilename(
-            initialfile='2L-FEST_Results.csv',
+            initialfile='GEDO_Results.csv',
             filetypes=[('CSV','*.csv')], defaultextension='.csv')
         if not fn: return
         c = self._cache
         iv_b=c['iv_b']; iv_a=c['iv_a']; bp=c['bp']; ap=c['ap']
         lines = []
-        lines.append("2L-FEST PRO v5.0 Results")
+        lines.append("GEDO v1.0 Results")
         lines.append(f"Cell,{GEO.W*10:.0f}x{GEO.H*10:.0f}mm,{GEO.n_f}F+{GEO.n_b}BB")
         lines.append(f"Mesh,{len(pts)} nodes,{len(tri.simplices)} tri")
         lines.append("")
@@ -15328,17 +15348,17 @@ class FESTProApp(ctk.CTk):
                 raise
         except Exception as e:
             self._status(f"CSV save failed: {e}")
-            messagebox.showerror("2L-FEST PRO", f"CSV 저장 실패:\n{e}")
+            messagebox.showerror("GEDO", f"CSV 저장 실패:\n{e}")
             return
         self._status(f"CSV saved: {fn}")
-        messagebox.showinfo("2L-FEST PRO", f"Results exported:\n{fn}")
+        messagebox.showinfo("GEDO", f"Results exported:\n{fn}")
 
     # ---------------------------------------------------------
     # SAVE PNG
     # ---------------------------------------------------------
     def _save_png(self):
         fn = filedialog.asksaveasfilename(
-            initialfile='2L-FEST_PRO.png',
+            initialfile='GEDO.png',
             filetypes=[('PNG','*.png')], defaultextension='.png')
         if fn:
             self.fig.savefig(fn, dpi=150, bbox_inches='tight', facecolor='white')

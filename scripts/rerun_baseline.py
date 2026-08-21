@@ -41,7 +41,7 @@ def _versions():
     print("=" * 78)
     print(f"Python {platform.python_version()} | numpy {np.__version__} | "
           f"scipy {scipy.__version__}")
-    print(f"2L-FEST build {fest.__build__['version']} ({fest.__build__['date']})")
+    print(f"GEDO build {fest.__build__['version']} ({fest.__build__['date']})")
     print("=" * 78)
 
 

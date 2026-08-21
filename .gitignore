@@ -20,5 +20,8 @@ scripts/scenarios/_*.png
 # 루트 실험 산출물 중 보존 가치가 없는 것.
 #   실험 결과 CSV(_*_results.csv)는 반대로 **추적한다** — 조건은
 #   _experiments_README.md에 기록되어 있다.
+GEDO_Results.csv
+# 이름 변경 전(v28.68 이전) 산출물
 2L-FEST_Results.csv
+pytest.log
 _edgeopt_out.txt

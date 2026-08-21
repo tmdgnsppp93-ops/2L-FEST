@@ -26,7 +26,7 @@ Stage 2 결과가 산업 MBB(다수 버스바) 추세와 반대(적고 얇은 �
 > 있었고, 실제 edge=0 최적 pitch는 2.193mm다(+0.023%p). §8 참조.
 
 ## 1. 셀 레벨 모델 — 모듈 인터커넥트 미포함
-- 본 계산은 **단일 셀 FEM**(2L-FEST). 손실 항목: emitter/TCO sheet R, finger R,
+- 본 계산은 **단일 셀 FEM**(GEDO). 손실 항목: emitter/TCO sheet R, finger R,
   busbar R, contact R, optical shading.
 - 전류 추출: `extraction_method="probe_point"` (I-V tester, `n_probe_points=10/BB`).
 - 엔진에 `ribbon_ends`("Ribbon Ends (Module)") 모드가 존재하나(단일 셀 리본 추출)

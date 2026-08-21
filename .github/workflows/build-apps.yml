@@ -16,9 +16,9 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            artifact: 2L-FEST-PRO-macOS
+            artifact: GEDO-macOS
           - os: windows-latest
-            artifact: 2L-FEST-PRO-Windows
+            artifact: GEDO-Windows
 
     steps:
       - uses: actions/checkout@v4
@@ -35,7 +35,7 @@ jobs:
       - name: Build with PyInstaller
         run: >
           pyinstaller --noconfirm --windowed
-          --name "2L-FEST PRO"
+          --name "GEDO"
           --collect-all customtkinter
           --collect-all ezdxf
           2L_FEST.py

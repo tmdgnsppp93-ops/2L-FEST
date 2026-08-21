@@ -1,4 +1,4 @@
-# Griddler 2.5 / PRO 기능 명세 (2L-FEST 개발 참조용)
+# Griddler 2.5 / PRO 기능 명세 (GEDO 개발 참조용)
 
 > **출처**: Griddler 2.5 & PRO Manual v7.0 (2023-09-15), SERIS
 > **성격**: 원문 요약·재서술. 원문 발췌 아님. 매뉴얼 PDF 자체는 저작권 문제로 repo에 포함하지 않음 (`~/dev/refs/` 별도 보관, 필요 시 `--add-dir`).
@@ -12,7 +12,7 @@
 
 ## 0. 이 문서의 사용 규칙 (읽는 에이전트를 위한 지침)
 
-**이 문서는 Griddler에 어떤 기능이 있는지만 서술한다. 2L-FEST에 그 기능이 있는지 없는지는 서술하지 않는다.**
+**이 문서는 Griddler에 어떤 기능이 있는지만 서술한다. GEDO에 그 기능이 있는지 없는지는 서술하지 않는다.**
 
 - 모든 기능의 `구현상태` 열은 `?`로 비어 있다. 이는 "미구현"이 아니라 **"미확인"**을 뜻한다.
 - 상태를 판정할 때는 반드시 저장소 코드를 직접 읽고, **파일:라인 근거**를 제시할 것.
@@ -38,7 +38,7 @@
 - 동작점은 조도(`I_L,i`)와 terminal voltage 경계조건으로 정의
 - terminal voltage를 step-and-repeat으로 훑으면서 매번 셀 전압을 풀면 → 전체 I-V 특성이 나온다
 
-> 2L-FEST의 2D distributed-diode 접근과 동일 계열. 비교 검증 시 이 정의를 기준으로 삼을 것.
+> GEDO의 2D distributed-diode 접근과 동일 계열. 비교 검증 시 이 정의를 기준으로 삼을 것.
 
 ### 1-1. 등가회로 — 매뉴얼 §1.2 본문 (2026-08-19 원문 확인)
 
@@ -122,7 +122,7 @@ V_diode,i = V_node,i − V_ref,i
 | 12–14 | Rear Pattern | 무료 | 활성화 시 3종: (a) full area metal (Al-BSF형) / (b) line contact + full area metal (PERC·LBSF형, 주기적 line opening) / (c) H-pattern (bifacial). 비활성화 시 rear plane은 lateral conductance 완전 가정 하에 ground 고정 | **A** | ? |
 | 15–19 | 기타 | 무료 | Redo/Undo, Toggle Front/Back View, **Save to AutoCAD DXF**, 패턴 자동저장 | B | ? |
 
-> **Note**: Griddler는 H-pattern을 dxf로 **내보내기**도 지원한다 (§2.6의 layer 규약 준수). 2L-FEST는 현재 dxf **가져오기**만 논의되었으나, 내보내기가 있으면 외부 공유·CAD 검증에 유용.
+> **Note**: Griddler는 H-pattern을 dxf로 **내보내기**도 지원한다 (§2.6의 layer 규약 준수). GEDO는 현재 dxf **가져오기**만 논의되었으나, 내보내기가 있으면 외부 공유·CAD 검증에 유용.
 
 ### 2.2 Meshing Page (§2.5) — 무료판 포함
 
@@ -138,7 +138,7 @@ V_diode,i = V_node,i − V_ref,i
 - finger 사이에 **최소 4개 노드**
 - 단, busbar가 매우 많고 finger가 매우 짧으면 예외
 
-> 이 기준은 2L-FEST의 **수렴성 검증에 바로 쓸 수 있다.** 과거 M10과 소면적 셀의 수렴 방향이 서로 반대였던 현상(지배적 이산화 오차 항이 다름)을 이 기준으로 재점검할 것.
+> 이 기준은 GEDO의 **수렴성 검증에 바로 쓸 수 있다.** 과거 M10과 소면적 셀의 수렴 방향이 서로 반대였던 현상(지배적 이산화 오차 항이 다름)을 이 기준으로 재점검할 것.
 
 정밀 편집은 GUI 대신 커맨드로도 가능. 예: `DRAWEXTRAFRONTSHAPE 1 x1 y1 x2 y2 x3 y3 x4 y4` — layer 1(fingers)에 지정 꼭짓점의 금속 polygon 추가 (좌표 단위 cm).
 
@@ -183,7 +183,7 @@ V_diode,i = V_node,i − V_ref,i
 > Appendix A.5 오독의 실체가 정확히 *"단위를 확인하지 않고 층위를 단정한 것"*
 > 이었다.
 
-**Sheet resistance 변환식** (2L-FEST 입력 검증용)
+**Sheet resistance 변환식** (GEDO 입력 검증용)
 
 ```
 ρ_sheet = ρ_bulk / t_layer
@@ -237,9 +237,9 @@ n_i(T) = 9.15e19 × ( (T+273.15)/300 )^2 × exp( -6880 / (T+273.15) )
 - 마지막 시뮬레이션 FF와 ideal FF의 **차이는 전부 직렬 저항 탓으로 귀속**된다
 - 그 직렬 저항 내부에서 각 성분(finger / busbar / emitter / contact)의 FF 침식 기여 비율은 **MPP에서의 전력 소산 기여 비율과 같다고 가정**한다
 
-> ### ⚠ 2L-FEST의 워터폴은 이 정의가 **아니다** — 수치를 직접 대조할 수 없다
+> ### ⚠ GEDO의 워터폴은 이 정의가 **아니다** — 수치를 직접 대조할 수 없다
 >
-> Griddler는 위 6단계 **순차 재시뮬레이션**이고, 2L-FEST `_tab_waterfall`은
+> Griddler는 위 6단계 **순차 재시뮬레이션**이고, GEDO `_tab_waterfall`은
 > 재시뮬레이션 없이 단일 해의 **FEM 손실 분해를 누적**한다. 그래서
 > 2단계(중앙값 치환)가 우리에게는 필요 없지만 — 그 단계는 0D 재구성을 위해
 > 공간 분포를 스칼라로 접는 장치이고 우리 막대는 손실 적분의 항이다 —
@@ -314,7 +314,7 @@ n_i(T) = 9.15e19 × ( (T+273.15)/300 )^2 × exp( -6880 / (T+273.15) )
 > **용어 재검토 필요**: 이 문서는 랩미팅의 "레이 플레이어"를 *PV Lighthouse의 wafer ray tracer*의 음성 인식 오류로 정정했었다. 그러나 **"레이 플레이어"는 음성상 "RayFlare"에 훨씬 가깝다.** 당시 언급 대상이 wafer ray tracer가 아니라 RayFlare였을 가능성이 높다. 확인 후 확정할 것.
 > (매뉴얼에서 *wafer ray tracer*라는 표현 자체는 Appendix A 도입부 p.106에 실재하며, cmd PC1D 6-2 · OPAL2와 함께 "외부 계산기"로 묶여 언급된다. 다만 §4.4 본문에 단계별 워크플로가 실린 것은 OPAL2 하나뿐이다.)
 
-**우리에게 주는 함의**: 인터페이스가 `Jgen` 스칼라 하나라면, 2L-FEST가 RayFlare를 붙이는 난이도도 그만큼 낮다. 광학 계산을 직접 구현할 필요 없이 **동일한 얕은 경계(스펙트럼 → Jgen)** 만 맞추면 된다. 다만 LGPL v3라 배포 형태(동적 링크 / 별도 프로세스 / 재구현)에 따라 라이선스 의무가 달라지므로, 붙이기 전에 배포 방식을 먼저 정해야 한다.
+**우리에게 주는 함의**: 인터페이스가 `Jgen` 스칼라 하나라면, GEDO가 RayFlare를 붙이는 난이도도 그만큼 낮다. 광학 계산을 직접 구현할 필요 없이 **동일한 얕은 경계(스펙트럼 → Jgen)** 만 맞추면 된다. 다만 LGPL v3라 배포 형태(동적 링크 / 별도 프로세스 / 재구현)에 따라 라이선스 의무가 달라지므로, 붙이기 전에 배포 방식을 먼저 정해야 한다.
 
 **§4.4 워크플로 (2026-08-14 본문 확인)**
 
@@ -468,7 +468,7 @@ Griddler는 MATLAB 기반이라 자체 커맨드 언어를 제공한다. 확인�
 |---|---|
 | **A** | ? |
 
-> **우리 구현 방향**: 커맨드 언어를 재현하지 말 것. 2L-FEST는 Python이므로 **배치 설정 파일 + `itertools.product` 기반 다중 파라미터 sweep + 파생 파라미터 표현식 + 결과 CSV/xlsx 누적 append + `multiprocessing` 병렬화**가 기능적으로 동등하며 사용성이 낫다.
+> **우리 구현 방향**: 커맨드 언어를 재현하지 말 것. GEDO는 Python이므로 **배치 설정 파일 + `itertools.product` 기반 다중 파라미터 sweep + 파생 파라미터 표현식 + 결과 CSV/xlsx 누적 append + `multiprocessing` 병렬화**가 기능적으로 동등하며 사용성이 낫다.
 >
 > Griddler가 parallel FOR을 별도 절로 다룬다는 것은 이 계산이 실제로 오래 걸린다는 신호다. sweep 속도가 병목이라면 병렬화 우선순위를 올릴 것.
 
@@ -630,10 +630,10 @@ into c"* 라고 정리한다.
 |---|---|
 | **A** | ? |
 
-> **우리에게 유리한 점**: 2L-FEST는 이미 2-layer 구조이므로 골격이 존재한다.
+> **우리에게 유리한 점**: GEDO는 이미 2-layer 구조이므로 골격이 존재한다.
 >
 > **⚠ 이 절만 예외적으로 구현상태를 병기한다** (§0 규칙의 예외 — 2026-08-14 사용자 지시). 근거는 `docs/audit_2026-08-13.md`.
-> - **Photon Coupling J01 — 이미 구현됨.** 2L-FEST의 `J01_coupling`이 같은 함수형을 쓰며, 소스 주석이 이 절(v7.0 §7 item 7)을 이미 인용하고 있다. 솔버 3개 경로에서 야코비안 항까지 포함해 처리한다.
+> - **Photon Coupling J01 — 이미 구현됨.** GEDO의 `J01_coupling`이 같은 함수형을 쓰며, 소스 주석이 이 절(v7.0 §7 item 7)을 이미 인용하고 있다. 솔버 3개 경로에서 야코비안 항까지 포함해 처리한다.
 > - **Interlayer Sheet R / Contact R — 이미 구현됨.** `Rs_junction`(횡전도 평면)과 `Rc_junction`(수직 접촉)이 대응하고, 비균일 패턴은 `SpatialMap`이 담당한다.
 >
 > **미구현 격차는 "non-overlapping area Jsc" 하나가 아니라 세 가지 묶음이다.** 감사 보고서가 이 항목을 Jsc 입력 하나로 축소해 기록했는데, 실제로는:
@@ -656,9 +656,9 @@ Appendix A.1 기준:
 
 ---
 
-## 4. 용어 대응표 (Griddler ↔ 2L-FEST)
+## 4. 용어 대응표 (Griddler ↔ GEDO)
 
-| Griddler | 2L-FEST | 비고 |
+| Griddler | GEDO | 비고 |
 |---|---|---|
 | Edge Gap | edge margin | 랩미팅 확인 결과 1.0 mm 적용 시 최적 BB 개수가 이동 |
 | No of BB / BB width | busbar count / busbar width | 논문 계산에서는 **고정** 파라미터 |

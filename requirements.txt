@@ -1,4 +1,4 @@
-# 2L-FEST PRO — runtime dependencies
+# GEDO — runtime dependencies
 # Python >= 3.10 필수 (PEP 604 `X | None` 타입힌트 사용; 3.9에서는 임포트 실패)
 # 검증 환경: Python 3.12
 # 설치:  pip install -r requirements.txt
@@ -18,5 +18,5 @@ ezdxf>=1.0
 #
 # --- 별도 환경에서만 필요 (Optional, 본 저장소에 미포함) ---
 # solcore_xval/ 의 Solcore Quasi-3D 교차검증 스크립트는 Solcore + ngspice가 깔린
-# **별도 venv**에서 실행한다. 2L-FEST 본체 실행에는 전혀 필요 없다.
+# **별도 venv**에서 실행한다. GEDO 본체 실행에는 전혀 필요 없다.
 # solcore>=5.10  ; ngspice(시스템 패키지)

@@ -1,6 +1,6 @@
 # 벌크 횡전도(base lateral transport) 규약 — **확정** (2026-08-18)
 
-> **성격**: 규범 문서. 여기 적힌 것이 2L-FEST의 공식 규약이며 코드·테스트·GUI가
+> **성격**: 규범 문서. 여기 적힌 것이 GEDO의 공식 규약이며 코드·테스트·GUI가
 > 이를 따른다.
 > **관련**: 계획 `docs/superpowers/plans/2026-08-18-base-lateral-transport.md` ·
 > 회귀 `tests/test_base_lateral.py` · 우선순위 `docs/WORKLOG.md` §3

@@ -63,11 +63,11 @@
 >
 > ### ⚠⚠ `rsh`는 Griddler와 곱셈 방향까지 반대다
 >
-> Griddler는 shunt를 **컨덕턴스**(`G_shunt` [S/cm²])로, 2L-FEST는 **저항**
+> Griddler는 shunt를 **컨덕턴스**(`G_shunt` [S/cm²])로, GEDO는 **저항**
 > (`Rsh` [Ω·cm²])으로 둔다. 두 상태량은 역수이므로 **배율 파일도 역수여야 한다.**
 >
 > ```
-> Griddler용 맵 값 g   ↔   2L-FEST용 맵 값 1/g
+> Griddler용 맵 값 g   ↔   GEDO용 맵 값 1/g
 > ```
 >
 > **Griddler의 shunt 맵을 그대로 넣으면 누설이 심한 자리가 가장 깨끗한 자리로
@@ -362,7 +362,7 @@ FF가 무너지는** 형태로 나타난다. `local_shunt_rsh.txt` 참고.
 같은 파일을 Griddler에 넣어 대조하는 절차를 계획했으나 **수행하지 못했다** —
 공간 분포 입력이 Griddler **유료판(PRO) 전용**이라 무료판에는 진입점 자체가 없다.
 
-| 규약 | 2L-FEST 확정값 | Griddler와 같은가 |
+| 규약 | GEDO 확정값 | Griddler와 같은가 |
 |---|---|---|
 | 행 방향 | 첫 데이터 줄 = `y=0` (아래) | **미확인** |
 | 격자 정렬 | 꼭짓점 정렬 | **미확인** |
