@@ -25,3 +25,7 @@ GEDOS_Results.csv
 2L-FEST_Results.csv
 pytest.log
 _edgeopt_out.txt
+
+# 작업 기록 — 세션마다 재생성되는 점검·테스트 산출물.
+doc_check.txt
+m10_result.txt

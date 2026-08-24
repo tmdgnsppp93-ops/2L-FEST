@@ -1,0 +1,1800 @@
+﻿            Vint_mV = Vint_b * 1000
+            spread = Vint_mV.max() - Vint_mV.min()
+            tcfV = ax4.tricontourf(triang, Vint_mV, levels=50, cmap='RdBu_r')
+            self.fig.colorbar(tcfV, ax=ax4, label='mV', **_cb_kw)
+            ax4.set_title(f'Recomb. Junction V  (spread {spread:.2f} mV)',
+                          fontweight='bold', fontsize=9)
+        else:
+            # Phase B disabled (Rs_junction=0): show note instead
+            ax4.text(0.5, 0.5,
+                     'Recomb. Junction V\n\n(enable lateral Rs_junction\n in sidebar to view)',
+                     ha='center', va='center', fontsize=10, color='#94A3B8',
+                     transform=ax4.transAxes)
+            ax4.set_xticks([]); ax4.set_yticks([])
+            for spine in ax4.spines.values():
+                spine.set_color('#E2E8F0')
+        ax4.set_aspect('equal', adjustable='box')
+        ax4.set_xlabel('X [mm]'); ax4.set_ylabel('Y [mm]')
+
+        # Panel 5 (bifacial only): Rear Emitter V (L3 — rear TCO)
+        if is_bifacial:
+            ax5 = self.fig.add_subplot(gs_bot[0, 1])
+            Vr_plot = (Vr_b if Vr_b is not None else np.zeros_like(Ve_b)) * 1000
+            tcf_r = ax5.tricontourf(triang, Vr_plot, levels=50, cmap='RdBu_r')
+            self.fig.colorbar(tcf_r, ax=ax5, label='mV', **_cb_kw)
+            ax5.set_title('Rear Emitter V (L3, TCO)', fontweight='bold', fontsize=9)
+            ax5.set_aspect('equal', adjustable='box')
+            ax5.set_xlabel('X [mm]'); ax5.set_ylabel('Y [mm]')
+
+        # Last panel: Current Density (top diode current at MPP, mA/cm²)
+        ax_last = self.fig.add_subplot(gs_bot[0, n_bot - 1])
+        if mode == 'tandem' and Vt_b is not None:
+            # Compute J_top per node = ilf*Jph - J01*(exp(qV/n1kT)-1) - J02*(...) - V/Rsh
+            mf = S.metal_frac; ilf = S.illum_frac
+            # v28.61: 중앙 헬퍼 — 이 패널이 솔버와 같은 배열을 보게 한다.
+            # (VT_는 그대로 둔다 — 모듈 VT와 값이 달라 통일하면 표시값이 바뀐다.
+            #  별건이므로 여기서 손대지 않는다.)
+            _dna = S._diode_node_arrays(DP, mode='tandem')
+            Rsh_arr = _dna.Rsh      # v28.62 spatial_rsh — 무맵이면 스칼라 그 객체
+            J01_arr = _dna.J01
+            J02_arr = _dna.J02
+            VT_ = 0.02585  # ~kT/q at 300K
+            e1 = np.exp(np.minimum(Vt_b/(DP.n1_top*VT_), 80))
+            e2 = np.exp(np.minimum(Vt_b/(DP.n2_top*VT_), 80))
+            Jnode = (_dna.gen_t*DP.Jph_top - J01_arr*(e1-1) - J02_arr*(e2-1) - Vt_b/Rsh_arr) * 1000  # mA/cm²
+            # Clip extremes for cleaner colormap
+            jmin, jmax = np.percentile(Jnode, [2, 98])
+            Jnode_c = np.clip(Jnode, jmin, jmax)
+            tcfJ = ax_last.tricontourf(triang, Jnode_c, levels=50, cmap='viridis')
+            self.fig.colorbar(tcfJ, ax=ax_last, label='mA/cm²', **_cb_kw)
+            ax_last.set_title(f'Current Density at MPP\n(top diode, mean {Jnode.mean():.2f})',
+                              fontweight='bold', fontsize=9)
+        else:
+            ax_last.text(0.5, 0.5, 'Current Density\n(tandem mode only)',
+                         ha='center', va='center', fontsize=10, color='#94A3B8',
+                         transform=ax_last.transAxes)
+            ax_last.set_xticks([]); ax_last.set_yticks([])
+            for spine in ax_last.spines.values():
+                spine.set_color('#E2E8F0')
+        ax_last.set_aspect('equal', adjustable='box')
+        ax_last.set_xlabel('X [mm]'); ax_last.set_ylabel('Y [mm]')
+
+        self._prog_update("Rendering plots...", pct=0.95)
+        self._refresh()
+        self._prog_close("Voltage / current maps displayed.")
+
+
+    # ---------------------------------------------------------
+    # TAB: FF WATERFALL
+    # ---------------------------------------------------------
+    def _tab_waterfall(self):
+        """FF/PCE 워터폴.
+
+        ⚠ **Griddler §2.8과 원리가 다르다 — 수치를 직접 대조할 수 없다.**
+        Griddler는 조건을 하나씩 끄며 **6단계 순차 재시뮬레이션**을 하고 시나리오
+        간 FF 차이를 막대로 쓴다. 이쪽은 재시뮬레이션 없이 단일 해의 **FEM 손실
+        분해를 누적**한다.
+
+        그래서 매뉴얼 §2.8 2단계(공간 분포 J01을 **중앙값으로 치환**)가 여기에는
+        없는데, 이는 미구현이 아니라 **필요가 없어서**다 — 그 단계는 0D 재구성을
+        위해 공간 분포를 스칼라로 접는 장치이고, 우리 막대는 0D 재구성이 아니라
+        손실 적분의 항이라 맵이 적분 안에 그대로 들어간다.
+
+        같은 이유로 두 도구의 막대는 이름이 같아도 **같은 양이 아니다**
+        (한쪽은 "항을 끄고 다시 푼 FF 차이", 다른 쪽은 "그 항의 전력 소산").
+        비선형 소자에서 두 값이 일치할 이유가 없으므로, 교차검증에서 이 차이를
+        모르면 **불일치를 결함으로 오인한다.**
+
+        대조 가능한 양·6단계 러너 착수 전제·J0 패널의 v28.66 결함 수정:
+        **docs/ff_waterfall_convention.md**
+        """
+        self._last_tab = self._tab_waterfall
+        self._clear_fig()
+        if 'iv_b' not in self._cache:
+            self._status(_t('run_compare_first')); return
+        self._prog_open(_t("computing_ff"))
+        bp=self._cache['bp']; rm,hf,wf,wb,cf,rc,rs=bp; iv_real=self._cache['iv_b']
+        mode = self._cache.get('mode', 'tandem')
+        # v28.18 (리뷰 1-A): FEM losses() 기반 PCE %abs waterfall.
+        #   이전 0D sff() 기반은 subcell_iv가 _pass diode만 읽어 metal recomb /
+        #   공간 직렬R / 전극 세부분해를 원리적으로 표현 못 했고(n2·metal 막대가
+        #   항상 0), Grid R 칸이 0D↔FEM 점프 전부를 흡수했다. 이제 _run_both가
+        #   캐시한 FEM 손실 분해(mW/cm2)를 그대로 쓴다. 100 mW/cm2 입력이므로
+        #   PCE[%] = Pmpp[mW/cm2] → 손실 1 mW/cm2 = PCE 1 %abs 하락.
+        self._prog_update("Assembling PCE loss waterfall (FEM)...", pct=0.5)
+        c = self._cache
+        PCE_act = float(iv_real['Eff'])
+        L_opt = float(c.get('Ps_b', 0.0))     # optical (shading)
+        L_rec = float(c.get('Prec_b', 0.0))   # recombination
+        L_sh  = float(c.get('Psh_b', 0.0))    # shunt
+        L_e   = float(c.get('Pe_b', 0.0))     # emitter/TCO lateral
+        L_ff  = float(c.get('Pff_b', 0.0))    # finger
+        L_fb  = float(c.get('Pfb_b', 0.0))    # busbar
+        L_c   = float(c.get('Pc_b', 0.0))     # contact
+        L_j   = float(c.get('Pj_b', 0.0))     # junction (Rc/Rs)
+        L_res = L_e + L_ff + L_fb + L_c + L_j  # 전극 직렬저항 합
+        # 손실-free 복원 기준(= 실제 PCE + 모든 손실 채널). 1차(first-order)
+        # 복원이며, 각 막대는 FEM losses()가 직접 계산한 값이다.
+        PCE_ref = PCE_act + L_opt + L_rec + L_sh + L_res
+        # 누적 레벨(위→아래): 기준 → −광학 → −재결합 → −shunt → −직렬R(=Actual)
+        lv1 = PCE_ref - L_opt
+        lv2 = lv1 - L_rec
+        lv3 = lv2 - L_sh
+        step_ffs = [PCE_ref, lv1, lv2, lv3, PCE_act]
+        step_drops = [0.0, L_opt, L_rec, L_sh, L_res]
+        step_labels = ['Loss-free\n(FEM recon.)', '− Optical\n(shade)',
+                       '− Recomb', '− Shunt\n(Rsh)',
+                       '− Grid R\n(Pe+Pf+Pc)']
+        step_colors = ['#27ae60', '#16a085', '#c0392b', '#f39c12', '#3498db']
+        step_txt_colors = ['#27ae60', '#0e6655', '#8e1e1e', '#e65100', '#1565c0']
+        # plot/summary 코드가 쓰는 기존 변수명 재사용
+        FF_ideal = PCE_ref
+        FF_grid = PCE_act
+
+        n_s = len(step_ffs)
+        ax1 = self.fig.add_subplot(self.gs[0,:2])
+        x = np.arange(n_s); bw = 0.55
+        y_min = step_ffs[-1] - 5; y_max = step_ffs[0] + 3
+
+        for i in range(n_s):
+            if i == 0:
+                ax1.bar(x[i], step_ffs[i]-y_min, bw, bottom=y_min, color='#27ae60',
+                        edgecolor='#1e8449', lw=1.5, zorder=3)
+            else:
+                ax1.bar(x[i], step_ffs[i]-y_min, bw, bottom=y_min, color='#ecf0f1',
+                        edgecolor='#bdc3c7', lw=0.8, zorder=2)
+                ax1.bar(x[i], step_drops[i], bw, bottom=step_ffs[i], color=step_colors[i],
+                        edgecolor=step_colors[i], lw=1.5, alpha=0.9, zorder=3)
+                ax1.plot([x[i-1]+bw/2, x[i]-bw/2], [step_ffs[i-1], step_ffs[i-1]],
+                         '--', color='#555', lw=1.2, zorder=5)
+
+        for i in range(n_s):
+            top_y = step_ffs[i] + step_drops[i] if i > 0 else step_ffs[i]
+            ax1.text(x[i], top_y+0.4, f'{step_ffs[i]:.1f}%', ha='center',
+                     fontsize=11, fontweight='bold', color='#1a237e', zorder=6)
+
+        for i in range(1, n_s):
+            if step_drops[i] > 0.02:
+                ax1.text(x[i], step_ffs[i]-0.8, f'\u25bc -{step_drops[i]:.2f}%', ha='center', va='top',
+                         fontsize=9, fontweight='bold', color=step_txt_colors[i], zorder=6)
+
+        td = step_ffs[0] - step_ffs[-1]
+        ax1.annotate('', xy=(n_s-0.45, step_ffs[-1]), xytext=(n_s-0.45, step_ffs[0]),
+                     arrowprops=dict(arrowstyle='<->', color='#2c3e50', lw=2.5))
+        ax1.text(n_s-0.1, (step_ffs[0]+step_ffs[-1])/2, f'Total\n-{td:.1f}%',
+                 fontsize=11, fontweight='bold', color='#2c3e50', va='center')
+
+        ax1.set_xticks(x); ax1.set_xticklabels(step_labels, fontsize=9)
+        ax1.set_ylabel('PCE [%abs]', fontsize=11)
+        ax1.set_title('PCE loss waterfall (FEM losses)', fontweight='bold', fontsize=13)
+        ax1.set_ylim(y_min, y_max); ax1.set_xlim(-0.5, n_s+0.3)
+        ax1.spines['top'].set_visible(False); ax1.spines['right'].set_visible(False)
+        ax1.grid(True, alpha=0.2, axis='y')
+
+        # Summary panel — FEM 손실 분해 (전극 직렬R 세부 포함)
+        ax2 = self.fig.add_subplot(self.gs[0,2]); ax2.axis('off')
+        ax2.set_xlim(0,1); ax2.set_ylim(0,1)
+        ax2.add_patch(FancyBboxPatch((0.02,0.02),0.96,0.94,transform=ax2.transAxes,
+                      boxstyle='round,pad=0.03',fc='#fafafa',ec='#dee2e6',lw=1))
+        ax2.text(0.5,0.95,'PCE loss summary [%abs]',ha='center',fontsize=11,fontweight='bold',
+                 transform=ax2.transAxes,color='#1a237e')
+        summary_items = [
+            (0.86, 'Loss-free (recon.)', f'{PCE_ref:.2f}', '#27ae60'),
+            (0.77, '− Optical (shade)', f'-{L_opt:.3f}', '#16a085'),
+            (0.69, '− Recombination', f'-{L_rec:.3f}', '#c0392b'),
+            (0.61, '− Shunt (Rsh)', f'-{L_sh:.3f}', '#f39c12'),
+            (0.50, '− Emitter/TCO R', f'-{L_e:.3f}', '#2471a3'),
+            (0.42, '− Finger R', f'-{L_ff:.3f}', '#3498db'),
+            (0.34, '− Busbar R', f'-{L_fb:.3f}', '#5dade2'),
+            (0.26, '− Contact R', f'-{L_c:.3f}', '#85c1e9'),
+        ]
+        for y_, lbl, val, cl in summary_items:
+            ax2.text(0.06, y_, lbl, fontsize=8, transform=ax2.transAxes, color='#333')
+            ax2.text(0.74, y_, val, fontsize=8.5, fontweight='bold', transform=ax2.transAxes, color=cl)
+        ax2.plot([0.04,0.96],[0.19,0.19],'-',color='#dee2e6',lw=1,transform=ax2.transAxes)
+        ax2.text(0.06,0.11,'Actual PCE (FEM)',fontsize=10,fontweight='bold',transform=ax2.transAxes,color='#1a237e')
+        ax2.text(0.74,0.11,f'{FF_grid:.2f}%',fontsize=12,fontweight='bold',transform=ax2.transAxes,color='#1a237e')
+        if td > 0:
+            ax2.text(0.06,0.04,f'Grid R = {step_drops[4]/td*100:.0f}% of total loss',
+                     fontsize=7.5,transform=ax2.transAxes,color='#888')
+
+        self._refresh()
+        self._prog_close(f'PCE loss waterfall done.  {FF_ideal:.2f}% -> {FF_grid:.2f}%')
+
+        # --- Bottom row: Efficiency Improvement Diagram ---
+        if 'iv_a' not in self._cache: return
+        ap = self._cache['ap']; rm_a,hf_a,wf_a,wb_a,cf_a,rc_a,_ = ap
+        self._prog_open("Efficiency Improvement analysis...")
+
+        # Cumulative: change one param at a time from Before -> After
+        param_names = ['rho_bulk', 'H_finger', 'W_finger', 'Shape CF', 'rho_c']
+        # Start: all Before
+        p = [rm, hf, wf, cf, rc]  # current state (starts as Before)
+        a = [rm_a, hf_a, wf_a, cf_a, rc_a]  # After targets
+        effs = []
+        # Baseline
+        _,_,iv0 = S.calc_iv(p[0],p[1],p[2],p[4],rs,p[3],DP,mode='tandem',npts=12)
+        effs.append(iv0['Eff'])
+
+        for i in range(5):
+            self._prog_update(f'Eff Improve {i+1}/5: {param_names[i]}',
+                              pct=(i+1)/6)
+            p[i] = a[i]  # change this param to After value
+            _,_,ivi = S.calc_iv(p[0],p[1],p[2],p[4],rs,p[3],DP,mode='tandem',npts=12)
+            effs.append(ivi['Eff'])
+
+        # Incremental gains
+        gains = [effs[i+1] - effs[i] for i in range(5)]
+        total_gain = effs[-1] - effs[0]
+
+        # Waterfall chart
+        ax3 = self.fig.add_subplot(self.gs[1,:2])
+        x = np.arange(5); bw = 0.55
+        colors = ['#e74c3c','#FF9800','#3498db','#9C27B0','#f39c12']
+        bottom = effs[0]
+        y_range = max(effs) - min(effs)
+        min_bar = max(0.005, y_range * 0.015)  # Minimum visible bar height
+
+        for i in range(5):
+            g = gains[i]
+            c = colors[i] if g > 0 else '#95a5a6'
+            # Draw bar with minimum visible height
+            bar_h = g if abs(g) > min_bar else (min_bar if g >= 0 else -min_bar)
+            ax3.bar(x[i], bar_h, bw, bottom=bottom, color=c, edgecolor='white', lw=1, zorder=3,
+                    alpha=0.9 if abs(g) > min_bar else 0.4)
+            # Always show label
+            sign = '+' if g >= 0 else ''
+            if g >= 0:
+                ax3.text(x[i], bottom + max(bar_h, min_bar) + 0.015, f'{sign}{g:.4f}%', ha='center',
+                        fontsize=8, fontweight='bold', color=colors[i], zorder=6)
+            else:
+                ax3.text(x[i], bottom + min(bar_h, -min_bar) - 0.025, f'{g:.4f}%', ha='center',
+                        fontsize=8, fontweight='bold', color='#c62828', zorder=6)
+            bottom += g
+
+        # Baseline and final lines
+        ax3.axhline(effs[0], color='#e74c3c', ls='--', lw=1, alpha=0.5, zorder=1)
+        ax3.axhline(effs[-1], color='#27ae60', ls='--', lw=1, alpha=0.5, zorder=1)
+        # Before label: below baseline. After label: above final.
+        ax3.text(-0.4, effs[0] - 0.06, f'Before\n{effs[0]:.3f}%', fontsize=7.5, color='#e74c3c',
+                va='top', ha='center', fontweight='bold')
+        ax3.text(4.4, effs[-1] + 0.06, f'After\n{effs[-1]:.3f}%', fontsize=7.5, color='#27ae60',
+                va='bottom', ha='center', fontweight='bold')
+
+        ax3.set_xticks(x)
+        ax3.set_xticklabels(param_names, fontsize=9)
+        ax3.set_ylabel(_t('eff_pct'))
+        ax3.set_title(_t('eff_improve'), fontweight='bold', fontsize=12)
+        ax3.set_xlim(-0.7, 5.0)
+        y_lo = min(effs) - 0.2; y_hi = max(effs) + 0.2
+        if y_hi - y_lo < 0.5: y_lo -= 0.15; y_hi += 0.15
+        ax3.set_ylim(y_lo, y_hi)
+        # Force plain decimal format on y-axis (no mathtext/offset)
+        from matplotlib.ticker import FormatStrFormatter
+        ax3.yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        ax3.spines['top'].set_visible(False); ax3.spines['right'].set_visible(False)
+        ax3.grid(True, alpha=0.15, axis='y')
+
+        # Recomb at OC panel (Griddler style: J0 in fA/cm2)
+        ax4 = self.fig.add_subplot(self.gs[1,2])
+        mode = self._cache.get('mode', 'tandem')
+        iv_b_data = self._cache['iv_b']
+        Voc = iv_b_data['Voc']
+
+        # Get recomb currents at MPP (already computed)
+        Rc_b = self._cache.get('Rc_b', {})
+        if Rc_b and Voc > 0:
+            # v28.66: 중앙 헬퍼를 거친다. v28.65까지 이 패널은 DP의 J01/J02
+            # **스칼라를 직독**하고 metal_frac 평균으로 가중해서 spatial_j01 /
+            # spatial_j02 맵을 조용히 무시했다 — 같은 화면 왼쪽의 워터폴 막대는
+            # `losses()`를 통해 맵이 반영된 값이므로, 한 탭 안에서 두 값이 다른
+            # 물리를 말했다. 오류도 경고도 없었다.
+            #
+            # 그 줄이 metal_frac 평균에 `avg_mf`라는 **지역 이름**을 쓴 탓에
+            # `INLINE_ASSEMBLY_RE`가 찾던 `mf`와 글자가 달라 census에도 잡히지
+            # 않았다. v28.66은 배선과 함께 그 정규식을 임의 식별자까지 넓혔다 —
+            # test_spatial_branch_coverage.INLINE_ASSEMBLY_RE.
+            #
+            # 조립은 `FESTSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
+            # 있었던 것이 이 결함이 테스트 밖에 있었던 이유다. 가중치도 노드
+            # 단순 평균에서 `recomb_currents`와 같은 **면적 가중**으로 바꿨다
+            # (근거는 그 메서드 독스트링). 무맵에서도 표시값이 미세하게
+            # 달라지지만 **표시 전용 경로라 비트 핀 대상이 아니다** —
+            # 물리 경로(잔차·손실)는 이 함수를 지나지 않는다.
+            _j0 = S.j0_decomposition(DP, mode=mode)
+            j0_pass_n1 = _j0['pass_n1'] * 1e15   # A/cm2 -> fA/cm2
+            j0_met_n1 = _j0['met_n1'] * 1e15
+            j0_met_n2 = _j0['met_n2'] * 1e15
+            j0_pass_n2 = _j0['pass_n2'] * 1e15
+            _j0_maps = tuple(t for t in active_spatial_maps(DP) if t in ('j01', 'j02'))
+
+            # Bar chart (log scale for wide dynamic range)
+            j0_cats = ['Pass\nn=1', 'Metal\nn=1', 'Metal\nn=2', 'Pass\nn=2']
+            j0_vals = [j0_pass_n1, j0_met_n1, j0_met_n2, j0_pass_n2]
+            j0_colors = ['#e74c3c', '#c0392b', '#f39c12', '#e67e22']
+            x_j0 = np.arange(4)
+            # Clamp to minimum displayable value
+            j0_disp = [max(v, 1e-20) for v in j0_vals]
+            ax4.bar(x_j0, j0_disp, 0.6, color=j0_colors, edgecolor='white', lw=0.5)
+            ax4.set_yscale('log')
+            for i in range(4):
+                if j0_vals[i] > 0:
+                    ax4.text(x_j0[i], j0_disp[i] * 2, f'{j0_vals[i]:.2e}', ha='center',
+                             fontsize=7, fontweight='bold', color=j0_colors[i])
+            ax4.set_xticks(x_j0); ax4.set_xticklabels(j0_cats, fontsize=8)
+            ax4.set_ylabel('J0 [fA/cm2]', fontsize=9)
+            # 맵이 걸려 있으면 제목에 밝힌다 — 이 값이 노드 평균이라는 사실이
+            # 화면에 없으면 사용자는 다시 스칼라로 읽는다.
+            _j0_sfx = f'  [spatial: {", ".join(_j0_maps)}]' if _j0_maps else ''
+            ax4.set_title(f'J0 Decomposition at Voc ({Voc:.3f}V){_j0_sfx}',
+                          fontweight='bold', fontsize=9)
+            ax4.grid(True, alpha=0.15, axis='y')
+            ax4.spines['top'].set_visible(False); ax4.spines['right'].set_visible(False)
+        else:
+            ax4.axis('off')
+            ax4.text(0.5, 0.5, 'Run COMPARE first', ha='center', va='center',
+                     transform=ax4.transAxes, fontsize=10, color='#999')
+
+        self._refresh()
+        sign_t = '+' if total_gain >= 0 else ''
+        self._prog_close(f'Eff Improvement: {sign_t}{total_gain:.4f}%')
+
+
+    # ---------------------------------------------------------
+    # TAB: SWEEP
+    # ---------------------------------------------------------
+    def _tab_sweep(self):
+        self._last_tab = self._tab_sweep
+        self._clear_fig()
+        if not self._apply_grid_design():
+            return
+        if not self._apply_diode_params():
+            return
+        bp, ap = self._get_params()
+        if bp is None: return
+        rm_b,hf_b,wf_b,wb_b,cf_b,rc_b,rs = bp
+        self._prog_open(_t("param_sweep"))
+        try:
+            rho_range = np.linspace(3e-6, 25e-6, 12)
+            effs=[]; ffs=[]; le=[]; lf=[]; lc=[]
+            for i, rm in enumerate(rho_range):
+                self._prog_update(f'Sweep {i+1}/12: rho = {rm*1e6:.1f}',
+                                  pct=(i+1)/12)
+                _,_,iv = S.calc_iv(rm,hf_b,wf_b,rc_b,rs,cf_b,DP,mode='tandem',npts=12)
+                vmpp_bias = iv.get('Vmpp_internal', iv['Vmpp'])
+                res = iv.get('_mpp_result') or S.solve(rm,hf_b,wf_b,rc_b,rs,vmpp_bias,cf_b,DP,mode='tandem')
+                loss = S.losses(res,rm,hf_b,wf_b,rc_b,rs,cf_b,DP,
+                                        Vmpp=iv['Vmpp'], Jmpp=iv['Jmpp'])
+                pe=loss['Pe']; pff_=loss['Pf_finger']; pfb_=loss['Pf_busbar']; pc=loss['Pc']
+                pf=pff_+pfb_
+                effs.append(iv['Eff']); ffs.append(iv['FF']); le.append(pe); lf.append(pf); lc.append(pc)
+        except _UserCancelled:
+            self._prog_close("Sweep cancelled.")
+            return
+        ru = rho_range * 1e6
+
+        ax1=self.fig.add_subplot(self.gs[0,0])
+        ax1.plot(ru,effs,'o-',color='#2c3e50',lw=2,ms=6)
+        ax1.axvline(bp[0]*1e6,color='#e74c3c',ls='--',lw=1.5,label=f'Before: {bp[0]*1e6:.1f}')
+        ax1.axvline(ap[0]*1e6,color='#27ae60',ls='--',lw=1.5,label=f'After: {ap[0]*1e6:.1f}')
+        # Interpolate and annotate Before/After Eff
+        eff_b_interp = np.interp(bp[0]*1e6, ru, effs)
+        eff_a_interp = np.interp(ap[0]*1e6, ru, effs)
+        ax1.plot(bp[0]*1e6, eff_b_interp, 'ro', ms=8, zorder=5)
+        ax1.plot(ap[0]*1e6, eff_a_interp, 'g^', ms=8, zorder=5)
+        ax1.annotate(f'{eff_b_interp:.2f}%', xy=(bp[0]*1e6, eff_b_interp),
+                    xytext=(5,8), textcoords='offset points', fontsize=7.5, fontweight='bold', color='#b71c1c')
+        ax1.annotate(f'{eff_a_interp:.2f}%', xy=(ap[0]*1e6, eff_a_interp),
+                    xytext=(5,8), textcoords='offset points', fontsize=7.5, fontweight='bold', color='#1b5e20')
+        ax1.set_xlabel('rho_bulk [uO*cm]'); ax1.set_ylabel(_t('eff_pct'))
+        ax1.set_title(_t('eff_vs_rho'),fontweight='bold'); ax1.legend(fontsize=8); ax1.grid(True,alpha=0.2)
+
+        ax2=self.fig.add_subplot(self.gs[0,1])
+        ax2.plot(ru,ffs,'s-',color='#8e44ad',lw=2,ms=6)
+        ax2.axvline(bp[0]*1e6,color='#e74c3c',ls='--',lw=1.5)
+        ax2.axvline(ap[0]*1e6,color='#27ae60',ls='--',lw=1.5)
+        ff_b_interp = np.interp(bp[0]*1e6, ru, ffs)
+        ff_a_interp = np.interp(ap[0]*1e6, ru, ffs)
+        ax2.plot(bp[0]*1e6, ff_b_interp, 'ro', ms=8, zorder=5)
+        ax2.plot(ap[0]*1e6, ff_a_interp, 'g^', ms=8, zorder=5)
+        ax2.annotate(f'{ff_b_interp:.2f}%', xy=(bp[0]*1e6, ff_b_interp),
+                    xytext=(5,8), textcoords='offset points', fontsize=7.5, fontweight='bold', color='#b71c1c')
+        ax2.annotate(f'{ff_a_interp:.2f}%', xy=(ap[0]*1e6, ff_a_interp),
+                    xytext=(5,8), textcoords='offset points', fontsize=7.5, fontweight='bold', color='#1b5e20')
+        ax2.set_xlabel('rho_bulk [uO*cm]'); ax2.set_ylabel(_t('ff_pct'))
+        ax2.set_title(_t('ff_vs_rho'),fontweight='bold'); ax2.grid(True,alpha=0.2)
+
+        ax3=self.fig.add_subplot(self.gs[0,2])
+        ax3.stackplot(ru,le,lf,lc,labels=['Emitter','Finger','Contact'],colors=['#3498db','#e74c3c','#f39c12'],alpha=0.8)
+        ax3.axvline(bp[0]*1e6,color='#e74c3c',ls='--',lw=1.5)
+        ax3.axvline(ap[0]*1e6,color='#27ae60',ls='--',lw=1.5)
+        ax3.set_xlabel('rho_bulk [uO*cm]'); ax3.set_ylabel('Loss [mW/cm2]')
+        ax3.set_title(_t('loss_vs_rho'),fontweight='bold'); ax3.legend(fontsize=7); ax3.grid(True,alpha=0.2)
+
+        self._refresh()
+        self._prog_close(f'Sweep done. 12 points: {ru[0]:.0f}~{ru[-1]:.0f}')
+
+
+
+    # ---------------------------------------------------------
+    # TAB: CONTOUR -- 2D sensitivity map
+    # ---------------------------------------------------------
+    def _tab_contour(self):
+        self._last_tab = self._tab_contour
+        self._clear_fig()
+        if not self._apply_grid_design():
+            return
+        if not self._apply_diode_params():
+            return
+        bp, ap = self._get_params()
+        if bp is None: return
+        rm_b,hf_b,wf_b,wb_b,cf_b,rc_b,rs = bp
+        self._prog_open(_t("contour_2d"))
+
+        # === SPEED OPTIMIZATION (v28) ===
+        # CONTOUR's purpose is to show rho_bulk × rho_c → Eff sensitivity map.
+        # Phase B (interlayer lateral R) and bifacial rear add solver cost (3N→5N+Nm DOF)
+        # but their effect on the SHAPE of the sensitivity map is negligible
+        # (~0.001% Eff offset, well below the rho_bulk effect of several %).
+        # We temporarily disable them during the sweep (then restore), giving ~7x speedup.
+        # Annotation values (BEFORE/AFTER markers) ARE computed with full Phase B/bifacial
+        # so the displayed efficiency numbers are accurate.
+        _saved_Rs_j = DP.Rs_junction
+        _saved_Rc_j = DP.Rc_junction
+        _saved_bif_gain = DP.bifacial_gain
+        _saved_rear_mode = GEO.rear_mode
+        DP.Rs_junction = 0.0   # Phase A only during sweep
+        DP.Rc_junction = 0.0
+        DP.bifacial_gain = 0.0
+        GEO.rear_mode = 'full_area'  # simpler solver path (3N+Nm DOF)
+        # Force solver rebuild with simplified config
+        try:
+            S._build(rm_b, hf_b, wf_b, rc_b, rs, cf_b, DP)
+        except Exception:
+            pass
+
+        try:
+            # 5×5 grid (was 6×6) — interpolated contour smooths the difference
+            rho_range = np.linspace(3e-6, 20e-6, 5)
+            rc_range = np.linspace(2e-3, 20e-3, 5)
+            eff_map = np.zeros((len(rc_range), len(rho_range)))
+            ff_map = np.zeros_like(eff_map)
+            total = len(rho_range)*len(rc_range); cnt = 0
+            for i, rc_v in enumerate(rc_range):
+                for j, rm_v in enumerate(rho_range):
+                    cnt += 1
+                    self._prog_update(f'Contour {cnt}/{total} (fast mode)...', pct=cnt/total)
+                    _,_,iv = S.calc_iv(rm_v, hf_b, wf_b, rc_v, rs, cf_b, DP, mode='tandem', npts=8)
+                    eff_map[i,j] = iv['Eff']
+                    ff_map[i,j] = iv['FF']
+        finally:
+            # Always restore original config (even if sweep failed)
+            DP.Rs_junction = _saved_Rs_j
+            DP.Rc_junction = _saved_Rc_j
+            DP.bifacial_gain = _saved_bif_gain
+            GEO.rear_mode = _saved_rear_mode
+            try:
+                S._build(rm_b, hf_b, wf_b, rc_b, rs, cf_b, DP)
+            except Exception:
+                pass
+
+        RHO, RC = np.meshgrid(rho_range*1e6, rc_range*1e3)
+        ax1 = self.fig.add_subplot(self.gs[0,:2])
+        cf1 = ax1.contourf(RHO, RC, eff_map, levels=20, cmap='RdYlGn')
+        self.fig.colorbar(cf1, ax=ax1, label='Eff [%]', shrink=0.8)
+        ax1.contour(RHO, RC, eff_map, levels=10, colors='k', linewidths=0.3, alpha=0.3)
+        # Before/After annotation: use FULL solver (Phase B + bifacial restored above)
+        # so user sees accurate efficiency at their actual operating point.
+        self._prog_update('Computing accurate B/A markers...', pct=0.95)
+        _,_,iv_cb = S.calc_iv(bp[0],hf_b,wf_b,bp[5],rs,cf_b,DP,mode='tandem',npts=8)
+        _,_,iv_ca = S.calc_iv(ap[0],hf_b,wf_b,ap[5],rs,cf_b,DP,mode='tandem',npts=8)
+        ax1.plot(bp[0]*1e6, bp[5]*1e3, 'ro', ms=10, label='Before')
+        ax1.annotate(f'{iv_cb["Eff"]:.2f}%', xy=(bp[0]*1e6, bp[5]*1e3),
+                    xytext=(8, 8), textcoords='offset points', fontsize=8,
+                    fontweight='bold', color='#b71c1c',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#e74c3c', alpha=0.9))
+        ax1.plot(ap[0]*1e6, ap[5]*1e3, 'g^', ms=10, label='After')
+        ax1.annotate(f'{iv_ca["Eff"]:.2f}%', xy=(ap[0]*1e6, ap[5]*1e3),
+                    xytext=(8, 8), textcoords='offset points', fontsize=8,
+                    fontweight='bold', color='#1b5e20',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#27ae60', alpha=0.9))
+        ax1.set_xlabel('rho_bulk [uOhm*cm]'); ax1.set_ylabel('rho_c [mOhm*cm2]')
+        ax1.set_title(_t('eff_contour') + '\n[fast mode: Phase A only — markers use full solver]',
+                      fontweight='bold', fontsize=10)
+        ax1.legend(fontsize=8)
+        ax2 = self.fig.add_subplot(self.gs[0,2])
+        cf2 = ax2.contourf(RHO, RC, ff_map, levels=15, cmap='YlOrRd_r')
+        self.fig.colorbar(cf2, ax=ax2, label='FF [%]', shrink=0.8)
+        ax2.plot(bp[0]*1e6, bp[5]*1e3, 'ro', ms=8)
+        ax2.annotate(f'{iv_cb["FF"]:.1f}%', xy=(bp[0]*1e6, bp[5]*1e3),
+                    xytext=(6, 6), textcoords='offset points', fontsize=7,
+                    fontweight='bold', color='#b71c1c',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#e74c3c', alpha=0.9))
+        ax2.plot(ap[0]*1e6, ap[5]*1e3, 'g^', ms=8)
+        ax2.annotate(f'{iv_ca["FF"]:.1f}%', xy=(ap[0]*1e6, ap[5]*1e3),
+                    xytext=(6, 6), textcoords='offset points', fontsize=7,
+                    fontweight='bold', color='#1b5e20',
+                    bbox=dict(boxstyle='round,pad=0.2', fc='white', ec='#27ae60', alpha=0.9))
+        ax2.set_xlabel('rho_bulk'); ax2.set_ylabel('rho_c')
+        ax2.set_title(_t('ff_contour'), fontweight='bold')
+        ax3 = self.fig.add_subplot(self.gs[1,:])
+        ax3.axis('off'); ax3.set_xlim(0,1); ax3.set_ylim(0,1)
+        imax = np.unravel_index(np.argmax(eff_map), eff_map.shape)
+        opt_rc = rc_range[imax[0]]*1e3; opt_rho = rho_range[imax[1]]*1e6
+        opt_eff = eff_map[imax]; opt_ff = ff_map[imax]
+        ax3.text(0.5, 0.85, _t('sensitivity'), ha='center',
+                fontsize=14, fontweight='bold', color=CLR_ACCENT, transform=ax3.transAxes)
+        ax3.text(0.5, 0.68, f'Optimal: rho_bulk = {opt_rho:.1f} uOhm*cm,  rho_c = {opt_rc:.1f} mOhm*cm2',
+                ha='center', fontsize=11, transform=ax3.transAxes)
+        ax3.text(0.5, 0.53, f'Peak Eff = {opt_eff:.3f}%   |   FF = {opt_ff:.2f}%',
+                ha='center', fontsize=13, fontweight='bold', color='#2E7D32', transform=ax3.transAxes)
+        ax3.text(0.5, 0.35, f'Before: rho={bp[0]*1e6:.2f}, rc={bp[5]*1e3:.1f}  ->  Eff={iv_cb["Eff"]:.3f}%, FF={iv_cb["FF"]:.2f}%',
+                ha='center', fontsize=10, color='#c62828', fontweight='bold', transform=ax3.transAxes)
+        ax3.text(0.5, 0.22, f'After:  rho={ap[0]*1e6:.2f}, rc={ap[5]*1e3:.1f}  ->  Eff={iv_ca["Eff"]:.3f}%, FF={iv_ca["FF"]:.2f}%',
+                ha='center', fontsize=10, color='#1b5e20', fontweight='bold', transform=ax3.transAxes)
+        deff_c = iv_ca['Eff'] - iv_cb['Eff']
+        ax3.text(0.5, 0.08, f'dEff = {deff_c:+.4f}%  (hot pressing shifts to higher Eff region)',
+                ha='center', fontsize=10, fontweight='bold',
+                color='#27ae60' if deff_c > 0 else '#e74c3c', transform=ax3.transAxes)
+        self._refresh()
+        self._prog_close(f'Contour done. Optimal: rho={opt_rho:.1f}, rc={opt_rc:.1f} -> Eff={opt_eff:.3f}%')
+
+
+    # ---------------------------------------------------------
+    # TAB: DESIGN -- Electrode Visualization (v28.10, Griddler-style)
+    # ---------------------------------------------------------
+    def _tab_design(self):
+        """v28.10 (박사님 지시 2026.05.21): Visualize electrode patterns.
+        Front + Rear grid + contact points, Griddler-style.
+        """
+        self._last_tab = self._tab_design
+        self._clear_fig()
+        self._apply_grid_design()  # make sure GEO is current
+
+        from matplotlib.patches import Rectangle, Circle, Polygon as MplPolygon
+        # 2x2 grid: front design (top-left), rear design (top-right),
+        # geometry table (bottom-left), info text (bottom-right)
+        self.gs = self.fig.add_gridspec(2, 2, hspace=0.42, wspace=0.25)
+
+        W_mm = GEO.W * 10  # cm -> mm
+        H_mm = GEO.H * 10
+
+        # wafer outline polygon (mm)
+        wafer_outline = GEO.wafer_outline_xy_mm()
+
+        # === FRONT PATTERN ===
+        ax1 = self.fig.add_subplot(self.gs[0, 0])
+        ax1.set_xlim(-W_mm * 0.05, W_mm * 1.05)
+        ax1.set_ylim(-H_mm * 0.05, H_mm * 1.05)
+        ax1.set_aspect('equal')
+        # Wafer outline (square / pseudo-square / circular)
+        ax1.add_patch(MplPolygon(wafer_outline,
+                                  fill=True, fc='#E3F2FD', ec='#1565C0', lw=1.5, zorder=1))
+
+        # finger와 busbar를 다른 색으로 분리 표시
+        # BB visibility 강화 — finger 50개+에 묻히지 않도록
+        # finger를 실제 폭·방향대로 Rectangle로 그림.
+        #   기존엔 finger를 항상 세로 중심선(Line2D)으로만 그려서 (a) 폭이 안
+        #   보이고 (b) 가로 finger·임의 DXF 패턴을 표현 못 했음. 이제 각 rect를
+        #   그 방향(가로/세로 자동) 그대로 그리되, 화면에서 1픽셀 이하로 가늘어
+        #   안 보이는 finger는 '짧은 축'만 최소 가시 폭으로 부풀려 그린다
+        #   (중심선 기준 대칭 확장 → 위치·길이는 정확, 폭만 보이게). FEM 계산은
+        #   실제 폭을 쓰므로 영향 없음; 이건 표시 전용.
+        from matplotlib.patches import Patch as _Patch
+        from matplotlib.lines import Line2D as _Line2D
+        fingers, busbars, pads = GEO.metal_rects_front_split()
+        # v28.17 (박사님 지시): finger/busbar를 "실제 폭" 그대로 그린다 (CAD 파일처럼).
+        #   이전엔 _min_vis_mm로 가는 finger를 부풀려 그려서 50um finger가 1mm
+        #   busbar보다 굵게 보이는 등 실제 폭 판단이 불가능했음. 이제 부풀림을 제거,
+        #   실제 폭 Rectangle로 그리되 채움색과 같은 색의 얇은 edge(lw=0.6)를 줘서
+        #   sub-pixel 폭 finger도 올바른 색의 hairline으로 보이게 한다(=CAD 뷰어 방식).
+        #   폭이 충분한 부재는 그대로 채워지므로 finger(가늘다)·busbar(굵다) 비율이
+        #   실제와 일치. FEM 계산은 항상 실제 폭을 쓰므로 영향 없음(표시 전용).
+        for rx, ry, rw, rh in fingers:
+            ax1.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
+                                     fc='#37474F', ec='#37474F', lw=0.6,
+                                     alpha=0.9, zorder=3))
+        # Busbars: 진한 주황 + 굵은 검은 outline (v28.12 강화)
+        for rx, ry, rw, rh in busbars:
+            ax1.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
+                                     fc='#E65100', ec='#000000', lw=1.5,
+                                     alpha=1.0, zorder=5))
+        # Pads (legacy, 보통 안 보임)
+        for rx, ry, rw, rh in pads:
+            ax1.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
+                                     fc='#5D4037', ec='none', alpha=0.85, zorder=4))
+
+        # v28.55: 광학 폭 오버레이 (T > 0일 때만). 물리 폭 사각형 위에 광학 폭을
+        #   노란 점선으로 겹쳐 그려 T가 실제로 반영되고 있음을 눈으로 확인시킨다.
+        #   v28.54에서 막은 extraction_method처럼 "GUI에 있는데 아무 일도 안 하는"
+        #   상태를 만들지 않기 위한 장치다. 표시 전용 — FEM은 항상 실제 폭을 쓴다.
+        _t_f = GEO.front.optical_transparency_f
+        _t_b = GEO.front.optical_transparency_b
+        if _t_f > 0:
+            for rx, ry, rw, rh in fingers:
+                h = rh * (1.0 - _t_f)
+                ax1.add_patch(Rectangle((rx * 10, (ry + (rh - h) / 2) * 10),
+                                         rw * 10, h * 10,
+                                         fc='none', ec='#FFEB3B', lw=0.8,
+                                         ls='--', zorder=6))
+        if _t_b > 0:
+            for rx, ry, rw, rh in busbars:
+                w = rw * (1.0 - _t_b)
+                ax1.add_patch(Rectangle(((rx + (rw - w) / 2) * 10, ry * 10),
+                                         w * 10, rh * 10,
+                                         fc='none', ec='#FFEB3B', lw=1.2,
+                                         ls='--', zorder=6))
+
+        # Contact/probe points (v28.12: zorder 강화)
+        if GEO.front_terminals:
+            tx = [t[0] * 10 for t in GEO.front_terminals]
+            ty = [t[1] * 10 for t in GEO.front_terminals]
+            ax1.scatter(tx, ty, s=80, c='#E53935', marker='o',
+                        edgecolors='white', linewidths=1.5, zorder=6)
+
+        # 명확한 범례 (Finger / Busbar / Probe 각각 표시)
+        # for an imported DXF rect pattern, n_f/n_b are meaningless
+        # (H-pattern params); show the actual imported rect counts instead.
+        _is_dxf = getattr(GEO, '_dxf_finger_rects', None) is not None
+        if _is_dxf:
+            _nf_disp = len(fingers); _nb_disp = len(busbars)
+            _wf_lbl = ''; _wb_lbl = ''
+        else:
+            _nf_disp = GEO.n_f; _nb_disp = GEO.n_b
+            _wf_lbl = f'  ({GEO.w_f*1e4:.0f}μm)'; _wb_lbl = f'  ({GEO.w_b*1e4:.0f}μm)'
+        legend_elements = [
+            _Patch(facecolor='#37474F', edgecolor='none', alpha=0.85,
+                   label=f'Finger × {_nf_disp}{_wf_lbl}'),
+            _Patch(facecolor='#E65100', edgecolor='#000000', linewidth=1.5,
+                   label=f'Busbar × {_nb_disp}{_wb_lbl}'),
+        ]
+        if GEO.front_terminals:
+            legend_elements.append(
+                _Line2D([0], [0], marker='o', color='w',
+                        markerfacecolor='#E53935', markeredgecolor='white',
+                        markersize=8, markeredgewidth=1.5,
+                        label=f'Probe × {len(GEO.front_terminals)}')
+            )
+        ax1.legend(handles=legend_elements, loc='upper center',
+                   bbox_to_anchor=(0.5, -0.16), ncol=3, fontsize=7,
+                   framealpha=0.92, edgecolor='#CFD8DC')
+
+        ax1.set_xlabel('x [mm]', fontsize=9)
+        ax1.set_ylabel('y [mm]', fontsize=9)
+        # include pattern_style in title
+        # DXF imports show rect counts, not H-pattern F/BB.
+        if _is_dxf:
+            ax1.set_title(
+                f'Front Pattern: {len(fingers)} finger + {len(busbars)} busbar rects  [DXF import]',
+                fontweight='bold', fontsize=11, color='#1565C0')
+        else:
+            _ps_disp = {"h_pattern": "H-pattern", "shingled": "Shingled / Fork",
+                        "tapered_h": "Tapered H"}.get(GEO.front.pattern_style, "H-pattern")
+            ax1.set_title(f'Front Pattern: {GEO.n_f}F + {GEO.n_b}BB  [{_ps_disp}]',
+                          fontweight='bold', fontsize=11, color='#1565C0')
+        ax1.grid(True, alpha=0.2)
+        ax1.tick_params(labelsize=8)
+
+        # === REAR PATTERN ===
+        ax2 = self.fig.add_subplot(self.gs[0, 1])
+        ax2.set_xlim(-W_mm * 0.05, W_mm * 1.05)
+        ax2.set_ylim(-H_mm * 0.05, H_mm * 1.05)
+        ax2.set_aspect('equal')
+        # Rear outline (same wafer shape)
+        ax2.add_patch(MplPolygon(wafer_outline,
+                                  fill=True, fc='#FFF3E0', ec='#E65100', lw=1.5, zorder=1))
+        if GEO.rear_mode == 'full_area' or GEO.rear is None:
+            # Full-area metal — fill cell with light hatching
+            ax2.add_patch(Rectangle((0, 0), W_mm, H_mm,
+                                     fc='#FFB74D', ec='none', alpha=0.40, zorder=2,
+                                     hatch='///'))
+            ax2.text(W_mm * 0.5, H_mm * 0.5, 'FULL-AREA METAL\n(monofacial)',
+                     ha='center', va='center', fontsize=11, fontweight='bold',
+                     color='#BF360C')
+            rear_title = 'Rear: Full-Area Metal'
+        else:
+            # rear finger/busbar 분리 (bifacial)
+            r_fingers, r_busbars = GEO.metal_rects_rear_split()
+            # v28.17: rear finger도 실제 폭 Rectangle로 (front과 동일 방식)
+            for rx, ry, rw, rh in (r_fingers or []):
+                ax2.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
+                                         fc='#263238', ec='#263238', lw=0.6,
+                                         alpha=0.9, zorder=3))
+            # Rear busbars: orange (front과 통일)
+            for rx, ry, rw, rh in (r_busbars or []):
+                ax2.add_patch(Rectangle((rx * 10, ry * 10), rw * 10, rh * 10,
+                                         fc='#E65100', ec='#3E2723', lw=0.5, alpha=0.95, zorder=4))
+            # Rear probe points (purple square)
+            if hasattr(GEO, 'rear_terminals') and GEO.rear_terminals:
+                tx = [t[0] * 10 for t in GEO.rear_terminals]
+                ty = [t[1] * 10 for t in GEO.rear_terminals]
+                ax2.scatter(tx, ty, s=80, c='#7B1FA2', marker='s',
+                            edgecolors='white', linewidths=1.5, zorder=5)
+                rear_legend = [
+                    _Patch(facecolor='#263238', edgecolor='#263238', alpha=0.9,
+                           label=f'Finger × {GEO.rear.n_f}'),
+                    _Patch(facecolor='#E65100', edgecolor='#3E2723', linewidth=0.5,
+                           label=f'Busbar × {GEO.rear.n_b}'),
+                    _Line2D([0], [0], marker='s', color='w',
+                            markerfacecolor='#7B1FA2', markeredgecolor='white',
+                            markersize=8, markeredgewidth=1.5,
+                            label=f'Probe × {len(GEO.rear_terminals)}'),
+                ]
+                ax2.legend(handles=rear_legend, loc='upper center',
+                           bbox_to_anchor=(0.5, -0.16), ncol=3, fontsize=7,
+                           framealpha=0.92, edgecolor='#CFD8DC')
+            r = GEO.rear
+            rear_title = f'Rear Pattern: {r.n_f}F + {r.n_b}BB (bifacial)'
+        ax2.set_xlabel('x [mm]', fontsize=9)
+        ax2.set_ylabel('y [mm]', fontsize=9)
+        ax2.set_title(rear_title, fontweight='bold', fontsize=11, color='#E65100')
+        ax2.grid(True, alpha=0.2)
+        ax2.tick_params(labelsize=8)
+
+        # === GEOMETRY TABLE ===
+        ax3 = self.fig.add_subplot(self.gs[1, 0]); ax3.axis('off')
+        fg_len_mm = (GEO.fg_x_range[1] - GEO.fg_x_range[0]) * 10
+        bb_len_mm = (GEO.bb_y_range[1] - GEO.bb_y_range[0]) * 10
+        # current BEFORE/AFTER widths
+        try:
+            bp, ap = self._get_params()
+            wf_b_um = bp[2] * 1e4
+            wf_a_um = ap[2] * 1e4
+            wb_b_um = bp[3] * 1e4
+            wb_a_um = ap[3] * 1e4
+            sh_b = GEO.optical_shading_fraction(bp[2], bp[3]) * 100
+            sh_a = GEO.optical_shading_fraction(ap[2], ap[3]) * 100
+        except Exception:
+            wf_b_um = wf_a_um = GEO.w_f * 1e4
+            wb_b_um = wb_a_um = GEO.w_b * 1e4
+            sh_b = sh_a = GEO.optical_shading_fraction() * 100
+
+        finger_pitch_mm = GEO.front.get_finger_pitch_mm(GEO.W, GEO.H)
+        rows = [
+            ['Parameter', 'Before', 'After'],
+            ['Cell [mm × mm]', f'{W_mm:.1f} × {H_mm:.1f}', f'{W_mm:.1f} × {H_mm:.1f}'],
+            ['N Fingers', f'{GEO.n_f}', f'{GEO.n_f}'],
+            ['N Busbars', f'{GEO.n_b}', f'{GEO.n_b}'],
+            ['Finger pitch [mm]', f'{finger_pitch_mm:.2f}', f'{finger_pitch_mm:.2f}'],
+            ['Finger W [μm]', f'{wf_b_um:.1f}', f'{wf_a_um:.1f}'],
+            ['Busbar W [μm]', f'{wb_b_um:.1f}', f'{wb_a_um:.1f}'],
+            ['Finger length [mm]', f'{fg_len_mm:.1f}', f'{fg_len_mm:.1f}'],
+            ['Busbar length [mm]', f'{bb_len_mm:.1f}', f'{bb_len_mm:.1f}'],
+            ['Shading [%]', f'{sh_b:.2f}', f'{sh_a:.2f}'],
+        ]
+        self._draw_table(ax3, rows, [0.42, 0.28, 0.28])
+        ax3.set_title('Geometry Summary', fontweight='bold', fontsize=11)
+
+        # === MESH VIEW: how the current mesh was formed (Griddler-style) ===
+        # Draws the actual constrained-Delaunay triangulation of the CURRENT
+        # geometry (rebuilt by _apply_grid_design above) with metal nodes
+        # highlighted, so the tangent/perpendicular refinement around the
+        # fingers/busbars is visible. Node/element counts sit in the title,
+        # like Griddler's meshing display.
+        ax4 = self.fig.add_subplot(self.gs[1, 1])
+        mt = getattr(self, "_mesh_tangent_var", None)
+        mp = getattr(self, "_mesh_perp_var", None)
+        mt_v = mt.get() if mt is not None else "Med"
+        mp_v = mp.get() if mp is not None else "Med"
+        n_nodes = len(pts) if pts is not None else 0
+        n_tri = len(tri.simplices) if tri is not None else 0
+        _mesh_title_color = '#455A64'
+        n_probe = (GEO.front.n_probe_points if GEO.front.n_probe_points > 0
+                   else GEO.front.n_terminals)
+        try:
+            # v28.17: Griddler-style region shading. 각 삼각형을 "metal 접촉
+            #   여부"로 분류해 metal/계면 영역은 주황(촘촘), passivated bulk은
+            #   하늘색(성김)으로 칠한다. PolyCollection edge가 곧 메시 선이라
+            #   영역 구분 + 메시 구조가 한 번에 보임(노드 마커는 dense mesh에서
+            #   영역색을 가려서 제거).
+            from matplotlib.collections import PolyCollection as _PolyColl
+            from matplotlib.patches import Patch as _MeshPatch
+            import matplotlib.colors as _mcolors
+            _simp = tri.simplices
+            _metal_node = (ism.copy() if ism is not None
+                           else np.zeros(len(pts), dtype=bool))
+            if isf is not None: _metal_node |= isf
+            if isb is not None: _metal_node |= isb
+            _tri_metal = _metal_node[_simp].any(axis=1)
+            _verts = pts[_simp] * 10.0
+            _fc = np.empty((len(_simp), 4))
+            _fc[_tri_metal] = _mcolors.to_rgba('#FFCC80')   # metal/interface (dense)
+            _fc[~_tri_metal] = _mcolors.to_rgba('#E8F0FE')  # passivated bulk (coarse)
+            ax4.add_collection(_PolyColl(_verts, facecolors=_fc,
+                                         edgecolors='#5b6b7a', linewidths=0.2,
+                                         zorder=1))
+            ax4.set_xlim(pts[:, 0].min() * 10 - 1, pts[:, 0].max() * 10 + 1)
+            ax4.set_ylim(pts[:, 1].min() * 10 - 1, pts[:, 1].max() * 10 + 1)
+            ax4.set_aspect('equal', adjustable='box')
+            ax4.set_xlabel('x [mm]', fontsize=9)
+            ax4.set_ylabel('y [mm]', fontsize=9)
+            ax4.tick_params(labelsize=8)
+            _md = mesh_distribution_metrics(pts, GEO)
+            if (_md['MirrorNodeHitX'] < 0.99 or _md['MirrorNodeHitY'] < 0.99
+                    or abs(_md['CentroidBiasX_um']) > 25.0
+                    or abs(_md['CentroidBiasY_um']) > 25.0):
+                _mesh_title_color = '#C62828'
+            ax4.legend(handles=[
+                _MeshPatch(fc='#FFCC80', ec='#5b6b7a', lw=0.4, label='metal (dense)'),
+                _MeshPatch(fc='#E8F0FE', ec='#5b6b7a', lw=0.4, label='bulk (coarse)'),
+            ], loc='upper center', bbox_to_anchor=(0.5, -0.20), ncol=2,
+               fontsize=7, framealpha=0.92, edgecolor='#CFD8DC')
+            # v28.17 fix: 메쉬 위에는 아무 박스도 올리지 않는다(셀 메쉬 전체가
+            #   가려지지 않게). 레벨/메타정보는 제목 줄로 이동.
+        except Exception as _mesh_e:
+            ax4.axis('off')
+            ax4.text(0.5, 0.5, f'(mesh view unavailable:\n{_mesh_e})',
+                     transform=ax4.transAxes, ha='center', va='center',
+                     fontsize=9, color='#B0BEC5')
+        ax4.set_title(f'Mesh: {n_nodes:,} nodes  |  {n_tri:,} elements   ·   T/P {mt_v}/{mp_v}',
+                      fontweight='bold', fontsize=10.5, color=_mesh_title_color)
+
+        self._refresh()
+        self._status(f"DESIGN view: {GEO.n_f}F+{GEO.n_b}BB, mesh T={mt_v}/P={mp_v}, {n_nodes} nodes")
+
+
+    # ---------------------------------------------------------
+    # TAB: MODEL -- Paginated Methodology Viewer (KR/EN)
+    # ---------------------------------------------------------
+    def _tab_model(self):
+        self._status("Opening MODEL viewer...")
+        state = {'pg': 0, 'lang': 'EN'}
+
+        mwin = ctk.CTkToplevel(self)
+        mwin.title("GEDOS \u2014 Model & Methodology")
+        mwin.geometry("1300x850")
+        self._raise_once(mwin)  # v28.30: \ub730 \ub54c\ub9cc \uc55e\uc73c\ub85c, \uadf8 \ub4a4 \ub2e4\ub978 \ucc3d\uc5d0 \uc591\ubcf4
+
+        # --- PAGE TITLES ---
+        _TITLES_EN = ['Overview', 'Architecture', 'FEM Equations',
+                      'Two-Diode Model', '2T Tandem', 'Newton-Raphson', 'Mesh & Conv.']
+        _TITLES_KR = ['\uac1c\uc694', '\uad6c\uc870', 'FEM \ubc29\uc815\uc2dd',
+                      'Two-Diode \ubaa8\ub378', '2T \ud0e0\ub364', 'Newton-Raphson', '\uba54\uc2dc & \uc218\ub834']
+
+        # --- LAYOUT: sidebar (left) + canvas (right) + nav (bottom) ---
+        nav = ctk.CTkFrame(mwin, fg_color=CLR_TAB_BG, height=48)
+        nav.pack(fill="x", side="bottom"); nav.pack_propagate(False)
+
+        body = ctk.CTkFrame(mwin, fg_color="#F8FAFC")
+        body.pack(fill="both", expand=True)
+
+        # LEFT SIDEBAR TOC
+        sidebar = ctk.CTkFrame(body, fg_color="white", width=170, corner_radius=0,
+                                border_width=1, border_color=CLR_CARD_BD)
+        sidebar.pack(side="left", fill="y"); sidebar.pack_propagate(False)
+
+        # v28.20 fix: the INDEX label previously embedded the book emoji written
+        # as a lone surrogate pair, which can never encode to UTF-8 — Tk raised
+        # "surrogates not allowed" and crashed the moment this label was built.
+        # Use a BMP-safe ASCII label for cross-platform safety (Windows/macOS).
+        ctk.CTkLabel(sidebar, text="INDEX", font=ctk.CTkFont(size=12, weight="bold"),
+                     text_color=CLR_ACCENT).pack(pady=(12, 8))
+
+        toc_btns = []
+
+        # RIGHT: figure canvas
+        fig_frame = ctk.CTkFrame(body, fg_color="white")
+        fig_frame.pack(side="left", fill="both", expand=True)
+
+        mfig = Figure(figsize=(11, 8.5), facecolor='white', dpi=100)
+        mcanvas = FigureCanvasTkAgg(mfig, master=fig_frame)
+        mcanvas.get_tk_widget().pack(fill="both", expand=True)
+
+        # ===================== PAGE DEFINITIONS =====================
+
+        _MPAGES = [self._model_p1, self._model_p2, self._model_p3, self._model_p4, self._model_p5, self._model_p6, self._model_p7]
+        page_label = ctk.CTkLabel(nav, text="1/7", font=ctk.CTkFont(size=12, weight="bold"), text_color=CLR_TEXT)
+
+        def draw_m(pg=None):
+            if pg is not None: state['pg'] = max(0, min(pg, len(_MPAGES)-1))
+            mfig.clear()
+            _MPAGES[state['pg']](mfig, state['lang'])
+            page_label.configure(text=f"{state['pg']+1} / {len(_MPAGES)}")
+            # Update sidebar highlight
+            titles = _TITLES_KR if state['lang']=='KR' else _TITLES_EN
+            for i, tb in enumerate(toc_btns):
+                tb.configure(text=f"  {i+1}. {titles[i]}",
+                    fg_color=(CLR_ACCENT if i==state['pg'] else "transparent"),
+                    text_color=("white" if i==state['pg'] else CLR_TEXT))
+            # Update nav dots
+            for i, pb in enumerate(pg_btns):
+                pb.configure(fg_color=(CLR_ACCENT if i==state['pg'] else "white"),
+                             text_color=("white" if i==state['pg'] else "#64748B"),
+                             border_color=(CLR_ACCENT if i==state['pg'] else "#CBD5E1"))
+            mcanvas.draw()
+
+        def prev_m(): draw_m(state['pg']-1)
+        def next_m(): draw_m(state['pg']+1)
+        def toggle_lang():
+            state['lang'] = 'KR' if state['lang']=='EN' else 'EN'
+            lang_btn.configure(text=f"Lang: {state['lang']}")
+            draw_m()
+
+        # Build sidebar TOC buttons
+        for i in range(len(_MPAGES)):
+            def _mk_toc(idx):
+                def _fn(): draw_m(idx)
+                return _fn
+            tb = ctk.CTkButton(sidebar, text=f"  {i+1}. {_TITLES_EN[i]}",
+                               font=ctk.CTkFont(size=11), anchor="w",
+                               fg_color="transparent", hover_color="#E2E8F0",
+                               text_color=CLR_TEXT, corner_radius=4,
+                               height=34, command=_mk_toc(i))
+            tb.pack(fill="x", padx=6, pady=1)
+            toc_btns.append(tb)
+
+        # Nav bar buttons
+        bp = ctk.CTkButton(nav, text="<", width=36, height=30, fg_color="#94A3B8",
+                    hover_color="#64748B", font=ctk.CTkFont(size=14), command=prev_m)
+        bp.pack(side="left", padx=(8,3), pady=8)
+        pg_btns = []
+        for i in range(len(_MPAGES)):
+            def _mk(idx):
+                def _fn(): draw_m(idx)
+                return _fn
+            pb = ctk.CTkButton(nav, text=str(i+1), width=28, height=26, fg_color="white",
+                               hover_color="#E2E8F0", text_color="#64748B", border_width=1,
+                               border_color="#CBD5E1", font=ctk.CTkFont(size=10, weight="bold"),
+                               corner_radius=6, command=_mk(i))
+            pb.pack(side="left", padx=1, pady=8); pg_btns.append(pb)
+        page_label.pack(side="left", padx=(6,3))
+        bn = ctk.CTkButton(nav, text=">", width=36, height=30, fg_color="#94A3B8",
+                    hover_color="#64748B", font=ctk.CTkFont(size=14), command=next_m)
+        bn.pack(side="left", padx=(3,8), pady=8)
+        lang_btn = ctk.CTkButton(nav, text="Lang: EN", width=80, height=30, fg_color="#1565C0",
+                       hover_color="#0D47A1", font=ctk.CTkFont(size=11, weight="bold"), command=toggle_lang)
+        lang_btn.pack(side="right", padx=10, pady=8)
+
+        mwin._refs = [mfig, mcanvas, bp, bn, lang_btn, page_label, state] + pg_btns + toc_btns
+        def on_key(e):
+            if e.keysym in ('Left','a','A'): prev_m()
+            elif e.keysym in ('Right','d','D'): next_m()
+            elif e.keysym in ('1','2','3','4','5','6','7'): draw_m(int(e.keysym)-1)
+            elif e.keysym in ('l','L'): toggle_lang()
+        mwin.bind('<Key>', on_key)
+        _st = {'t': 0}
+        def on_scroll(event):
+            import time as _t
+            now = _t.time()
+            if now - _st['t'] < 0.15: return "break"
+            _st['t'] = now
+            if hasattr(event,'delta') and event.delta!=0:
+                prev_m() if event.delta>0 else next_m()
+            elif hasattr(event,'num'):
+                prev_m() if event.num==4 else next_m()
+            return "break"
+        cw = mcanvas.get_tk_widget()
+        cw.bind('<MouseWheel>', on_scroll); cw.bind('<Button-4>', on_scroll); cw.bind('<Button-5>', on_scroll)
+        mwin.focus_set()
+        draw_m(0)
+        self._status("MODEL viewer: Scroll / Arrow / L=lang")
+
+
+    # ---------------------------------------------------------
+    # LOAD EXP I-V
+    # ---------------------------------------------------------
+    # ---------------------------------------------------------
+    # MODEL VIEWER PAGES (extracted from _tab_model for clarity)
+    # ---------------------------------------------------------
+    def _model_hdr(self, f, title_en, title_kr, pg, total, lang):
+        ax = f.add_axes([0, 0.91, 1, 0.09]); ax.axis('off')
+        ax.add_patch(Rectangle((0,0), 1, 1, transform=ax.transAxes, fc=CLR_HEADER, ec='none'))
+        t = title_kr if lang == 'KR' else title_en
+        ax.text(0.03, 0.5, t, va='center', fontsize=18, fontweight='bold',
+                color='white', transform=ax.transAxes)
+        ax.text(0.97, 0.5, f'{pg}/{total}  [{lang}]', va='center', ha='right',
+                fontsize=10, color='#64748B', transform=ax.transAxes)
+
+    def _model_card(self, ax, x, y, w, h, title, body_lines, title_color=CLR_ACCENT, fc='#F8FAFC', ec=CLR_CARD_BD):
+        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle='round,pad=0.008',
+                     fc=fc, ec=ec, lw=1, transform=ax.transAxes))
+        ax.text(x+0.02, y+h-0.025, title, fontsize=9.5, fontweight='bold',
+                color=title_color, transform=ax.transAxes)
+        dy = 0.035
+        for i, line in enumerate(body_lines):
+            ax.text(x+0.02, y+h-0.055-i*dy, line, fontsize=8, color='#444',
+ transform=ax.transAxes)
+
+    def _model_p1(self, f, lang):
+        self._model_hdr(f, 'What is GEDOS?', 'GEDOS\ub780 \ubb34\uc5c7\uc778\uac00?', 1, 7, lang)
+        ax = f.add_axes([0, 0, 1, 0.91]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
+        ax.text(0.5, 0.95, 'Grid Electrode Design Optimization Simulator',
+                ha='center', fontsize=12, color='#64748B', transform=ax.transAxes)
+        if lang == 'EN':
+            cards = [
+                (0.74, 'THE PROBLEM', [
+                    'Screen-printed Ag electrodes on perovskite/Si tandem cells',
+                    'suffer from resistive losses in emitter, finger, and contact.',
+                    'How much efficiency can we gain via hot pressing?']),
+                (0.54, 'OUR APPROACH', [
+                    'GEDOS models the front surface as TWO coupled layers:',
+                    '  (1) Emitter/TCO layer  --  lateral photocurrent (R_sheet)',
+                    '  (2) Metal electrode layer  --  finger/busbar collection (R_line)',
+                    'Connected by contact resistance (rho_c) at every metal node.']),
+                (0.34, 'THE METHOD', [
+                    'Galerkin FEM on constrained Delaunay triangular mesh.',
+                    'KCL at each node + two-diode model per subcell.',
+                    'Newton-Raphson nonlinear solver.']),
+                (0.14, 'THE OUTPUT', [
+                    'I-V curve, loss decomposition, FF waterfall, parameter sweeps,',
+                    'voltage/current maps. Before vs After comparison for hot pressing.']),
+            ]
+        else:
+            cards = [
+                (0.74, '\ubb38\uc81c \uc815\uc758', [
+                    '\ud398\ub85c\ube0c\uc2a4\uce74\uc774\ud2b8/Si \ud0e0\ub364 \uc140\uc758 \uc2a4\ud06c\ub9b0 \ud504\ub9b0\ud305 Ag \uc804\uadf9\uc740',
+                    '\uc5d0\ubbf8\ud130, \ud551\uac70, \uc811\ucd09\uc5d0\uc11c \uc800\ud56d\uc131 \uc804\ub825\uc190\uc2e4\uc774 \ubc1c\uc0dd\ud569\ub2c8\ub2e4.',
+                    '\ud56b \ud504\ub808\uc2f1\uc73c\ub85c \uc5bc\ub9c8\ub098 \ud6a8\uc728\uc744 \ub192\uc77c \uc218 \uc788\uc744\uae4c\uc694?']),
+                (0.54, '\uc811\uadfc \ubc29\ubc95', [
+                    'GEDOS\ub294 \uc804\uba74\uc744 2\uac1c \uacb0\ud569 \ub808\uc774\uc5b4\ub85c \ubaa8\ub378\ub9c1:',
+                    '  (1) \uc5d0\ubbf8\ud130/TCO \uce35 -- \uc218\ud3c9 \uad11\uc804\ub958 (R_sheet)',
+                    '  (2) \uae08\uc18d \uc804\uadf9 \uce35 -- \ud551\uac70/\ubc84\uc2a4\ubc14 \uc804\ub958 \uc218\uc9d1 (R_line)',
+                    '\ubaa8\ub4e0 \uae08\uc18d \ub178\ub4dc\uc5d0\uc11c \uc811\ucd09\uc800\ud56d(rho_c)\uc73c\ub85c \uc5f0\uacb0.']),
+                (0.34, '\ud574\uc11d \ubc29\ubc95', [
+                    'Constrained Delaunay \uc0bc\uac01\ud615 \uba54\uc2dc + Galerkin FEM.',
+                    '\uac01 \ub178\ub4dc KCL + Two-diode \ubaa8\ub378.',
+                    'Newton-Raphson \ube44\uc120\ud615 \ud480\uc774.']),
+                (0.14, '\ucd9c\ub825', [
+                    'I-V \uace1\uc120, \uc804\ub825\uc190\uc2e4 \ubd84\ud574, FF waterfall, \ud30c\ub77c\ubbf8\ud130 \uc2a4\uc775,',
+                    '\uc804\uc555/\uc804\ub958 \ub9f5. Before vs After\ub85c \ud56b\ud504\ub808\uc2f1 \ud6a8\uacfc \uc815\ub7c9\ud654.']),
+            ]
+        for y0, title, lines in cards:
+            self._model_card(ax, 0.04, y0, 0.92, 0.17, title, lines)
+
+    def _model_p2(self, f, lang):
+        self._model_hdr(f, 'Architecture: 2-Layer Model', '\uad6c\uc870: 2-Layer \ubaa8\ub378', 2, 7, lang)
+        ax = f.add_axes([0, 0, 1, 0.91]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
+        bp_,_ = self._get_params()
+        rm=bp_[0] if bp_ else 13.22e-6; cf=bp_[4] if bp_ else 0.785
+        wf=bp_[2] if bp_ else 50e-4; hf=bp_[1] if bp_ else 10e-4
+        rc=bp_[5] if bp_ else 10e-3; rs=bp_[6] if bp_ else 55.0
+        rl = rm/(cf*wf*hf) if (cf*wf*hf)>0 else 0
+        if lang == 'EN':
+            L = [('Metal Grid (Ag)','#FFF3E0','#E65100',f'R_line = rho/(CF*W*H) = {rl:.2f} ohm/cm'),
+                 ('Contact R (rho_c)','#FFEBEE','#C62828',f'rho_c = {rc*1e3:.1f} mohm*cm2 | target < 6'),
+                 ('TCO / Emitter','#E3F2FD','#1565C0',f'Lateral current to finger. R_sheet = {rs:.0f} ohm/sq'),
+                 ('Perovskite Top','#FFF8E1','#F57F17',f'J01={TP.J01_top_pass:.0e}(pass) / {TP.J01_top_metal:.0e}(metal)'),
+                 ('Recomb. Junction','#F3E5F5','#7B1FA2','2T series: I_top = I_bot at every node'),
+                 ('c-Si Bottom','#E8F5E9','#2E7D32',f'J01={TP.J01_bot:.0e}, Jph={TP.Jph_bot*1e3:.1f} mA/cm2'),
+                 ('Rear (GND)','#ECEFF1','#455A64','Reference V=0. Full-area contact')]
+        else:
+            L = [('\uae08\uc18d \uadf8\ub9ac\ub4dc (Ag)','#FFF3E0','#E65100',f'R_line = rho/(CF*W*H) = {rl:.2f} ohm/cm'),
+                 ('\uc811\ucd09\uc800\ud56d (rho_c)','#FFEBEE','#C62828',f'rho_c = {rc*1e3:.1f} mohm*cm2 | \ubaa9\ud45c < 6'),
+                 ('TCO / \uc5d0\ubbf8\ud130','#E3F2FD','#1565C0',f'\ud551\uac70\ub85c \uc218\ud3c9 \uc804\ub958 \uc774\ub3d9. R_sheet = {rs:.0f} ohm/sq'),
+                 ('\ud398\ub85c\ube0c\uc2a4\uce74\uc774\ud2b8 \uc0c1\ubd80','#FFF8E1','#F57F17',f'J01={TP.J01_top_pass:.0e}(\ud328\uc2dc) / {TP.J01_top_metal:.0e}(\uae08\uc18d)'),
+                 ('\uc7ac\uacb0\ud569 \uc811\ud569','#F3E5F5','#7B1FA2','2T \uc9c1\ub82c: \ubaa8\ub4e0 \ub178\ub4dc\uc5d0\uc11c I_top = I_bot'),
+                 ('c-Si \ud558\ubd80','#E8F5E9','#2E7D32',f'J01={TP.J01_bot:.0e}, Jph={TP.Jph_bot*1e3:.1f} mA/cm2'),
+                 ('\ud6c4\uba74 (GND)','#ECEFF1','#455A64','\uae30\uc900 V=0. Full-area \uc811\ucd09')]
+        y0 = 0.88
+        for lab, fc, ec, note in L:
+            h = 0.10
+            ax.add_patch(FancyBboxPatch((0.04,y0), 0.92, h, boxstyle='round,pad=0.008', fc=fc, ec=ec, lw=1.2, transform=ax.transAxes))
+            ax.text(0.07, y0+h*0.7, lab, fontsize=10, fontweight='bold', color=ec, transform=ax.transAxes)
+            ax.text(0.07, y0+h*0.2, note, fontsize=8, color='#555', transform=ax.transAxes)
+            if y0 > 0.12:
+                ax.annotate('', xy=(0.5,y0-0.003), xytext=(0.5,y0+0.003), xycoords='axes fraction',
+                            textcoords='axes fraction', arrowprops=dict(arrowstyle='->', color='#B0BEC5', lw=1.5))
+            y0 -= (h + 0.02)
+
+    def _model_p3(self, f, lang):
+        self._model_hdr(f, 'FEM Equations + Mesh Comparison', 'FEM \ubc29\uc815\uc2dd + \uba54\uc2dc \ube44\uad50', 3, 7, lang)
+        # LEFT: Equations
+        ax = f.add_axes([0.02, 0.02, 0.46, 0.86]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
+        if lang == 'EN':
+            S_ = [
+                (0.78, '(1) Emitter -- KCL', '#1565C0',
+                 'Sum[(Vj-Vi)/Rs] + Gc*(Ve-Vm) + J*A = 0',
+                 'TCO lateral + contact out + photocurrent = 0'),
+                (0.58, '(2) Metal -- Finger/Busbar', '#E65100',
+                 'Sum[(Vmj-Vmi)/Rline] + Gc*(Vm-Ve) = 0',
+                 'Metal grid current + emitter current = 0'),
+                (0.38, '(3) Contact Coupling', '#C62828',
+                 'Gc = A_node / rho_c   [S]',
+                 'Lower rho_c -> stronger coupling -> less loss'),
+                (0.18, '(4) Galerkin + Newton-Raphson', '#333',
+                 'Int(grad_phi*grad_V/Rs)dA = Int(phi*J)dA',
+                 'Exact Jacobian -> quadratic convergence'),
+            ]
+        else:
+            S_ = [
+                (0.78, '(1) \uc5d0\ubbf8\ud130 -- KCL', '#1565C0',
+                 'Sum[(Vj-Vi)/Rs] + Gc*(Ve-Vm) + J*A = 0',
+                 'TCO \uc218\ud3c9\uc804\ub958 + \uc811\ucd09\uc804\ub958 + \uad11\uc804\ub958 = 0'),
+                (0.58, '(2) \uae08\uc18d -- \ud551\uac70/\ubc84\uc2a4\ubc14', '#E65100',
+                 'Sum[(Vmj-Vmi)/Rline] + Gc*(Vm-Ve) = 0',
+                 '\uae08\uc18d \uadf8\ub9ac\ub4dc \uc804\ub958 + \uc5d0\ubbf8\ud130 \uc804\ub958 = 0'),
+                (0.38, '(3) \uc811\ucd09 \ucee4\ud50c\ub9c1', '#C62828',
+                 'Gc = A_node / rho_c   [S]',
+                 'rho_c \ub0ae\uc744\uc218\ub85d -> \uacb0\ud569 \uac15\ud654 -> \uc190\uc2e4 \uac10\uc18c'),
+                (0.18, '(4) Galerkin + Newton-Raphson', '#333',
+                 'Int(grad_phi*grad_V/Rs)dA = Int(phi*J)dA',
+                 '\uc815\ud655\ud55c \uc57c\ucf54\ube44\uc548 -> 2\ucc28 \uc218\ub834'),
+            ]
+        for y0, title, clr_, eq, desc in S_:
+            ax.add_patch(FancyBboxPatch((0.02,y0), 0.96, 0.17, boxstyle='round,pad=0.008', fc='#FAFAFA', ec=CLR_CARD_BD, lw=1, transform=ax.transAxes))
+            ax.text(0.05, y0+0.135, title, fontsize=9.5, fontweight='bold', color=clr_, transform=ax.transAxes)
+            ax.text(0.05, y0+0.075, eq, fontsize=9, color='#222', fontweight='bold', transform=ax.transAxes)
+            ax.text(0.05, y0+0.025, desc, fontsize=8, color='#666', transform=ax.transAxes)
+
+        # RIGHT: FDM vs FEM mesh comparison (VISUAL)
+        ax2 = f.add_axes([0.52, 0.08, 0.46, 0.78])
+        t2 = 'FDM vs FEM Mesh Comparison' if lang=='EN' else 'FDM vs FEM \uba54\uc2dc \ube44\uad50'
+        ax2.set_title(t2, fontweight='bold', fontsize=10)
+        ax2.set_xlim(0, 20); ax2.set_ylim(-0.5, 9.5); ax2.set_aspect('equal'); ax2.axis('off')
+        # --- Left: FDM grid ---
+        ax2.text(4.5, 9.0, 'FDM', ha='center', fontsize=11, fontweight='bold', color='#EF5350')
+        for i in range(10):
+            ax2.plot([i,i],[0,8],'-',color='#ddd',lw=0.4)
+        for j in range(9):
+            ax2.plot([0,9],[j,j],'-',color='#ddd',lw=0.4)
+        # Finger band - FDM can't match
+        ax2.fill_between([0,9],[3.5,3.5],[4.5,4.5],alpha=0.12,color='#EF5350')
+        ax2.plot([0,9],[3,3],'--',color='#EF5350',lw=1.5)  # nearest grid line
+        ax2.plot([0,9],[5,5],'--',color='#EF5350',lw=1.5)
+        ax2.plot([0,9],[3.8,3.8],'-',color='#EF5350',lw=2.5)  # actual finger
+        ax2.plot([0,9],[4.2,4.2],'-',color='#EF5350',lw=2.5)
+        fdm_note = 'Grid != finger edge\nWidth overestimated' if lang=='EN' else '\uadf8\ub9ac\ub4dc != \ud551\uac70 \uacbd\uacc4\n\ud3ed \uacfc\ub300\ud3c9\uac00'
+        ax2.text(4.5, 1.8, fdm_note, ha='center', fontsize=7, color='#EF5350', style='italic')
+        # --- Right: FEM triangles ---
+        ox = 11
+        ax2.text(ox+4.5, 9.0, 'FEM', ha='center', fontsize=11, fontweight='bold', color='#66BB6A')
+        fem_pts = []
+        for i in np.linspace(0, 9, 8):
+            for j in np.linspace(0, 8, 7):
+                fem_pts.append([ox+i, j+(0.25*np.random.RandomState(42+int(i*10+j)).randn()
+                                       if 0.5<i<8.5 and 0.5<j<7.5 else 0)])
+        for x in np.linspace(ox, ox+9, 16):
+            fem_pts.append([x, 3.8]); fem_pts.append([x, 4.0]); fem_pts.append([x, 4.2])
+        fem_pts = np.array(fem_pts)
+        from scipy.spatial import Delaunay as _Del
+        try:
+            _tri = _Del(fem_pts)
+            for simplex in _tri.simplices:
+                tp_ = fem_pts[simplex]
+                poly = plt.Polygon(tp_, fill=False, edgecolor='#bbb', lw=0.3)
+                ax2.add_patch(poly)
+        except: pass
+        ax2.plot([ox,ox+9],[3.8,3.8],'-',color='#66BB6A',lw=2.5)
+        ax2.plot([ox,ox+9],[4.2,4.2],'-',color='#66BB6A',lw=2.5)
+        for x in np.linspace(ox, ox+9, 16):
+            ax2.plot(x, 3.8, 'o', color='#66BB6A', ms=2.5)
+            ax2.plot(x, 4.2, 'o', color='#66BB6A', ms=2.5)
+        fem_note = 'Nodes ON finger edge\nExact width' if lang=='EN' else '\ub178\ub4dc\uac00 \ud551\uac70 \uacbd\uacc4 \uc704\uc5d0\n\uc815\ud655\ud55c \ud3ed'
+        ax2.text(ox+4.5, 1.8, fem_note, ha='center', fontsize=7, color='#66BB6A', style='italic')
+
+    def _model_p4(self, f, lang):
+        self._model_hdr(f, 'Two-Diode Model', 'Two-Diode \ubaa8\ub378', 4, 7, lang)
+        ax = f.add_axes([0, 0, 1, 0.91]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
+        # Equation box
+        ax.add_patch(FancyBboxPatch((0.03,0.78), 0.94, 0.10, boxstyle='round,pad=0.012', fc='#F0F4FF', ec='#5C6BC0', lw=1.5, transform=ax.transAxes))
+        ax.text(0.5, 0.84, 'J = Jph - J01*(exp(V/n1*Vt)-1) - J02*(exp(V/n2*Vt)-1) - V/Rsh',
+                ha='center', fontsize=11, fontweight='bold', color='#1a237e', transform=ax.transAxes)
+        if lang=='EN':
+            terms = [('Jph: photocurrent','#333'),('J01 (n=1): diffusion recombination','#E65100'),
+                     ('J02 (n=2): SRH recombination','#C62828'),('Rsh: shunt resistance (leakage)','#2E7D32')]
+        else:
+            terms = [('Jph: \uad11\uc804\ub958','#333'),('J01 (n=1): \ud655\uc0b0 \uc7ac\uacb0\ud569','#E65100'),
+                     ('J02 (n=2): SRH \uc7ac\uacb0\ud569','#C62828'),('Rsh: \ub204\uc124\uc800\ud56d','#2E7D32')]
+        for i,(t,c) in enumerate(terms):
+            ax.text(0.06, 0.74-i*0.03, '* '+t, fontsize=8.5, color=c, transform=ax.transAxes)
+        # Top cell (LEFT)
+        tl = 'Top Cell (Perovskite)' if lang=='EN' else '\uc0c1\ubd80 \uc140 (\ud398\ub85c\ube0c\uc2a4\uce74\uc774\ud2b8)'
+        ax.add_patch(FancyBboxPatch((0.03,0.22), 0.45, 0.36, boxstyle='round,pad=0.01', fc='#FFF8E1', ec='#F57F17', lw=1, transform=ax.transAxes))
+        ax.text(0.255, 0.545, tl, ha='center', fontsize=10, fontweight='bold', color='#F57F17', transform=ax.transAxes)
+        for i,p in enumerate([f'Jph = {TP.Jph_top*1e3:.1f} mA/cm2', f'J01 = {TP.J01_top_pass:.1e} (passivated)',
+            f'J01 = {TP.J01_top_metal:.1e} (under metal)', f'J02 = {TP.J02_top_pass:.1e}',
+            f'n1={TP.n1_top:.0f}, n2={TP.n2_top:.1f}', f'Rsh = {TP.Rsh_top:.0f} ohm*cm2']):
+            ax.text(0.06, 0.50-i*0.04, p, fontsize=8.5, color='#555', transform=ax.transAxes)
+        # Bottom cell (RIGHT)
+        bl = 'Bottom Cell (c-Si HJT)' if lang=='EN' else '\ud558\ubd80 \uc140 (c-Si HJT)'
+        ax.add_patch(FancyBboxPatch((0.52,0.22), 0.45, 0.36, boxstyle='round,pad=0.01', fc='#E8F5E9', ec='#2E7D32', lw=1, transform=ax.transAxes))
+        ax.text(0.745, 0.545, bl, ha='center', fontsize=10, fontweight='bold', color='#2E7D32', transform=ax.transAxes)
+        for i,p in enumerate([f'Jph = {TP.Jph_bot*1e3:.1f} mA/cm2', f'J01 = {TP.J01_bot:.1e}',
+            f'J02 = {TP.J02_bot:.1e}', f'n1={TP.n1_bot:.0f}, n2={TP.n2_bot:.1f}',
+            f'Rsh = {TP.Rsh_bot:.0f} ohm*cm2']):
+            ax.text(0.55, 0.50-i*0.04, p, fontsize=8.5, color='#555', transform=ax.transAxes)
+        # J01 spatial note
+        n = 'J01 under metal is 83x higher (literature)' if lang=='EN' else '\uae08\uc18d \ud558\ubd80 J01\uc740 \ud328\uc2dc\ubca0\uc774\uc158 \ub300\ube44 83\ubc30'
+        ax.add_patch(FancyBboxPatch((0.03,0.08), 0.94, 0.10, boxstyle='round,pad=0.01', fc='#FFF3E0', ec='#E65100', lw=1, transform=ax.transAxes))
+        ax.text(0.5, 0.13, n, ha='center', fontsize=10, fontweight='bold', color='#E65100', transform=ax.transAxes)
+
+    def _model_p5(self, f, lang):
+        self._model_hdr(f, '2T Tandem Current Matching', '2T \ud0e0\ub364 \uc804\ub958 \ub9e4\uce6d', 5, 7, lang)
+        ax = f.add_axes([0, 0, 1, 0.91]); ax.axis('off'); ax.set_xlim(0,1); ax.set_ylim(0,1)
+        ax.add_patch(FancyBboxPatch((0.05,0.78), 0.90, 0.10, boxstyle='round,pad=0.015', fc='#F0F4FF', ec='#5C6BC0', lw=2, transform=ax.transAxes))
+        ax.text(0.5, 0.84, 'I_top(V_top) = I_bot(V_emitter - V_top)', ha='center',
+                fontsize=14, fontweight='bold', color='#1a237e', transform=ax.transAxes)
+        sub = 'at EVERY mesh node simultaneously' if lang=='EN' else '\ubaa8\ub4e0 \uba54\uc2dc \ub178\ub4dc\uc5d0\uc11c \ub3d9\uc2dc\uc5d0'
+        ax.text(0.5, 0.795, sub, ha='center', fontsize=10, color='#666', style='italic', transform=ax.transAxes)
+        if lang == 'EN':
+            items = [
+                ('V_emitter = V_top + V_bottom', 'Total voltage = sum of two subcells (series)'),
+                ('V_top is a separate unknown', f'At each of {len(pts):,} nodes, V_top solved independently'),
+                ('Newton-Raphson finds V_top', 'Iterates until I_top = I_bot at every point'),
+                ('LOCAL matching (not global)', 'Current matching varies spatially due to R and shading'),
+                ('Current-limiting subcell -> Jsc', 'Subcell with less current determines overall Jsc'),
+            ]
+        else:
+            items = [
+                ('V_emitter = V_top + V_bottom', '\uc804\uccb4 \uc804\uc555 = \ub450 \uc11c\ube0c\uc140 \uc804\uc555\uc758 \ud569 (\uc9c1\ub82c)'),
+                ('V_top\uc740 \ubcc4\ub3c4 \ubbf8\uc9c0\uc218', f'{len(pts):,}\uac1c \uac01 \ub178\ub4dc\uc5d0\uc11c V_top \ub3c5\ub9bd \uacc4\uc0b0'),
+                ('Newton-Raphson\uc73c\ub85c V_top \uacc4\uc0b0', '\ubaa8\ub4e0 \uc9c0\uc810\uc5d0\uc11c I_top = I_bot \ub420 \ub54c\uae4c\uc9c0 \ubc18\ubcf5'),
+                ('LOCAL \ub9e4\uce6d (\uae00\ub85c\ubc8c X)', '\uc800\ud56d + \uc74c\uc601\uc73c\ub85c \uc804\ub958\ub9e4\uce6d\uc774 \uacf5\uac04\uc801\uc73c\ub85c \ubcc0\ud568'),
+                ('\uc804\ub958\uc81c\ud55c \uc11c\ube0c\uc140 -> Jsc', '\uc804\ub958 \uc801\uc740 \uc140\uc774 \uc804\uccb4 Jsc \uacb0\uc815'),
+            ]
+        y0 = 0.68
+        for title, body in items:
+            ax.add_patch(FancyBboxPatch((0.05,y0), 0.90, 0.09, boxstyle='round,pad=0.008', fc='#F8FAFC', ec=CLR_CARD_BD, lw=1, transform=ax.transAxes))
+            ax.text(0.08, y0+0.06, '> '+title, fontsize=9.5, fontweight='bold', color=CLR_ACCENT, transform=ax.transAxes)
+            ax.text(0.08, y0+0.02, body, fontsize=8.5, color='#555', transform=ax.transAxes)
+            y0 -= 0.105
+        Vt_,Vb_,Vtot_ = TP.expected_voc()
+        ax.add_patch(FancyBboxPatch((0.05,0.06), 0.90, 0.06, boxstyle='round,pad=0.008', fc='#E8EAF6', ec='#5C6BC0', lw=1, transform=ax.transAxes))
+        lbl = 'Expected Voc' if lang=='EN' else '\uc608\uc0c1 Voc'
+        ax.text(0.5, 0.09, f'{lbl}:  Top {Vt_:.4f}V + Bot {Vb_:.4f}V = {Vtot_:.4f}V',
+                ha='center', fontsize=10, fontweight='bold', color='#1a237e', transform=ax.transAxes)
+
+    def _model_p6(self, f, lang):
+        """Newton-Raphson: tangent line visual + convergence + flowchart."""
+        self._model_hdr(f, 'Newton-Raphson Solver', 'Newton-Raphson \ud480\uc774 \uacfc\uc815', 6, 7, lang)
+        bp_,_ = self._get_params()
+        if bp_ is None: bp_ = (13.22e-6,10e-4,50e-4,50e-4,0.785,10e-3,55.0)
+        rm,hf,wf,wb,cf,rc,rs = bp_
+        Vmpp_nr = self._cache.get('iv_b',{}).get('Vmpp', 1.8)  # MPP 전압 사용
+        Vmpp_nr = self._cache.get('iv_b',{}).get('Vmpp_internal', Vmpp_nr)
+        res_nr = self._cache.get('iv_b',{}).get('_mpp_result') or S.solve(rm,hf,wf,rc,rs,Vmpp_nr,cf,DP,mode='tandem')
+        res_list = res_nr['res']
+        Nt = 2*len(pts) + int(np.sum(ism))
+
+        # ── LEFT TOP: NR concept diagram (tangent line method) ──
+        ax_nr = f.add_axes([0.05, 0.50, 0.42, 0.36])
+        t1 = 'Newton-Raphson Concept' if lang=='EN' else 'Newton-Raphson \uac1c\ub150'
+        ax_nr.set_title(t1, fontweight='bold', fontsize=10)
+        x_plot = np.linspace(0, 6, 200)
+        f_func = lambda x: np.exp(0.6*x) - 3
+        fp_func = lambda x: 0.6*np.exp(0.6*x)
+        y_plot = f_func(x_plot)
+        ax_nr.plot(x_plot, y_plot, '-', color='#333', lw=2)
+        ax_nr.axhline(0, color='#999', lw=0.8)
+        x_root = np.log(3)/0.6
+        ax_nr.plot(x_root, 0, '*', color='#2E7D32', ms=14, zorder=10)
+        colors_nr = ['#EF5350', '#FFA726', '#42A5F5', '#66BB6A']
+        x_nr = 5.5
+        for i in range(4):
+            fx = f_func(x_nr); fpx = fp_func(x_nr)
+            ax_nr.plot(x_nr, fx, 'o', color=colors_nr[i], ms=7, zorder=5)
+            x_next = x_nr - fx/fpx
+            x_tang = np.linspace(max(x_next-0.3,0), min(x_nr+0.5,6), 50)
+            y_tang = fpx*(x_tang - x_nr) + fx
+            ax_nr.plot(x_tang, y_tang, '--', color=colors_nr[i], lw=1.2, alpha=0.7)
+            ax_nr.plot([x_nr,x_nr], [0,fx], ':', color=colors_nr[i], lw=0.8, alpha=0.5)
+            if i < 3:
+                lbl = f'x{i+1}' if lang=='EN' else f'x{i+1}'
+                ax_nr.annotate(lbl, xy=(x_nr,fx), xytext=(x_nr+0.2, fx+1.5-i*0.5),
+                    fontsize=7, color=colors_nr[i], fontweight='bold',
+                    arrowprops=dict(arrowstyle='->', color=colors_nr[i], lw=0.8))
+            x_nr = x_next
+        ax_nr.set_xlabel('V (voltage)', fontsize=8)
+        ax_nr.set_ylabel('F(V) (residual)', fontsize=8)
+        ax_nr.set_xlim(0, 6.5); ax_nr.set_ylim(-3.5, max(y_plot)*0.6)
+        ax_nr.grid(True, alpha=0.08)
+        eq_txt = 'V_new = V - F(V)/F\'(V)'
+        ax_nr.text(0.95, 0.05, eq_txt, fontsize=8, ha='right', transform=ax_nr.transAxes,
+                  color='#555', bbox=dict(boxstyle='round', fc='#FAFAFA', ec='#e0e0e0', alpha=0.9))
+
+        # ── LEFT BOTTOM: Live convergence ──
+        ax_conv = f.add_axes([0.05, 0.06, 0.42, 0.36])
+        t2 = 'Convergence (this solve)' if lang=='EN' else '\uc218\ub834 \uacb0\uacfc (\uc2e4\uc2dc\uac04)'
+        ax_conv.set_title(t2, fontweight='bold', fontsize=10)
+        iters = range(1, len(res_list)+1)
+        ax_conv.semilogy(iters, res_list, 'o-', color='#5C6BC0', ms=8, lw=2.5, zorder=5)
+        ax_conv.axhline(1e-10, color='#EF5350', ls='--', lw=1.5, label='Threshold')
+        for i, r in enumerate(res_list):
+            ax_conv.annotate(f'{r:.1e}', (i+1, r), textcoords="offset points",
+                xytext=(8, 5 if i%2==0 else -12), fontsize=7, color='#333')
+        ax_conv.set_xlabel('Iteration'); ax_conv.set_ylabel('max |F(V)|')
+        ax_conv.legend(fontsize=8); ax_conv.grid(True, alpha=0.15)
+        info = f'{len(res_list)} iter | {Nt:,} DOF' if lang=='EN' else f'{len(res_list)}\ud68c | {Nt:,} DOF'
+        ax_conv.text(0.95, 0.95, info, transform=ax_conv.transAxes, ha='right', va='top',
+            fontsize=8, fontweight='bold', bbox=dict(boxstyle='round', fc='#E8F5E9', ec='#66BB6A'))
+
+        # ── RIGHT: Step-by-step flowchart ──
+        ax_f = f.add_axes([0.52, 0.02, 0.46, 0.86]); ax_f.axis('off')
+        ax_f.set_xlim(0, 1); ax_f.set_ylim(0, 1)
+        Ne = len(pts); Nm = int(np.sum(ism))
+        if lang == 'EN':
+            title = 'Solver Loop (per bias point)'
+            blks = [
+                (0.88, '#E3F2FD', '#1565C0', 'INIT: Guess V', [
+                    f'V = [Ve({Ne:,}) + Vm({Nm:,}) + Vt({Ne:,})] = {Nt:,} unknowns',
+                    'Ve = 0.95*Vbias,  Vm = Vbias,  Vt = 0.63*Vbias']),
+                (0.72, '#FFF3E0', '#E65100', '1. Compute residual F(V)', [
+                    'F_emitter: K_e*Ve - J_diode*A + Gc*(Ve-Vm)',
+                    'F_metal:   K_m*Vm + Gc*(Vm-Ve)',
+                    'F_tandem:  (J_top - J_bot) * A_node']),
+                (0.56, '#FFEBEE', '#C62828', '2. Build Jacobian J = dF/dV', [
+                    f'Sparse {Nt:,} x {Nt:,} matrix',
+                    'dJ_diode/dV = J01*exp(V/Vt)/Vt  (exact, not finite-diff)']),
+                (0.42, '#E8F5E9', '#2E7D32', '3. Solve J * dV = -F', [
+                    'scipy sparse LU factorization',
+                    'Damping: if |dV| > 0.1V, scale down (prevent divergence)']),
+                (0.28, '#F3E5F5', '#7B1FA2', '4. Update V = V + dV', [
+                    'Clip: V_top must stay in [0, V_emitter]',
+                    'This is what the tangent line (left) does visually!']),
+                (0.16, '#E0F7FA', '#00695C', '5. Converged?', [
+                    f'max|F| < 1e-10 ?  YES in {len(res_list)} iterations',
+                    f'Final residual: {res_list[-1]:.2e}']),
+            ]
+        else:
+            title = '\ud480\uc774 \ub8e8\ud504 (\uac01 \uc804\uc555 \uc810\ub9c8\ub2e4)'
+            blks = [
+                (0.88, '#E3F2FD', '#1565C0', '\ucd08\uae30\uac12: V \ucd94\uc815', [
+                    f'V = [Ve({Ne:,}) + Vm({Nm:,}) + Vt({Ne:,})] = {Nt:,}\uac1c',
+                    'Ve=0.95*Vb, Vm=Vb, Vt=0.63*Vb']),
+                (0.72, '#FFF3E0', '#E65100', '1. \uc794\uc5ec\ubca1\ud130 F(V) \uacc4\uc0b0', [
+                    'F_emitter: K_e*Ve - J_diode*A + Gc*(Ve-Vm)',
+                    'F_metal:   K_m*Vm + Gc*(Vm-Ve)',
+                    'F_tandem:  (J_top - J_bot) * A_node']),
+                (0.56, '#FFEBEE', '#C62828', '2. \uc57c\ucf54\ube44\uc548 J = dF/dV \uad6c\uc131', [
+                    f'\ud76c\uc18c\ud589\ub82c {Nt:,} x {Nt:,}',
+                    'dJ/dV = J01*exp(V/Vt)/Vt  (\uc815\ud655\ud55c \ud574\uc11d\uc801 \ubbf8\ubd84)']),
+                (0.42, '#E8F5E9', '#2E7D32', '3. J * dV = -F \ud480\uae30', [
+                    'scipy \ud76c\uc18c LU \ubd84\ud574',
+                    '\uac10\uc1e0: |dV| > 0.1V\uba74 \ucd95\uc18c (\ubc1c\uc0b0 \ubc29\uc9c0)']),
+                (0.28, '#F3E5F5', '#7B1FA2', '4. V = V + dV \uc5c5\ub370\uc774\ud2b8', [
+                    'V_top\uc744 [0, V_emitter] \ub0b4\ub85c \ud074\ub9ac\ud551',
+                    '\uc67c\ucabd \uc811\uc120\ubc95 \uadf8\ub9bc\uc774 \uc774 \uacfc\uc815\uc744 \uc2dc\uac01\ud654!']),
+                (0.16, '#E0F7FA', '#00695C', '5. \uc218\ub834 \ud655\uc778', [
+                    f'max|F| < 1e-10?  {len(res_list)}\ud68c\ub9cc\uc5d0 \uc218\ub834!',
+                    f'\ucd5c\uc885 \uc794\uc5ec: {res_list[-1]:.2e}']),
+            ]
+        ax_f.text(0.5, 0.97, title, ha='center', fontsize=10, fontweight='bold',
+                 color=CLR_ACCENT, transform=ax_f.transAxes)
+        for y0, fc, ec, title_b, lines_b in blks:
+            h = 0.10 if len(lines_b) <= 2 else 0.12
+            ax_f.add_patch(FancyBboxPatch((0.02, y0), 0.96, h,
+                boxstyle='round,pad=0.006', fc=fc, ec=ec, lw=1.2, transform=ax_f.transAxes))
+            ax_f.text(0.05, y0+h-0.022, title_b, fontsize=8.5, fontweight='bold',
+                     color=ec, transform=ax_f.transAxes)
+            for i, ln in enumerate(lines_b):
+                ax_f.text(0.05, y0+h-0.045-i*0.025, ln, fontsize=7, color='#444',
+                         transform=ax_f.transAxes)
+            if y0 > 0.20:
+                ax_f.annotate('', xy=(0.5, y0-0.003), xytext=(0.5, y0+0.003),
+                    xycoords='axes fraction', textcoords='axes fraction',
+                    arrowprops=dict(arrowstyle='->', color='#90A4AE', lw=1.8))
+
+    def _model_p7(self, f, lang):
+        self._model_hdr(f, 'Mesh & Solver Convergence', '\uba54\uc2dc & \uc218\ub834 \uacb0\uacfc', 7, 7, lang)
+        # Mesh plot
+        ax_m = f.add_axes([0.06, 0.48, 0.40, 0.38])
+        ax_m.triplot(triang,'k-',lw=0.12,alpha=0.25)
+        ax_m.plot(pts[isf,0]*10,pts[isf,1]*10,'s',color='#EF5350',ms=1.5,label='Finger')
+        ax_m.plot(pts[isb&~isp,0]*10,pts[isb&~isp,1]*10,'s',color='#42A5F5',ms=1.5,label='Busbar')
+        if GEO.pad > 0:
+            ax_m.plot(pts[isp,0]*10,pts[isp,1]*10,'s',color='#FFA726',ms=3,label='Pad')
+        ax_m.legend(fontsize=7); ax_m.set_aspect('equal',adjustable='box')
+        ax_m.set_xlabel('X [mm]'); ax_m.set_ylabel('Y [mm]')
+        ml = f'Mesh ({len(pts)} nodes)' if lang=='EN' else f'\uba54\uc2dc ({len(pts)} \ub178\ub4dc)'
+        ax_m.set_title(ml, fontweight='bold', fontsize=10)
+        # Convergence
+        ax_c = f.add_axes([0.55, 0.48, 0.40, 0.38])
+        bp_,_ = self._get_params()
+        if bp_:
+            rm,hf,wf,wb,cf,rc,rs = bp_
+            Vmpp_nr = self._cache.get('iv_b',{}).get('Vmpp', 1.8)
+            Vmpp_nr = self._cache.get('iv_b',{}).get('Vmpp_internal', Vmpp_nr)
+            res_nr2 = self._cache.get('iv_b',{}).get('_mpp_result') or S.solve(rm,hf,wf,rc,rs,Vmpp_nr,cf,DP,mode='tandem')
+            rl = res_nr2['res']
+            ax_c.semilogy(range(1,len(rl)+1),rl,'o-',color='#5C6BC0',ms=6,lw=2)
+            ax_c.axhline(1e-10,color='#EF5350',ls='--',lw=1.2,label='Threshold')
+            ax_c.legend(fontsize=8); ax_c.grid(True,alpha=0.1)
+            ax_c.set_xlabel('Iteration'); ax_c.set_ylabel('Max |Residual|')
+            cl = f'Convergence ({len(rl)} iter)' if lang=='EN' else f'\uc218\ub834 ({len(rl)}\ud68c)'
+            ax_c.set_title(cl, fontweight='bold', fontsize=10)
+        # Stats table
+        ax_s = f.add_axes([0, 0, 1, 0.45]); ax_s.axis('off'); ax_s.set_xlim(0,1); ax_s.set_ylim(0,1)
+        Nm=int(np.sum(ism)); Nt=2*len(pts)+Nm
+        if lang=='EN':
+            st=[('Mesh','Constrained Delaunay Triangulation'),('Nodes',f'{len(pts):,}'),
+                ('Elements',f'{len(tri.simplices):,} triangles'),
+                ('V_emitter',f'{len(pts):,} unknowns'),('V_metal',f'{Nm:,} unknowns'),
+                ('V_top',f'{len(pts):,} unknowns'),('Total DOF',f'{Nt:,}'),
+                ('Cell',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
+                ('Shading',f'{GEO.optical_shading_fraction()*100:.2f}%')]
+        else:
+            st=[('\uba54\uc2dc','Constrained Delaunay Triangulation'),('\ub178\ub4dc',f'{len(pts):,}'),
+                ('\uc694\uc18c',f'{len(tri.simplices):,} \uc0bc\uac01\ud615'),
+                ('V_emitter',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('V_metal',f'{Nm:,} \ubbf8\uc9c0\uc218'),
+                ('V_top',f'{len(pts):,} \ubbf8\uc9c0\uc218'),('Total DOF',f'{Nt:,}'),
+                ('\uc140',f'{GEO.W*10:.0f}x{GEO.H*10:.0f}mm, {GEO.n_f}F+{GEO.n_b}BB'),
+                ('\uc74c\uc601',f'{GEO.optical_shading_fraction()*100:.2f}%')]
+        ax_s.add_patch(Rectangle((0.06,0.10), 0.88, 0.85, fc='#F8FAFC', ec=CLR_CARD_BD, lw=1, transform=ax_s.transAxes))
+        y0=0.88
+        for i,(k,v) in enumerate(st):
+            if i%2==0: ax_s.add_patch(Rectangle((0.06,y0-0.02),0.88,0.09, fc='#F1F5F9', ec='none', transform=ax_s.transAxes))
+            ax_s.text(0.10, y0+0.01, k, fontsize=9, fontweight='bold', color='#555', transform=ax_s.transAxes)
+            ax_s.text(0.38, y0+0.01, v, fontsize=9, color='#333', transform=ax_s.transAxes)
+            y0 -= 0.09
+
+    def _load_exp(self):
+        fn = filedialog.askopenfilename(
+            title="Load Experimental I-V (CSV)",
+            filetypes=[('CSV','*.csv'),('Text','*.txt'),('All','*.*')])
+        if not fn: return
+        try:
+            lines = []
+            with open(fn, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('#'): continue
+                    lines.append(line)
+            if len(lines) < 2:
+                self._status("Error: file too short."); return
+            delim = ',' if ',' in lines[1] else '\t' if '\t' in lines[1] else ' '
+            data_lines = lines[1:]
+            V_list=[]; J_list=[]
+            for dl in data_lines:
+                parts = [p.strip() for p in dl.split(delim) if p.strip()]
+                if len(parts) >= 2:
+                    try: V_list.append(float(parts[0])); J_list.append(float(parts[1]))
+                    except ValueError: continue
+            if len(V_list) < 2:
+                self._status("Error: could not parse data."); return
+            self._exp_data['V_exp'] = np.array(V_list)
+            self._exp_data['J_exp'] = np.array(J_list)
+            self._status(f'Loaded: {os.path.basename(fn)} ({len(V_list)} pts). Click COMPARE to overlay.')
+            messagebox.showinfo("GEDOS",
+                f"Loaded {len(V_list)} data points.\n"
+                f"V range: {min(V_list):.3f} ~ {max(V_list):.3f} V\n"
+                f"J range: {min(J_list):.2f} ~ {max(J_list):.2f} mA/cm2\n\n"
+                f"Click COMPARE to overlay on simulation.")
+        except Exception as e:
+            self._status(f"Load error: {e}")
+
+
+    # ---------------------------------------------------------
+    # REPORT VIEWER
+    # ---------------------------------------------------------
+    def _gen_report(self):
+        if 'iv_b' not in self._cache:
+            self._status(_t('run_compare_first')); return
+        self._status("Generating Report...")
+        self.update_idletasks()
+
+        d = dict(self._cache)
+        state = {'pg': 0}
+
+        rwin = ctk.CTkToplevel(self)
+        rwin.title("GEDOS Report")
+        rwin.geometry("1200x800")
+        self._raise_once(rwin)  # v28.30: 뜰 때만 앞으로, 그 뒤 다른 창에 양보
+
+        # Report figure
+        rfig = Figure(figsize=(11, 8.5), facecolor='white', dpi=100)
+
+        # Navigation bar -- PACK FIRST so it always shows
+        nav = ctk.CTkFrame(rwin, fg_color=CLR_TAB_BG, height=48)
+        nav.pack(fill="x", side="bottom")
+        nav.pack_propagate(False)
+
+        # Canvas fills remaining space AFTER nav
+        rcanvas = FigureCanvasTkAgg(rfig, master=rwin)
+        rcanvas.get_tk_widget().pack(fill="both", expand=True)
+
+        page_label = ctk.CTkLabel(nav, text=f"1 / {len(_RPT_PAGES)}",
+                                    font=ctk.CTkFont(size=12, weight="bold"),
+                                    text_color=CLR_TEXT)
+
+        def draw_page(pg=None):
+            if pg is not None:
+                state['pg'] = max(0, min(pg, len(_RPT_PAGES)-1))
+            rfig.clear()
+            _RPT_PAGES[state['pg']](rfig, d)
+            page_label.configure(text=f"{state['pg']+1} / {len(_RPT_PAGES)}")
+            rcanvas.draw()
+
+        def prev_pg(): draw_page(state['pg']-1)
+        def next_pg(): draw_page(state['pg']+1)
+
+        def save_pdf():
+            fn = filedialog.asksaveasfilename(
+                initialfile='GEDOS_Report.pdf',
+                filetypes=[('PDF','*.pdf')], defaultextension='.pdf')
+            if not fn: return
+            with PdfPages(fn) as pdf:
+                for pf_ in _RPT_PAGES:
+                    pg = Figure(figsize=(11,8.5), facecolor='white')
+                    FigureCanvasAgg(pg)
+                    pf_(pg, d); pdf.savefig(pg); plt.close(pg)
+            messagebox.showinfo("GEDOS",
+                                 f"PDF saved ({len(_RPT_PAGES)} pages):\n{fn}")
+
+        def save_png():
+            fn = filedialog.asksaveasfilename(
+                initialfile=f'GEDOS_p{state["pg"]+1}.png',
+                filetypes=[('PNG','*.png')], defaultextension='.png')
+            if fn:
+                rfig.savefig(fn, dpi=150, bbox_inches='tight', facecolor='white')
+
+        # --- Left side: PREV + page dots + NEXT ---
+        btn_prev = ctk.CTkButton(nav, text="\u25c0", width=40, height=30,
+                       fg_color="#94A3B8", hover_color="#64748B",
+                       font=ctk.CTkFont(size=14),
+                       command=prev_pg)
+        btn_prev.pack(side="left", padx=(8,4), pady=6)
+
+        # Page number buttons (1~6)
+        pg_btns = []
+        _active_clr = CLR_ACCENT
+        _inactive_clr = "#CBD5E1"
+
+        def _go_page(i):
+            def _fn(): draw_page(i)
+            return _fn
+
+        def _update_pg_btns():
+            for i, pb in enumerate(pg_btns):
+                if i == state['pg']:
+                    pb.configure(fg_color=_active_clr, text_color="white",
+                                 border_color=_active_clr)
+                else:
+                    pb.configure(fg_color="white", text_color="#64748B",
+                                 border_color=_inactive_clr)
+
+        for i in range(len(_RPT_PAGES)):
+            pb = ctk.CTkButton(nav, text=str(i+1), width=30, height=28,
+                               fg_color="white", hover_color="#E2E8F0",
+                               text_color="#64748B", border_width=1,
+                               border_color=_inactive_clr,
+                               font=ctk.CTkFont(size=11, weight="bold"),
+                               corner_radius=6, command=_go_page(i))
+            pb.pack(side="left", padx=1, pady=6)
+            pg_btns.append(pb)
+
+        page_label.pack(side="left", padx=(8,4))
+
+        btn_next = ctk.CTkButton(nav, text="\u25b6", width=40, height=30,
+                       fg_color="#94A3B8", hover_color="#64748B",
+                       font=ctk.CTkFont(size=14),
+                       command=next_pg)
+        btn_next.pack(side="left", padx=(4,8), pady=6)
+
+        # --- Right side: SAVE buttons ---
+        btn_pdf = ctk.CTkButton(nav, text="SAVE PDF", width=100, height=30,
+                       fg_color=CLR_ACCENT, hover_color="#303F9F",
+                       font=ctk.CTkFont(size=11, weight="bold"),
+                       command=save_pdf)
+        btn_pdf.pack(side="right", padx=8, pady=6)
+        btn_png = ctk.CTkButton(nav, text="SAVE PNG", width=100, height=30,
+                       fg_color="#455A64", hover_color="#546E7A",
+                       font=ctk.CTkFont(size=11, weight="bold"),
+                       command=save_png)
+        btn_png.pack(side="right", padx=4, pady=6)
+
+        # Patch draw_page to also update page dot highlights
+        _orig_draw = draw_page
+        def draw_page_wrapped(pg=None):
+            _orig_draw(pg)
+            _update_pg_btns()
+        # Rebind
+        def prev_pg_w(): draw_page_wrapped(state['pg']-1)
+        def next_pg_w(): draw_page_wrapped(state['pg']+1)
+        btn_prev.configure(command=prev_pg_w)
+        btn_next.configure(command=next_pg_w)
+        for i, pb in enumerate(pg_btns):
+            def _mk(idx):
+                def _fn(): draw_page_wrapped(idx)
+                return _fn
+            pb.configure(command=_mk(i))
+
+        # Keep references alive
+        rwin._btns = [btn_prev, btn_next, btn_pdf, btn_png] + pg_btns
+        rwin._refs = [rfig, rcanvas, page_label, d, state]
+
+        # Keyboard navigation
+        def on_key(event):
+            if event.keysym in ('Left', 'a', 'A'):
+                prev_pg_w()
+            elif event.keysym in ('Right', 'd', 'D'):
+                next_pg_w()
+            elif event.keysym == 'Home':
+                draw_page_wrapped(0)
+            elif event.keysym == 'End':
+                draw_page_wrapped(len(_RPT_PAGES)-1)
+            elif event.keysym in ('1','2','3','4','5','6'):
+                draw_page_wrapped(int(event.keysym)-1)
+
+        rwin.bind('<Key>', on_key)
+
+        # Mouse scroll navigation (bind ONLY on canvas to avoid double-fire)
+        _scroll_lock = {'t': 0}
+        def on_scroll(event):
+            import time as _t
+            now = _t.time()
+            if now - _scroll_lock['t'] < 0.15:  # debounce 150ms
+                return "break"
+            _scroll_lock['t'] = now
+            # macOS: event.delta > 0 = scroll up = prev, < 0 = next
+            # Windows: same but larger delta values
+            # Linux: event.num == 4/5
+            if hasattr(event, 'delta') and event.delta != 0:
+                if event.delta > 0:
+                    prev_pg_w()
+                else:
+                    next_pg_w()
+            elif hasattr(event, 'num'):
+                if event.num == 4:
+                    prev_pg_w()
+                elif event.num == 5:
+                    next_pg_w()
+            return "break"
+
+        # Bind scroll ONLY on canvas widget (not rwin) to prevent double-fire
+        canvas_widget = rcanvas.get_tk_widget()
+        canvas_widget.bind('<MouseWheel>', on_scroll)
+        canvas_widget.bind('<Button-4>', on_scroll)
+        canvas_widget.bind('<Button-5>', on_scroll)
+
+        rwin.focus_set()
+        draw_page_wrapped(0)
+        self._status("Report opened.  Scroll / \u25c0\u25b6 / 1~6 keys to navigate.")
+
+
+
+    # ---------------------------------------------------------
+    # CSV EXPORT
+    # ---------------------------------------------------------
+    def _save_csv(self):
+        if 'iv_b' not in self._cache:
+            self._status(_t('run_compare_first')); return
+        fn = filedialog.asksaveasfilename(
+            initialfile='GEDOS_Results.csv',
+            filetypes=[('CSV','*.csv')], defaultextension='.csv')
+        if not fn: return
+        c = self._cache
+        iv_b=c['iv_b']; iv_a=c['iv_a']; bp=c['bp']; ap=c['ap']
+        lines = []
+        lines.append("GEDOS v1.0 Results")
+        lines.append(f"Cell,{GEO.W*10:.0f}x{GEO.H*10:.0f}mm,{GEO.n_f}F+{GEO.n_b}BB")
+        lines.append(f"Mesh,{len(pts)} nodes,{len(tri.simplices)} tri")
+        lines.append("")
+        lines.append("Parameter,Before,After,Unit")
+        lines.append(f"rho_bulk,{bp[0]*1e6:.2f},{ap[0]*1e6:.2f},uOhm*cm")
+        lines.append(f"H_finger,{bp[1]*1e4:.1f},{ap[1]*1e4:.1f},um")
+        lines.append(f"W_finger,{bp[2]*1e4:.0f},{ap[2]*1e4:.0f},um")
+        lines.append(f"W_busbar,{bp[3]*1e4:.0f},{ap[3]*1e4:.0f},um")
+        lines.append(f"CF,{bp[4]:.3f},{ap[4]:.3f},")
+        lines.append(f"rho_c,{bp[5]*1e3:.1f},{ap[5]*1e3:.1f},mOhm*cm2")
+        lines.append(f"R_sheet,{bp[6]:.0f},{bp[6]:.0f},Ohm/sq")
+        lines.append("")
+        lines.append("Performance,Before,After,Delta")
+        lines.append(f"Jsc [mA/cm2],{iv_b['Jsc']:.4f},{iv_a['Jsc']:.4f},{iv_a['Jsc']-iv_b['Jsc']:+.4f}")
+        lines.append(f"Voc [V],{iv_b['Voc']:.5f},{iv_a['Voc']:.5f},{iv_a['Voc']-iv_b['Voc']:+.5f}")
+        lines.append(f"FF [%],{iv_b['FF']:.3f},{iv_a['FF']:.3f},{iv_a['FF']-iv_b['FF']:+.3f}")
+        lines.append(f"Eff [%],{iv_b['Eff']:.4f},{iv_a['Eff']:.4f},{iv_a['Eff']-iv_b['Eff']:+.4f}")
+        lines.append(f"Pmpp [mW/cm2],{iv_b['Pmpp']:.4f},{iv_a['Pmpp']:.4f},{iv_a['Pmpp']-iv_b['Pmpp']:+.4f}")
+        Rl_b=bp[0]/(bp[4]*bp[2]*bp[1]); Rl_a=ap[0]/(ap[4]*ap[2]*ap[1])
+        lines.append(f"R_line [Ohm/cm],{Rl_b:.4f},{Rl_a:.4f},{Rl_a-Rl_b:+.4f}")
+        lines.append(f"Rs_extracted [Ohm*cm2],{c.get('Rs_ext_b',0):.4f},{c.get('Rs_ext_a',0):.4f},")
+        lines.append(f"Gsh [S/cm2],{c.get('Gsh_b',0):.6f},{c.get('Gsh_a',0):.6f},")
+        lines.append("")
+        hb = c.get('health_b') or _iv_health(iv_b)
+        ha = c.get('health_a') or _iv_health(iv_a)
+        def _csv_num(value):
+            return "" if value is None else f"{value:.12g}"
+        lines.append("Result Health,Before,After,Unit")
+        lines.append(f"Status,{hb['status']},{ha['status']},")
+        lines.append(f"Message,{hb['message']},{ha['message']},")
+        lines.append(f"Final Newton residual,{_csv_num(hb['final_newton_residual'])},{_csv_num(ha['final_newton_residual'])},")
+        lines.append(f"Last-point KCL RMS,{_csv_num(hb['last_point_kcl_residual_rms'])},{_csv_num(ha['last_point_kcl_residual_rms'])},")
+        lines.append(f"Nonlinear iterations,{hb['nonlinear_iterations']},{ha['nonlinear_iterations']},")
+        lines.append(f"Warm start used,{hb['warm_start_used']},{ha['warm_start_used']},")
+        lines.append(f"Fallback used,{hb['fallback_used']},{ha['fallback_used']},")
+        lines.append(f"MPP consistency error,{_csv_num(hb['pmpp_consistency_error'])},{_csv_num(ha['pmpp_consistency_error'])},mW/cm2")
+        lines.append(f"Vmpp internal,{_csv_num(hb['vmpp_internal'])},{_csv_num(ha['vmpp_internal'])},V")
+        lines.append(f"Rs_vert_total,{_csv_num(hb['rs_vert_total'])},{_csv_num(ha['rs_vert_total'])},Ohm*cm2")
+        lines.append(f"Junction model,{hb.get('junction_model','')},{ha.get('junction_model','')},")
+        lines.append(f"Rs junction,{_csv_num(hb.get('rs_junction'))},{_csv_num(ha.get('rs_junction'))},Ohm/sq")
+        lines.append(f"Phase B status,{hb.get('phase_b_status','')},{ha.get('phase_b_status','')},")
+        lines.append(f"Phase B message,{hb.get('phase_b_message','')},{ha.get('phase_b_message','')},")
+        lines.append(f"Phase B native KCL RMS,{_csv_num(hb.get('phase_b_native_kcl_rms_mA_cm2'))},{_csv_num(ha.get('phase_b_native_kcl_rms_mA_cm2'))},mA/cm2")
+        lines.append(f"Phase B native KCL max,{_csv_num(hb.get('phase_b_native_kcl_max_mA_cm2'))},{_csv_num(ha.get('phase_b_native_kcl_max_mA_cm2'))},mA/cm2")
+        lines.append(f"Phase B native KCL integrated,{_csv_num(hb.get('phase_b_native_kcl_integrated_mA_cm2'))},{_csv_num(ha.get('phase_b_native_kcl_integrated_mA_cm2'))},mA/cm2")
+        lines.append(f"Phase B native KCL max current,{_csv_num(hb.get('phase_b_native_kcl_max_A'))},{_csv_num(ha.get('phase_b_native_kcl_max_A'))},A")
+        lines.append(f"Phase B top KVL RMS,{_csv_num(hb.get('phase_b_top_kvl_rms_mV'))},{_csv_num(ha.get('phase_b_top_kvl_rms_mV'))},mV")
+        lines.append("")
+        lines.append("Loss [mW/cm2],Before,After,Delta")
+        lines.append(f"Emitter,{c['Pe_b']:.5f},{c['Pe_a']:.5f},{c['Pe_a']-c['Pe_b']:+.5f}")
+        lines.append(f"Finger,{c.get('Pff_b',0):.5f},{c.get('Pff_a',0):.5f},")
+        lines.append(f"Busbar,{c.get('Pfb_b',0):.5f},{c.get('Pfb_a',0):.5f},")
+        lines.append(f"Contact,{c['Pc_b']:.5f},{c['Pc_a']:.5f},{c['Pc_a']-c['Pc_b']:+.5f}")
+        lines.append(f"Shading,{c['Ps_b']:.5f},{c['Ps_a']:.5f},")
+        lines.append(f"Shunt,{c.get('Psh_b',0):.5f},{c.get('Psh_a',0):.5f},{c.get('Psh_a',0)-c.get('Psh_b',0):+.5f}")
+        lines.append(f"Recomb,{c.get('Prec_b',0):.5f},{c.get('Prec_a',0):.5f},{c.get('Prec_a',0)-c.get('Prec_b',0):+.5f}")
+        lines.append(f"Junction,{c.get('Pj_b',0):.5f},{c.get('Pj_a',0):.5f},{c.get('Pj_a',0)-c.get('Pj_b',0):+.5f}")
+        Rc_b = c.get('Rc_b',{})
+        if Rc_b:
+            lines.append("")
+            lines.append("Recomb Current [mA/cm2],Before,After")
+            Rc_a = c.get('Rc_a',{})
+            for k,label in [('pass_n1','Passivated n=1'),('met_n1','Metal n=1'),
+                            ('met_n2','Metal n=2'),('pass_n2','Passivated n=2')]:
+                lines.append(f"{label},{Rc_b.get(k,0):.6f},{Rc_a.get(k,0):.6f}")
+        lines.append("")
+        lines.append("I-V Curve (Before)")
+        lines.append("V [V],J [mA/cm2]")
+        for v,j in zip(c['Vs_b'], c['Js_b']):
+            lines.append(f"{v:.6f},{j:.6f}")
+        lines.append("")
+        lines.append("I-V Curve (After)")
+        lines.append("V [V],J [mA/cm2]")
+        for v,j in zip(c['Vs_a'], c['Js_a']):
+            lines.append(f"{v:.6f},{j:.6f}")
+        # v28.20: robust CSV write. Previously `open(fn,'w')` (a) used the OS
+        # default text codec — on Korean Windows (cp949) any non-ASCII glyph in
+        # the content (Ω, ², ·, →, Korean health/junction messages) raised
+        # UnicodeEncodeError *after* the file was already truncated to 0 bytes,
+        # leaving an unopenable 0-byte file; and (b) wrote in place, so any mid-
+        # write failure destroyed the target. Fix: encode as utf-8-sig (Excel- &
+        # Korean-safe, matching the mesh_convergence writer) and write atomically
+        # to a temp file, replacing the target only on full success — so a
+        # failure can never leave a 0-byte CSV behind.
+        import tempfile
+        try:
+            _dir = os.path.dirname(os.path.abspath(fn)) or '.'
+            _fd, _tmp = tempfile.mkstemp(suffix='.tmp', dir=_dir)
+            try:
+                with os.fdopen(_fd, 'w', encoding='utf-8-sig', newline='') as f:
+                    f.write('\r\n'.join(lines))
+                os.replace(_tmp, fn)
+            except BaseException:
+                try:
+                    os.remove(_tmp)
+                except OSError:
+                    pass
+                raise
+        except Exception as e:
+            self._status(f"CSV save failed: {e}")
+            messagebox.showerror("GEDOS", f"CSV 저장 실패:\n{e}")
+            return
+        self._status(f"CSV saved: {fn}")
+        messagebox.showinfo("GEDOS", f"Results exported:\n{fn}")
+
+    # ---------------------------------------------------------
+    # SAVE PNG
+    # ---------------------------------------------------------
+    def _save_png(self):
+        fn = filedialog.asksaveasfilename(
+            initialfile='GEDOS.png',
+            filetypes=[('PNG','*.png')], defaultextension='.png')
+        if fn:
+            self.fig.savefig(fn, dpi=150, bbox_inches='tight', facecolor='white')
+            self._status(f"Saved: {fn}")
+
+    def _open_electrode_optimizer(self):
+        """전면전극 최적화 창 열기 — UI 로직은 front_electrode.ui(별도 모듈)에 있고
+        여기서는 엔진 모듈 자신을 넘겨 연결만 한다(최소 침습).
+
+        상태바 문구도 front_electrode.i18n을 따른다(v28.47) — 최적화 창의 언어
+        선택과 어긋나지 않게 하기 위함."""
+        try:
+            import sys as _sys
+            from front_electrode import ui as _fe_ui
+            from front_electrode.i18n import T as _T
+            _fe_ui.open_optimizer_window(_sys.modules[__name__], self)
+            self._status(_T("engine.window_opened"))
+        except Exception as e:
+            try:
+                from front_electrode.i18n import T as _T
+                self._status(_T("engine.window_error", msg=e))
+            except Exception:
+                self._status(f"Optimize window error: {e}")
+
+
+# =============================================================
+# RUN
+# =============================================================
+if __name__ == "__main__":
+    app = FESTProApp()
+    app.mainloop()
