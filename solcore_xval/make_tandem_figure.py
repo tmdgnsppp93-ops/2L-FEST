@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Tandem report figure for Dr. Kim.
 
-2L-FEST solves the perovskite/Si 2T tandem (Voc~1.9V, Eff~30.6%); Solcore
+GEDOS solves the perovskite/Si 2T tandem (Voc~1.9V, Eff~30.6%); Solcore
 Quasi-3D cannot converge it (stiff perovskite diode + 2-junction series; even
 Solcore's own 3J example simulates only a single junction). Frames it as a
 solver-capability / robustness comparison.
@@ -29,15 +29,15 @@ C_FEM = "#C0392B"
 fig = plt.figure(figsize=(13.5, 7.6), facecolor="white")
 gs = GridSpec(1, 2, figure=fig, width_ratios=[1, 1.25], left=0.07, right=0.975,
               top=0.86, bottom=0.09, wspace=0.18)
-fig.suptitle("페로브스카이트/Si 탠덤 — 2L-FEST 계산 및 Solcore Quasi-3D 비교",
+fig.suptitle("페로브스카이트/Si 탠덤 — GEDOS 계산 및 Solcore Quasi-3D 비교",
              fontsize=15, fontweight="bold", y=0.965)
-fig.text(0.5, 0.905, "단일셀은 두 솔버 교차검증 완료 / 탠덤은 2L-FEST(FEM)만 수렴 — "
+fig.text(0.5, 0.905, "단일셀은 두 솔버 교차검증 완료 / 탠덤은 GEDOS(FEM)만 수렴 — "
          "Solcore Quasi-3D는 실질적으로 단일접합 전용", ha="center", fontsize=10, color="#555")
 
-# (A) 2L-FEST tandem J-V
+# (A) GEDOS tandem J-V
 axA = fig.add_subplot(gs[0, 0])
-axA.plot(Vf, Jf, "o-", color=C_FEM, ms=5, lw=2, label="2L-FEST (FEM)")
-axA.set_title("(A) 2L-FEST 탠덤 J–V 곡선", fontsize=11.5, fontweight="bold")
+axA.plot(Vf, Jf, "o-", color=C_FEM, ms=5, lw=2, label="GEDOS (FEM)")
+axA.set_title("(A) GEDOS 탠덤 J–V 곡선", fontsize=11.5, fontweight="bold")
 axA.set_xlabel("전압 [V]"); axA.set_ylabel("전류밀도 J [mA/cm$^2$]")
 axA.set_xlim(0, Voc*1.05); axA.set_ylim(0, Jsc*1.18)
 axA.grid(alpha=0.3); axA.legend(loc="lower left", fontsize=10)
@@ -61,7 +61,7 @@ axB.text(0.0, 0.96,
 
 # capability table
 cells = [["", "단일셀", "탠덤(2T)"],
-         ["2L-FEST (FEM)", "가능", "가능 (Eff 30.6%)"],
+         ["GEDOS (FEM)", "가능", "가능 (Eff 30.6%)"],
          ["Solcore (SPICE)", "가능", "불가 (수렴실패)"]]
 colA = [["#1F2937"]*3,
         ["#F1F5F9", "#D1FAE5", "#D1FAE5"],
@@ -85,11 +85,11 @@ axB.text(0.0, 0.40,
     transform=axB.transAxes, va="top", fontsize=9.3, color="#92400E", linespacing=1.4)
 axB.text(0.0, 0.13,
     "■ 결론\n"
-    "   탠덤(페로브/Si)은 2L-FEST(FEM-Newton)만 강건하게 계산.\n"
+    "   탠덤(페로브/Si)은 GEDOS(FEM-Newton)만 강건하게 계산.\n"
     "   FEM 기반 전용 솔버가 다중접합 시뮬레이션에서 우위.",
     transform=axB.transAxes, va="top", fontsize=9.6, color="#1E293B", fontweight="bold", linespacing=1.45)
 axB.add_patch(plt.Rectangle((-0.02, -0.02), 1.04, 1.02, transform=axB.transAxes,
               fill=False, ec="#cbd5e1", lw=1.0, clip_on=False))
 
-out = f"{HERE}/2LFEST_tandem_vs_Solcore.png"
+out = f"{HERE}/GEDOS_tandem_vs_Solcore.png"
 fig.savefig(out, dpi=160); print("saved", out); print("FIG_DONE")

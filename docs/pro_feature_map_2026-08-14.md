@@ -1,4 +1,4 @@
-# Griddler PRO 전용 기능 감사 — 2L-FEST 구현 상태
+# Griddler PRO 전용 기능 감사 — GEDOS 구현 상태
 
 > **성격**: 읽기 전용 감사. 코드 수정 없음, 신규 테스트 실행 없음.
 > **작성**: 2026-08-14
@@ -46,7 +46,7 @@
 |---|---|
 | 브랜치 | `feat/metal-optical-transparency` |
 | 감사 시점 HEAD | `1ea447a` feat(transparency): 엔진 배선 + rear 경고 + 모델 불변 회귀 |
-| 감사 시점 작업 트리 | `2L_FEST.py` 미커밋 변경 있음 (Task 3 보고 경로 광학화) |
+| 감사 시점 작업 트리 | `GEDOS.py` 미커밋 변경 있음 (Task 3 보고 경로 광학화) |
 | 버전 문자열 | `__build__` = `v28.54` (2026-08-14). *v28.55 bump는 미착수* |
 | 테스트 | 파일 16개 / `test_` 함수 **121개** |
 
@@ -58,16 +58,16 @@
 
 | # | 기능 | 판정 | 근거 (file:line) | 비고 |
 |---|---|---|---|---|
-| 1 | 2T tandem — top/bot 서브셀 + interlayer 저항 + photon coupling J01 | **완전구현** | `2L_FEST.py:1682-1689`, `4400-4401`, `4451-4456`, `4682-4684`, `3702`, `4048`, `RS_JUNCTION_MIN:570` | 세 요소 모두 솔버에 배선. 단 구조가 Griddler와 다름(비고 A) |
+| 1 | 2T tandem — top/bot 서브셀 + interlayer 저항 + photon coupling J01 | **완전구현** | `GEDOS.py:1682-1689`, `4400-4401`, `4451-4456`, `4682-4684`, `3702`, `4048`, `RS_JUNCTION_MIN:570` | 세 요소 모두 솔버에 배선. 단 구조가 Griddler와 다름(비고 A) |
 | 2 | Cell cross-sectional model — 단면에서 J_L / J01_pass / J01_metal 역산 | **미구현** | 근거 부재 확인: `absorptance`·`light trapping`·`Basore`·`SRV`·`bulk_lifetime`·`wafer_thickness` 전문 검색 **0건** | J01_pass/J01_metal은 역산이 아니라 **직접 입력**(`1682` 부근 DiodeParams) |
 | 3 | PC1D 에미터 계산 연동 (또는 대체 J0e 계산) | **미구현** | `PC1D`/`pc1d`/`EDNA`/`J0e` 전문 검색 **0건** | 대체 계산기도 없음 |
 | 4 | Batch 실행 — 여러 케이스 연속 실행 | **완전구현** | `front_electrode/optimizer.py:66` `_sweep`, `:124` `optimize_grid`, `front_electrode/roadmap.py:330` `run_roadmap`, `scripts/optimize_m10.py:205` `run_busbars` | append+flush, `--resume`(`optimize_m10.py:212`), 병렬(`:290` `imap_unordered`) |
 | 5 | 스크립트 실행 — 외부 파일로 케이스 정의 | **완전구현** | `front_electrode/roadmap.py:173` `load_scenario`, `:186` `expand_cases`, `scripts/scenarios/unist_tco.json`, `scripts/run_roadmap.py` CLI | JSON 시나리오 → 누적 전개 → CSV. `optimize_m10.py:27` argparse CLI 병행 |
-| 6 | 비균일 공간 분포 입력 — txt/이미지에서 2D 맵 로드 | **구현 (txt/csv, 자체 규약)** | 로더 `load_spatial_map_txt` · GUI `_open_spatial_maps` · **엔진 배선 `FESTSolver._diode_node_arrays` 경유 13함수 34줄 전부**(v28.61). 회귀 `tests/test_spatial_map.py` 111건 + `tests/test_spatial_branch_coverage.py` 97건 | §#6 상세 · `docs/spatial_map_convention.md` §6 (2026-08-19 3차 개정). ⚠ **규약 일치는 여전히 미확인**(PRO 대조 불가). 이미지 입력(jpg/tif/bmp)은 미구현 |
+| 6 | 비균일 공간 분포 입력 — txt/이미지에서 2D 맵 로드 | **구현 (txt/csv, 자체 규약)** | 로더 `load_spatial_map_txt` · GUI `_open_spatial_maps` · **엔진 배선 `GEDOSSolver._diode_node_arrays` 경유 13함수 34줄 전부**(v28.61). 회귀 `tests/test_spatial_map.py` 111건 + `tests/test_spatial_branch_coverage.py` 97건 | §#6 상세 · `docs/spatial_map_convention.md` §6 (2026-08-19 3차 개정). ⚠ **규약 일치는 여전히 미확인**(PRO 대조 불가). 이미지 입력(jpg/tif/bmp)은 미구현 |
 | 7 | Metallization optimization — grid 설계 변수 스윕 | **완전구현 (7축)** | `front_electrode/optimizer.py:124-166` | 축 목록은 비고 C |
-| 8 | Base lateral transport — bulk 내 횡방향 캐리어 전류 | **미구현** | 평면 인벤토리 `2L_FEST.py:3693-3702`: `_Ke`(front TCO) / `_Kr`(rear emitter) / `_Krm`(rear metal) / `_Km`(front metal) / `_K_junc`(interlayer). **bulk 평면 없음** | 횡전도는 표면·금속·interlayer 평면에만 존재 |
+| 8 | Base lateral transport — bulk 내 횡방향 캐리어 전류 | **미구현** | 평면 인벤토리 `GEDOS.py:3693-3702`: `_Ke`(front TCO) / `_Kr`(rear emitter) / `_Krm`(rear metal) / `_Km`(front metal) / `_K_junc`(interlayer). **bulk 평면 없음** | 횡전도는 표면·금속·interlayer 평면에만 존재 |
 | 9 | Capacitive effects — I-V 스윕 속도 의존 과도 효과 | **미구현** | `capacit`/`transient`/`sweep_rate`/`dV/dt` 전문 검색 **0건** | 정상상태 전용 |
-| 10 | Metal optical transparency | **완전구현 (신규)** | `2L_FEST.py:971-984`(파라미터·검증), `:1067-1068`(`optical_widths`), `:1347-1359`(`optical_shading_fraction`), `:4029`(`_sh_case`), `:6964`(`shade_frac`) | 비고 D. audit_2026-08-13 시점의 "미구현"에서 변경됨 |
+| 10 | Metal optical transparency | **완전구현 (신규)** | `GEDOS.py:971-984`(파라미터·검증), `:1067-1068`(`optical_widths`), `:1347-1359`(`optical_shading_fraction`), `:4029`(`_sh_case`), `:6964`(`shade_frac`) | 비고 D. audit_2026-08-13 시점의 "미구현"에서 변경됨 |
 | 11 | Tandem non-overlap 영역 Jsc 별도 입력 | **미구현** | `non-overlap`/`nonoverlap`/`top_area`/`overlap_frac` 전문 검색 **0건** | audit_2026-08-13 이후 **변경 없음** |
 
 **완전구현 7 / 부분구현 0 / 미구현 4 / 미확인 0**
@@ -105,7 +105,7 @@
 >
 > ### 2차 개정이 내린 근거가 해소됐다
 >
-> `FESTSolver._diode_node_arrays(dp, mode)`를 신설해 **다이오드 노드 배열을
+> `GEDOSSolver._diode_node_arrays(dp, mode)`를 신설해 **다이오드 노드 배열을
 > 조립하는 유일한 경로**로 만들고, 소비 지점 전부를 그리로 배선했다.
 >
 > | 조합 | 도달 분기 | `rc` | `j01` | `j02` | `gen` |
@@ -160,7 +160,7 @@
 > 아래 1차 개정이 근거로 든 *"배선 `SpatialMap` / `_spatial_mult` / 소비 4곳"*에서
 > **소비 지점은 4곳이 아니라 7곳이고, 그중 4곳이 누락**이다.
 >
-> `solve_tandem`이 배율 계산 블록(`2L_FEST.py:4932`)보다 **앞에서** 다른 솔버로
+> `solve_tandem`이 배율 계산 블록(`GEDOS.py:4932`)보다 **앞에서** 다른 솔버로
 > 디스패치한다(`:4857` `:4875` `:4886` `:4889` `:4894`). 그 분기들은 `J01_top_arr`를
 > 스칼라로만 만든다(`:5224` `:5595` `:5914` `:6191`).
 >
@@ -173,7 +173,7 @@
 >
 > **기본 설정이 결함 경로다.** `DiodeParams.Rs_junction = 5000.0`(`:1916`)이 클래스
 > 기본값이고 `Rs_j ≤ 0`은 `RS_JUNCTION_MIN`으로 클램프되므로(`:4436-4440`),
-> Phase A는 `FEST_LEGACY_LOCAL_MATCH` 환경변수로만 도달한다. 정상 동작하는 유일한
+> Phase A는 `GEDOS_LEGACY_LOCAL_MATCH` 환경변수로만 도달한다. 정상 동작하는 유일한
 > tandem 칸이 레거시 전용이다.
 >
 > **결과가 자기모순 값이다.** `cell_current`(`:6717`)는 맵을 무조건 적용하므로,
@@ -212,7 +212,7 @@
 >
 > 그래서 규약을 **자체 규약으로 확정 선언**했다 — `docs/spatial_map_convention.md`:
 >
-> | 규약 | 2L-FEST 확정값 | Griddler와 같은가 |
+> | 규약 | GEDOS 확정값 | Griddler와 같은가 |
 > |---|---|---|
 > | 행 방향 | `matrix[0]` = `y=0` (첫 데이터 줄이 아래) | **미확인** |
 > | 격자 정렬 | 꼭짓점 정렬 `linspace(0,H,ny)` | **미확인** |
@@ -236,14 +236,14 @@
 **원 판정 (2026-08-14, 보존)**
 
 - **되는 것**: 공간 맵이 솔버에 실제로 반영된다. `SpatialMap.evaluate()`가 노드 좌표에서 배율을 만들고(`3249`), `_spatial_mult`(`3810`)를 거쳐 접촉 컨덕턴스(`4000`), J01/J02/광생성(`4340-4342`), 단일셀 경로(`5839-5840`)에 곱해진다. 모드 5종: `uniform` / `rectangle` / `gaussian` / `checkerboard` / `csv`(2D 행렬 직접 주입).
-- **안 되는 것**: **파일에서 읽어 들이는 경로가 없다.** `np.loadtxt`·`imread` 전문 검색 0건이고, `2L_FEST.py` 안에서 `SpatialMap(`을 생성하는 코드가 **한 줄도 없다**(생성 사례는 `_audit.py:135-145` 스모크 스크립트뿐). 즉 사용자는 GUI·CLI 어디로도 맵을 넣을 수 없고, Python으로 직접 객체를 만들어 `DiodeParams`에 꽂아야 한다. Griddler의 txt/jpg/tif/bmp import에 대응하는 기능은 없다.
+- **안 되는 것**: **파일에서 읽어 들이는 경로가 없다.** `np.loadtxt`·`imread` 전문 검색 0건이고, `GEDOS.py` 안에서 `SpatialMap(`을 생성하는 코드가 **한 줄도 없다**(생성 사례는 `_audit.py:135-145` 스모크 스크립트뿐). 즉 사용자는 GUI·CLI 어디로도 맵을 넣을 수 없고, Python으로 직접 객체를 만들어 `DiodeParams`에 꽂아야 한다. Griddler의 txt/jpg/tif/bmp import에 대응하는 기능은 없다.
 
 ---
 
 ## 비고
 
 **A. #1 tandem의 구조 차이**
-전기적 요소(2T 직렬 결합, interlayer 횡전도 `_K_junc`, 수직 접촉 `Rc_junction`, photon coupling)는 전부 배선되어 있고 `J01_coupling`은 야코비안 항(`4454` `dJLC_dVtop`)까지 포함해 처리된다. 다만 Griddler는 **top/bottom을 각각 독립된 셀 모델 파일로 로드**하는 반면, 2L-FEST의 top/bot은 `DiodeParams`의 필드 쌍으로만 구분되며 서브셀별 기하·전극 그리드를 갖지 않는다. 이 항목이 요구한 세 요소 기준으로는 완전구현이나, 구조적 대응은 아니다.
+전기적 요소(2T 직렬 결합, interlayer 횡전도 `_K_junc`, 수직 접촉 `Rc_junction`, photon coupling)는 전부 배선되어 있고 `J01_coupling`은 야코비안 항(`4454` `dJLC_dVtop`)까지 포함해 처리된다. 다만 Griddler는 **top/bottom을 각각 독립된 셀 모델 파일로 로드**하는 반면, GEDOS의 top/bot은 `DiodeParams`의 필드 쌍으로만 구분되며 서브셀별 기하·전극 그리드를 갖지 않는다. 이 항목이 요구한 세 요소 기준으로는 완전구현이나, 구조적 대응은 아니다.
 
 **C. #7 스윕 축 — 정확히 7개**
 `optimize_grid`의 `itertools.product`(`optimizer.py:153-155`) 기준:
@@ -271,13 +271,13 @@
 ### extraction_method — GUI 비활성화 완료
 
 - **커밋 `8ff7dee`** ui(v28.54): Current Extraction 드롭다운 비활성화 + (not implemented) 라벨 → **`02c3301`로 main에 머지됨**
-- 현재 상태: 전면 `2L_FEST.py:8514`(`(not implemented)` 라벨), `:8525`(`state="disabled"`) / 후면 `:8653`, `:8664`
+- 현재 상태: 전면 `GEDOS.py:8514`(`(not implemented)` 라벨), `:8525`(`state="disabled"`) / 후면 `:8653`, `:8664`
 - **솔버 배선은 여전히 없다.** `extraction_method`는 `:1012`에 저장되고 GUI가 `:9005`·`:9046`에서 넘길 뿐, 솔버가 읽는 지점이 없다. 조치는 "틀린 결과를 옳다고 믿는 상태"를 막은 것이지 기능 구현이 아니다.
 - **v28.64 갱신**: 비활성 드롭다운을 **읽기 전용 상태 표시**(라벨 `Probe Point` / `프로브 점 방식`)로 교체했다. 비활성 드롭다운은 "곧 열릴 것"으로 읽혀 사용자가 값이 아니라 시점을 기다리게 한다 — 선택지가 하나뿐이면 선택이 아니라 상태다. **솔버 배선은 여전히 없고 `GridDesign`에 들어가는 값도 `probe_point` 그대로다.** 위 줄의 행 번호는 v28.54 시점 기준이며 현재 위치가 아니다.
 
 ### taper — 저항 계산 미배선, optimize 경로에서 미사용
 
-- 전체 참조 3곳뿐: `2L_FEST.py:970-1003`(저장·기본값), `:1372-1375`(`metal_rects_front`), `:1441-1444`(`metal_rects_front_split`, 표시 전용)
+- 전체 참조 3곳뿐: `GEDOS.py:970-1003`(저장·기본값), `:1372-1375`(`metal_rects_front`), `:1441-1444`(`metal_rects_front_split`, 표시 전용)
 - **금속 저항에 도달하지 않는다.** `assemble_K_met_1d`(호출 `:3979`)는 스칼라 폭 하나만 받는다. BB 근처를 넓혀 저항을 낮추는 것이 taper의 목적인데 그 효과가 모델에 없다.
 - **shading 보고값에도 미반영.** `shading_fraction`(`:1325` 이하)은 균일 폭을 가정해 확장부 면적을 누락한다.
 - **optimize 경로에서 사용되지 않는다.** `front_electrode/`·`scripts/`·`tests/` 전체에서 `taper`/`pattern_style` 참조 **0건** → 모든 최적화·스윕은 `h_pattern` 고정으로 돈다. 따라서 이 결함이 기존 산출 수치에 영향을 준 적은 없다(잠복).

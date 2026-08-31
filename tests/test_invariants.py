@@ -62,10 +62,10 @@ def _energy_balance_rel(S, res, dp, Vb):
 
 
 # --- (a) energy balance -------------------------------------------------------
-def test_energy_balance_legacy_phase_a(fest, make_mono, monkeypatch):
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+def test_energy_balance_legacy_phase_a(gedos, make_mono, monkeypatch):
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S = make_mono().S
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     dp.Rs_junction = 0.0
     dp.Rc_junction = 0.0  # ideal junction -> Vbot = Ve - Vtop - Vr exactly
     Voc0 = dp.expected_voc()[2]
@@ -76,10 +76,10 @@ def test_energy_balance_legacy_phase_a(fest, make_mono, monkeypatch):
     assert _energy_balance_rel(S, res, dp, Vb) <= 1e-4
 
 
-def test_energy_balance_default_phase_b(fest, make_mono, monkeypatch):
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+def test_energy_balance_default_phase_b(gedos, make_mono, monkeypatch):
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     S = make_mono().S
-    dp = fest.DiodeParams()  # defaults: Phase B, Rs_junction=5000, Rc_junction=0.1
+    dp = gedos.DiodeParams()  # defaults: Phase B, Rs_junction=5000, Rc_junction=0.1
     Voc0 = dp.expected_voc()[2]
     Vb = 0.85 * Voc0
     res = S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
@@ -89,21 +89,21 @@ def test_energy_balance_default_phase_b(fest, make_mono, monkeypatch):
 
 
 # --- (b) equipotential-limit agreement with the 0D global-matching model ------
-def _zero_d(fest, m, dp):
+def _zero_d(gedos, m, dp):
     geo = m.geo
     sf = geo.shading_fraction()
     avg_mf = float(np.average(m.S.metal_frac, weights=m.S._na))
-    Vs, Js, iv0 = fest.solve_0d_tandem_iv(
+    Vs, Js, iv0 = gedos.solve_0d_tandem_iv(
         dp, shading_frac=sf, metal_frac=avg_mf, j_match=True)
     return iv0
 
 
-def test_b1_jsc_match_equipotential(fest, make_mono, monkeypatch):
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+def test_b1_jsc_match_equipotential(gedos, make_mono, monkeypatch):
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     m = make_mono()
-    dp = fest.DiodeParams()
-    dp.Rs_junction = fest.RS_JUNCTION_MIN  # 0.1 -> Phase B equipotential limit
-    iv0 = _zero_d(fest, m, dp)
+    dp = gedos.DiodeParams()
+    dp.Rs_junction = gedos.RS_JUNCTION_MIN  # 0.1 -> Phase B equipotential limit
+    iv0 = _zero_d(gedos, m, dp)
     res0 = m.S.solve(NEARZERO["rm"], NEARZERO["hf"], NEARZERO["wf"],
                      NEARZERO["rc"], NEARZERO["Rs"], 0.0, NEARZERO["cf"], dp, "tandem")
     Jsc_fem = float(m.S.cell_current(res0, dp))
@@ -111,12 +111,12 @@ def test_b1_jsc_match_equipotential(fest, make_mono, monkeypatch):
     assert abs(d) <= 0.3, f"Jsc mismatch {d:+.4f}% (FEM {Jsc_fem} vs 0D {iv0['Jsc']})"
 
 
-def test_b2_pmpp_match_equipotential(fest, make_mono, monkeypatch):
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+def test_b2_pmpp_match_equipotential(gedos, make_mono, monkeypatch):
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     m = make_mono()
-    dp = fest.DiodeParams()
-    dp.Rs_junction = fest.RS_JUNCTION_MIN
-    iv0 = _zero_d(fest, m, dp)
+    dp = gedos.DiodeParams()
+    dp.Rs_junction = gedos.RS_JUNCTION_MIN
+    iv0 = _zero_d(gedos, m, dp)
     _, _, ivf = m.S.calc_iv(NEARZERO["rm"], NEARZERO["hf"], NEARZERO["wf"],
                             NEARZERO["rc"], NEARZERO["Rs"], NEARZERO["cf"],
                             dp, mode="tandem", npts=21)
@@ -126,11 +126,11 @@ def test_b2_pmpp_match_equipotential(fest, make_mono, monkeypatch):
 
 
 # --- (c) dispatch gate --------------------------------------------------------
-def test_dispatch_flag_off_builds_interlayer(fest, make_mono, monkeypatch):
+def test_dispatch_flag_off_builds_interlayer(gedos, make_mono, monkeypatch):
     """flag OFF + Rs_junction=0 input -> clamped -> _K_junc built (Phase B)."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     S = make_mono().S
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     dp.Rs_junction = 0.0
     Voc0 = dp.expected_voc()[2]
     S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
@@ -138,11 +138,11 @@ def test_dispatch_flag_off_builds_interlayer(fest, make_mono, monkeypatch):
     assert S._K_junc is not None
 
 
-def test_dispatch_flag_on_allows_phase_a(fest, make_mono, monkeypatch):
+def test_dispatch_flag_on_allows_phase_a(gedos, make_mono, monkeypatch):
     """flag ON + Rs_junction=0 -> no interlayer (_K_junc is None), Phase A."""
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S = make_mono().S
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     dp.Rs_junction = 0.0
     Voc0 = dp.expected_voc()[2]
     S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],

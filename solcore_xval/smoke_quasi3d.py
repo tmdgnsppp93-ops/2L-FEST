@@ -20,13 +20,13 @@ from solcore.structure import Junction
 from solcore.solar_cell import SolarCell
 from solcore.spice.quasi_3D_solver import solve_quasi_3D
 
-# ---- 2L-FEST single-cell defaults, converted to SI (A/m^2, Ohm*m^2) ----
-# 2L-FEST: Jph_single=19.77 mA/cm^2, J01_single=5.36e-15 A/cm^2, n1=1,
+# ---- GEDOS single-cell defaults, converted to SI (A/m^2, Ohm*m^2) ----
+# GEDOS: Jph_single=19.77 mA/cm^2, J01_single=5.36e-15 A/cm^2, n1=1,
 #          J02=0, n2=2, Rsh_single=15000 Ohm*cm^2, Voc~0.748 V (c-Si like)
 CM2_PER_M2 = 1e4
 jsc = 19.77e-3 * CM2_PER_M2      # A/cm^2 -> A/m^2  = 197.7
 j01 = 5.36e-15 * CM2_PER_M2      # A/cm^2 -> A/m^2
-j02 = 1e-30                       # ~0 (avoid exactly 0); 2L-FEST single J02=0
+j02 = 1e-30                       # ~0 (avoid exactly 0); GEDOS single J02=0
 Rsh = 15000.0 / CM2_PER_M2        # Ohm*cm^2 -> Ohm*m^2  = 1.5
 
 jx = Junction(kind="2D", n1=1.0, n2=2.0, j01=j01, j02=j02, R_shunt=Rsh, jsc=jsc)
@@ -38,7 +38,7 @@ jx.Eg = 1.12              # c-Si bandgap (eV) for the SPICE diode 'eg'
 jx.n1 = 1.0
 jx.n2 = 2.0
 jx.R_shunt = Rsh
-jx.R_sheet_top = 55.0     # Ohm/sq (2L-FEST TCO default)
+jx.R_sheet_top = 55.0     # Ohm/sq (GEDOS TCO default)
 jx.R_sheet_bot = 1e-3     # near-ideal back
 
 cell = SolarCell([jx])

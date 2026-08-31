@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Adapter — 기존 GEDOS 엔진 호출 래퍼 + busbar 반사광 회수(recovery).
 
-    기존 엔진(fest 모듈)
-         ↓  evaluate_existing_simulation(fest, grid_params, ...)
+    기존 엔진(gedos 모듈)
+         ↓  evaluate_existing_simulation(gedos, grid_params, ...)
     results dict  →  (Phase 2) optimizer
 
-이 모듈은 **새 물리식을 계산하지 않는다.** GridDesign/CellGeometry/FESTSolver
+이 모듈은 **새 물리식을 계산하지 않는다.** GridDesign/CellGeometry/GEDOSSolver
 등 기존 엔진 객체에 파라미터를 넣고, 기존 calc_iv/losses 결과를 받아온다.
-엔진 코드는 전혀 수정하지 않는다(의존성 주입: fest 모듈을 인자로 받음 →
-테스트는 mock된 fest, CLI는 실제 fest를 넘긴다).
+엔진 코드는 전혀 수정하지 않는다(의존성 주입: gedos 모듈을 인자로 받음 →
+테스트는 mock된 gedos, CLI는 실제 gedos를 넘긴다).
 
 ── busbar 반사광 회수(박사님 지시) ──────────────────────────────────
 busbar가 가린 빛의 일부는 반사되어 셀로 재입사한다. 이를 **busbar shading
@@ -132,7 +132,7 @@ def busbar_shading_breakdown(geo, w_f_cm, w_b_cm):
     }
 
 
-def _build_geometry(fest, grid_params):
+def _build_geometry(gedos, grid_params):
     """grid_params(사용자 단위) → CellGeometry (monofacial, full_area).
 
     edge_margin(v28.45, 2026.08.06 랩미팅): 웨이퍼 엣지의 실버-프리 마진.
@@ -155,7 +155,7 @@ def _build_geometry(fest, grid_params):
     if edge_margin_cm > 0.0 and cell_h_cm > 0.0:
         bb_frac = max(0.0, (cell_h_cm - 2.0 * edge_margin_cm) / cell_h_cm)
     if gp.get("finger_spacing_mm") is not None:
-        front = fest.GridDesign(
+        front = gedos.GridDesign(
             input_mode="finger_spacing",
             finger_spacing_mm=float(gp["finger_spacing_mm"]),
             n_busbars=int(gp["n_busbars"]),
@@ -166,7 +166,7 @@ def _build_geometry(fest, grid_params):
             optical_transparency_f=t_f, optical_transparency_b=t_b,
         )
     else:
-        front = fest.GridDesign(
+        front = gedos.GridDesign(
             input_mode="n_fingers",
             n_fingers=int(gp["n_fingers"]),
             n_busbars=int(gp["n_busbars"]),
@@ -176,7 +176,7 @@ def _build_geometry(fest, grid_params):
             edge_gap=edge_margin_cm, busbar_length_frac=bb_frac,
             optical_transparency_f=t_f, optical_transparency_b=t_b,
         )
-    geo = fest.CellGeometry(
+    geo = gedos.CellGeometry(
         cell_w=_mm_to_cm(gp["cell_w_mm"]),
         cell_h=cell_h_cm,
         front=front,
@@ -185,7 +185,7 @@ def _build_geometry(fest, grid_params):
 
 
 def evaluate_existing_simulation(
-    fest,
+    gedos,
     grid_params,
     scenario=None,
     busbar_recovery_factor=0.0,
@@ -197,7 +197,7 @@ def evaluate_existing_simulation(
     """기존 엔진을 1회 실행하고 결과 dict를 반환한다(순수 래퍼).
 
     Args:
-      fest: 로드된 엔진 모듈 (CellGeometry/GridDesign/FESTSolver/DiodeParams/
+      gedos: 로드된 엔진 모듈 (CellGeometry/GridDesign/GEDOSSolver/DiodeParams/
             generate_mesh/classify_nodes 보유).
       grid_params: dict — cell_w_mm, cell_h_mm, (n_fingers | finger_spacing_mm),
             w_finger_um, n_busbars, w_busbar_mm, [n_probe_points].
@@ -247,17 +247,17 @@ def evaluate_existing_simulation(
             "  · 광학 폭으로 전환: busbar_recovery_factor=0 으로 둘 것 "
             "(T 값의 문헌/측정 근거가 있을 때만)")
 
-    geo = _build_geometry(fest, grid_params)
+    geo = _build_geometry(gedos, grid_params)
 
     # 메시
     if axis_segments_override is not None:
-        pts, tri = fest.generate_mesh(geo, axis_segments_override=int(axis_segments_override))
+        pts, tri = gedos.generate_mesh(geo, axis_segments_override=int(axis_segments_override))
     elif target_nodes is not None:
-        pts, tri, *_ = fest._generate_mesh_for_target(geo, target_nodes=int(target_nodes))
+        pts, tri, *_ = gedos._generate_mesh_for_target(geo, target_nodes=int(target_nodes))
     else:
-        pts, tri = fest.generate_mesh(geo, mesh_tangent="Med", mesh_perp="Med")
-    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
-    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+        pts, tri = gedos.generate_mesh(geo, mesh_tangent="Med", mesh_perp="Med")
+    isf, isb, isp, ism, isrm, isrp = gedos.classify_nodes(pts, geo)
+    S = gedos.GEDOSSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
 
     # 물성(전극) — 우선순위: grid_params(per-combo 스윕) > scenario > 엔진 기본값.
     # (v28.45 Phase 2) rho_bulk/rho_contact를 조합별로 스윕할 수 있게 grid_params에서
@@ -280,7 +280,7 @@ def evaluate_existing_simulation(
         rc = g.rho_contact     # 엔진 기본값(10 mΩ·cm²)
     Rs = g.Rs_sheet
 
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
 
     # 기존 엔진 실행 (새 물리 없음)
     Vs, Js, iv = S.calc_iv(rm, hf, wf, rc, Rs, cf, dp, mode=mode, npts=npts)

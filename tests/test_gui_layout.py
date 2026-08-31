@@ -11,7 +11,7 @@
 ------------------------
 캡처는 사람 눈에 의존하고, macOS에서 Tk를 띄운 뒤 같은 프로세스에서 scipy sparse
 solve를 돌리면 GIL 오류로 죽는다(실측). 이 테스트는 **엔진 스텁**을 넘겨
-(ui는 fest를 Run 콜백에서만 쓴다) scipy를 아예 로드하지 않으므로 그 조합이
+(ui는 gedos를 Run 콜백에서만 쓴다) scipy를 아예 로드하지 않으므로 그 조합이
 성립하지 않는다. 물리 수치 검증은 반대로 Tk 없이 다른 테스트가 담당한다.
 
 CI 등 디스플레이가 없는 환경에서는 통째로 skip한다(사유 명시).
@@ -69,7 +69,7 @@ def tk_root():
         pass
 
 
-# 엔진이 기동 시 하는 것과 같은 한글 폰트 설정(2L_FEST...py의 후보 목록과 동일).
+# 엔진이 기동 시 하는 것과 같은 한글 폰트 설정(GEDOS...py의 후보 목록과 동일).
 _KR_FONT_CANDIDATES = ("AppleGothic", "Apple SD Gothic Neo", "Malgun Gothic",
                        "NanumGothic", "Noto Sans CJK KR")
 

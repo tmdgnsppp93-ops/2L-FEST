@@ -48,7 +48,7 @@ from front_electrode import (  # noqa: E402
     COMBO_CONFIRM_THRESHOLD,
 )
 
-fest = conftest._load_fest()
+gedos = conftest._load_gedos()
 
 # ITRPV 15/16판 기반 초기 탐색범위 (Phase 3 preset와 일치 예정 — 사용자 조정 가능)
 FINGER_WIDTHS_UM = [15.0, 20.0, 25.0, 30.0]
@@ -90,14 +90,14 @@ def run_fingers(scenario, quick, recovery, ax, edge_margin=0.0):
           f"  edge_margin={float(edge_margin or 0.0):g}mm")
     t0 = time.time()
     opt = optimize_fingers(
-        fest, cell_mm=39.0, finger_widths_um=widths, finger_pitches_mm=pitches,
+        gedos, cell_mm=39.0, finger_widths_um=widths, finger_pitches_mm=pitches,
         busbar_number=3, busbar_width_mm=0.3, scenario=scenario,
         edge_margin_mm=edge_margin,
         recovery_factor=recovery, axis_segments_override=ax, npts=8,
         progress=_progress("fingers"))
     print(f"    stage1 total {time.time()-t0:.0f}s")
     _print_best("fingers", opt)
-    ok, _, _ = roundtrip_check(fest, opt["best"], scenario=scenario,
+    ok, _, _ = roundtrip_check(gedos, opt["best"], scenario=scenario,
                                recovery_factor=recovery, axis_segments_override=ax, npts=8)
     print(f"    round-trip: {'OK (동일)' if ok else 'FAIL (불일치)'}")
     suffix = "quick" if quick else "full"
@@ -116,7 +116,7 @@ def _csv_key(n_bb, w_bb):
 def _eval_combo(task):
     """워커 진입점 — 모듈 레벨 함수여야 multiprocessing(spawn) picklable.
 
-    각 워커는 spawn으로 이 모듈을 재import → 최상단 ``fest = conftest._load_fest()``
+    각 워커는 spawn으로 이 모듈을 재import → 최상단 ``gedos = conftest._load_gedos()``
     가 실행되어 **프로세스마다 독립 엔진**을 로드한다(상태 공유·warm-start 누수 없음).
     한 조합(busbar 개수×폭)을 평가해 CSV 1행 dict를 반환. 엔진/효율식 무수정.
 
@@ -132,7 +132,7 @@ def _eval_combo(task):
         grid["rho_bulk_uohm_cm"] = float(task["rho_bulk"])
     t0 = time.time()
     out = evaluate_existing_simulation(
-        fest, grid, scenario=task["scenario"], busbar_recovery_factor=0.0,
+        gedos, grid, scenario=task["scenario"], busbar_recovery_factor=0.0,
         mode="tandem", npts=int(task["npts"]), target_nodes=int(task["target_nodes"]))
     dt = time.time() - t0
     # recovery 25%(KIST 가정) 반영 total_loss 병기 — 순차 버전과 동일 산식.
@@ -504,7 +504,7 @@ def main():
                  "default": [SCENARIO_ENGINE_DEFAULT],
                  "both": [SCENARIO_MEASURED, SCENARIO_AS_CURED]}[args.scenario]
 
-    print(f"GEDOS build {fest.__build__['version']} | scenarios={[s['label'] for s in scenarios]}")
+    print(f"GEDOS build {gedos.__build__['version']} | scenarios={[s['label'] for s in scenarios]}")
     for sc in scenarios:
         if args.stage in ("fingers", "both"):
             run_fingers(sc, args.quick, args.recovery, args.ax,

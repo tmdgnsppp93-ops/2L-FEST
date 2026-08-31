@@ -120,7 +120,7 @@ Rs_base = 1 / σ_sheet                   [Ω/sq]
 
 ### 3-1. `assemble_K`는 시트 컨덕턴스에 선형이다
 
-`assemble_K`(`2L_FEST.py:2649`)의 계수가 `coeff = 1/(4·A·Rs)`이므로 `1/Rs`에
+`assemble_K`(`GEDOS.py:2649`)의 계수가 `coeff = 1/(4·A·Rs)`이므로 `1/Rs`에
 선형이다. 따라서 **병렬 합성 = 행렬 덧셈**:
 
 ```
@@ -169,7 +169,7 @@ K(Rs_a) + K(Rs_b)  ==  K( 1/(1/Rs_a + 1/Rs_b) )
 
 | 확인 | 결과 |
 |---|---|
-| `full_area`의 `_Kr` | `assemble_K(Rs=0.001)` **하드코딩**(`2L_FEST.py:4389-4390`) — `dp.Rs_rear_tco`를 무시한다 |
+| `full_area`의 `_Kr` | `assemble_K(Rs=0.001)` **하드코딩**(`GEDOS.py:4389-4390`) — `dp.Rs_rear_tco`를 무시한다 |
 | `bifacial`의 `_Kr` | `assemble_K(Rs=dp.Rs_rear_tco)` (기본 50 Ω/sq) |
 | `full_area`의 `Vr` 분포 | **min = max = 0.000e+00, span = 0** — 완전 등전위 |
 | `bifacial`의 `Vr` 분포 | span = **48.1 mV** — 실제 횡방향 전압강하 |
@@ -188,7 +188,7 @@ K(Rs_a) + K(Rs_b)  ==  K( 1/(1/Rs_a + 1/Rs_b) )
 
 ### 3-5. 대상 평면이 `_Kr`인 이유
 
-탠덤에서 하부셀 전압은 `Vbot = V_int − Vr`이다(`2L_FEST.py:5104`).
+탠덤에서 하부셀 전압은 `Vbot = V_int − Vr`이다(`GEDOS.py:5104`).
 
 - `V_int` = interlayer = 하부셀의 **에미터 쪽**
 - `Vr` = 후면 = 하부셀의 **베이스 쪽** ← **벌크는 여기다**
@@ -222,7 +222,7 @@ K(Rs_a) + K(Rs_b)  ==  K( 1/(1/Rs_a + 1/Rs_b) )
 ## 5. 이 규약이 적용되지 않는 것
 
 - **`Rs_vert_bot`** — 벌크의 **수직** 성분이며 터미널 IR 강하로 사후 적용된다
-  (`2L_FEST.py:1720-1729`). 층위가 다르고, Griddler 쪽 대응물은 A.5의 Base
+  (`GEDOS.py:1720-1729`). 층위가 다르고, Griddler 쪽 대응물은 A.5의 Base
   Transport Calculator다. **횡전도와 동시에 켜는 것을 금지하지 않는다** — 서로
   다른 방향의 저항이므로 이중 계산이 아니다.
 

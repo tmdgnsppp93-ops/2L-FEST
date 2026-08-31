@@ -52,7 +52,7 @@ scipy 1.17.1) — **핀 스택**, `stack_mismatch() is None`. 전부 `python -m 
 `cell_current`가 맵을 무조건 적용해 ΔJ ≠ 0이 나오는 바람에 **겉보기에는 작동하는
 것처럼 보였다** — 그래서 오래 남았다.
 
-`FESTSolver._diode_node_arrays` 신설로 조립 지점을 하나로 모았다.
+`GEDOSSolver._diode_node_arrays` 신설로 조립 지점을 하나로 모았다.
 census **34줄/13함수 → 4줄/1함수**.
 
 ---
@@ -61,7 +61,7 @@ census **34줄/13함수 → 4줄/1함수**.
 
 | # | 계획서 | 실제 |
 |---|---|---|
-| 1 | 결함 분기 4개 | **5개** — `_solve_single_bifacial`(`2L_FEST.py:6513` 부근) |
+| 1 | 결함 분기 4개 | **5개** — `_solve_single_bifacial`(`GEDOS.py:6513` 부근) |
 | 2 | 소비 지점 9곳 | **13개 함수 34줄** — `losses`·`recomb_currents`·`_tab_current` 추가 |
 | 3 | `J01_top_arr`가 스칼라 | **아니다.** `mf`가 배열이라 결함 분기에서도 `ndarray[N]` |
 | 4 | 결함 칸 9개 | **12개** |

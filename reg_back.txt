@@ -1,5 +1,4 @@
-﻿            Vint_mV = Vint_b * 1000
-            spread = Vint_mV.max() - Vint_mV.min()
+﻿            spread = Vint_mV.max() - Vint_mV.min()
             tcfV = ax4.tricontourf(triang, Vint_mV, levels=50, cmap='RdBu_r')
             self.fig.colorbar(tcfV, ax=ax4, label='mV', **_cb_kw)
             ax4.set_title(f'Recomb. Junction V  (spread {spread:.2f} mV)',
@@ -295,7 +294,7 @@
             # 않았다. v28.66은 배선과 함께 그 정규식을 임의 식별자까지 넓혔다 —
             # test_spatial_branch_coverage.INLINE_ASSEMBLY_RE.
             #
-            # 조립은 `FESTSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
+            # 조립은 `GEDOSSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
             # 있었던 것이 이 결함이 테스트 밖에 있었던 이유다. 가중치도 노드
             # 단순 평균에서 `recomb_currents`와 같은 **면적 가중**으로 바꿨다
             # (근거는 그 메서드 독스트링). 무맵에서도 표시값이 미세하게
@@ -1796,5 +1795,5 @@
 # RUN
 # =============================================================
 if __name__ == "__main__":
-    app = FESTProApp()
+    app = GEDOSApp()
     app.mainloop()

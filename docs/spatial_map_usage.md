@@ -412,21 +412,21 @@ GUI 없이 쓸 수 있다. GUI도 같은 함수를 부른다.
 ```python
 import importlib.util, sys
 
-spec = importlib.util.spec_from_file_location("fest", "2L_FEST.py")
-fest = importlib.util.module_from_spec(spec)
-sys.modules["fest"] = fest
-spec.loader.exec_module(fest)
+spec = importlib.util.spec_from_file_location("gedos", "GEDOS.py")
+gedos = importlib.util.module_from_spec(spec)
+sys.modules["gedos"] = gedos
+spec.loader.exec_module(gedos)
 
-dp = fest.DiodeParams()
+dp = gedos.DiodeParams()
 
 # 불러오기 — 값 검증은 이 줄에서 끝난다
-sm = fest.load_spatial_map_txt("examples/spatial_maps/edge_defect_j01.txt")
+sm = gedos.load_spatial_map_txt("examples/spatial_maps/edge_defect_j01.txt")
 print(sm.load_report)        # 경로·형상·구분자·건너뛴 줄 수·경고
 
 # 붙이기 / 조회 / 떼기
-fest.set_spatial_map(dp, "j01", sm)
-fest.get_spatial_map(dp, "j01")
-fest.clear_spatial_map(dp, "j01")      # ← 반드시 이것. 1.0짜리 맵으로 대체 금지
+gedos.set_spatial_map(dp, "j01", sm)
+gedos.get_spatial_map(dp, "j01")
+gedos.clear_spatial_map(dp, "j01")      # ← 반드시 이것. 1.0짜리 맵으로 대체 금지
 ```
 
 > ### ⚠ 맵은 **인스턴스**에만 붙인다

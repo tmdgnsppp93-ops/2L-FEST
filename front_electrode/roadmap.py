@@ -11,7 +11,7 @@ docs/superpowers/specs/2026-08-13-roadmap-runner-design.md 참조.
 합치면 "이 막대가 파라미터 변경의 효과인가 재최적화의 효과인가"를 구분할 수
 없게 된다. 최적 설계가 필요한 분석은 스펙 §2의 2단계 워크플로우를 따른다.
 
-엔진(2L_FEST.py)과 adapter.py는 수정하지 않는다 — evaluate_existing_simulation을
+엔진(GEDOS.py)과 adapter.py는 수정하지 않는다 — evaluate_existing_simulation을
 그대로 호출한다.
 """
 import csv
@@ -28,7 +28,7 @@ from .optimizer import (
     SCENARIO_MEASURED,
 )
 
-SCHEMA_ID = "2lfest.roadmap/1"
+SCHEMA_ID = "gedos.roadmap/1"
 
 # 데이터 출처 태그. 기능 명세 §3.2가 제안한 provenance 강제를 이 범위에서 실현한다.
 #   measured — 랩/협력기관 실측값
@@ -245,7 +245,7 @@ def _git_commit():
         return "unknown"
 
 
-def provenance_env(fest, sc):
+def provenance_env(gedos, sc):
     """실행 환경 provenance.
 
     engine_sha가 git_commit보다 강한 앵커다 — 커밋하지 않고 엔진을 고친 채
@@ -254,8 +254,8 @@ def provenance_env(fest, sc):
     meta = sc.get("_meta", {})
     return {
         "git_commit": _git_commit(),
-        "engine_version": fest.__build__["version"],
-        "engine_sha": fest._build_sha(),
+        "engine_version": gedos.__build__["version"],
+        "engine_sha": gedos._build_sha(),
         "scenario_file": meta.get("file", "unknown"),
         "scenario_sha256": meta.get("sha256", "unknown"),
     }
@@ -331,7 +331,7 @@ def unspecified_provenance_keys(sc):
     return sorted(k for k in _grid_keys(sc["baseline"]) if k not in prov)
 
 
-def run_roadmap(fest, sc, csv_path, *, resume=False,
+def run_roadmap(gedos, sc, csv_path, *, resume=False,
                 axis_segments_override=None, progress=None):
     """시나리오의 각 케이스를 순차 실행하고 CSV에 누적한다.
 
@@ -354,7 +354,7 @@ def run_roadmap(fest, sc, csv_path, *, resume=False,
         print(f"  ⚠ provenance 미선언 {len(unspec)}개: {unspec} — "
               f"CSV에 unspecified로 기록됨", flush=True)
 
-    env = provenance_env(fest, sc)
+    env = provenance_env(gedos, sc)
     done = completed_labels(csv_path) if resume else set()
     header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
 
@@ -364,7 +364,7 @@ def run_roadmap(fest, sc, csv_path, *, resume=False,
             continue
         t0 = time.time()
         out = evaluate_existing_simulation(
-            fest, case["grid_params"],
+            gedos, case["grid_params"],
             scenario=scenario_const,
             busbar_recovery_factor=0.0,
             mode=mode,

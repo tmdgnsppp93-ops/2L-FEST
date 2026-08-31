@@ -3,7 +3,7 @@
 태양전지 **전면 전극(그리드) 설계**와 **2단자(2T) 탠덤 셀** 성능을
 유한요소법(FEM) 기반으로 시뮬레이션하는 데스크톱 도구입니다.
 
-- **버전**: GEDOS v1.0 (엔진 v28.69)
+- **버전**: GEDOS v1.0 (엔진 v28.70)
 - **개발**: Seunghoon Lee — KIST, Dr. Inho Kim's Solar Cell Research Team
 - **언어/UI**: Python 3.10+ / CustomTkinter (다크·라이트 테마)
 
@@ -48,7 +48,7 @@ pip install -r requirements.txt
 ## 실행
 
 ```bash
-python 2L_FEST.py
+python GEDOS.py
 ```
 
 실행 시 GUI 창이 열립니다. 셀 형상·그리드 파라미터·다이오드 파라미터를 입력한 뒤
@@ -63,7 +63,7 @@ python 2L_FEST.py
 
 - 사이드바 최상단의 **Language / 언어** 버튼으로 즉시 전환 — 재시작 불필요.
   이미 계산된 결과가 있으면 결과 텍스트·그래프도 함께 다시 그려집니다.
-- 선택한 언어는 `~/.2l-fest/settings.json`에 저장되어 다음 실행에 유지됩니다.
+- 선택한 언어는 `~/.gedos/settings.json`에 저장되어 다음 실행에 유지됩니다.
 - **기본값은 English.** 저장된 설정이 있으면 그 설정을 따릅니다.
 - 언어는 표시 문자열에만 영향을 주며 **계산 결과는 완전히 동일**합니다.
 - **Run optimization / Save CSV 버튼은 사이드바 하단에 고정**되어 있어 창을 줄여도
@@ -118,7 +118,7 @@ V,J
 
 1. GitHub 저장소 **Actions** 탭 → "Build apps (macOS + Windows)" → **Run workflow**
    (또는 `vXX` 태그 push 시 자동 실행)
-2. 끝나면 **Artifacts** 에서 `GEDOS-PRO-macOS`, `GEDOS-PRO-Windows` 각각 다운로드.
+2. 끝나면 **Artifacts** 에서 `GEDOS-macOS`, `GEDOS-Windows` 각각 다운로드.
 
 ### 방법 B — 각 OS에서 직접 빌드
 
@@ -162,7 +162,7 @@ python -m pytest -m "not slow"     # 단위·회귀 테스트 (tests/)
 
 ## 코드 구조
 
-단일 실행 파일 `2L_FEST.py` (약 12,000줄). 핵심 클래스:
+단일 실행 파일 `GEDOS.py` (약 15,400줄). 핵심 클래스:
 
 | 클래스 | 역할 |
 |--------|------|
@@ -171,9 +171,9 @@ python -m pytest -m "not slow"     # 단위·회귀 테스트 (tests/)
 | `DiodeParams` | 탠덤 2-다이오드 파라미터 |
 | `SpatialMap` | 노드별 파라미터 배수 분포 |
 | `MeshProlongationSeedProvider` | 거친 메시 해를 보간해 초기값 제공(수렴 가속) |
-| `FESTSolver` | FEM 분포 회로 솔버(핵심 해석 엔진) |
+| `GEDOSSolver` | FEM 분포 회로 솔버(핵심 해석 엔진) |
 | `DxfGrid` | DXF 그리드 도면 입출력 |
-| `FESTProApp` | CustomTkinter 메인 GUI 애플리케이션 |
+| `GEDOSApp` | CustomTkinter 메인 GUI 애플리케이션 |
 
 부가 패키지 `front_electrode/` — 엔진을 **수정하지 않고** 감싸는 전면전극 최적화 모듈:
 

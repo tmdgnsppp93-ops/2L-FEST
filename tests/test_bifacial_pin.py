@@ -11,23 +11,23 @@
     tests/test_legacy_pin.py:19-37               (make_mono, full_area)
     tests/test_spatial_branch_coverage.py:882    (phaseA_full_area 케이스만)
 
-그런데 `full_area`에서는 `_build`가 `else` 분기(`2L_FEST.py:5249-5252`,
+그런데 `full_area`에서는 `_build`가 `else` 분기(`GEDOS.py:5249-5252`,
 `assemble_K(0.001)` 하드코딩)를 타므로 벌크 횡전도의 병렬 합성 줄
-(`2L_FEST.py:5198-5202`)이 **실행조차 되지 않는다.** 즉 위 세 핀은 `Rs_base`
+(`GEDOS.py:5198-5202`)이 **실행조차 되지 않는다.** 즉 위 세 핀은 `Rs_base`
 코드 경로를 한 줄도 지나가지 않는다 — bifacial 후면 평면 전체가 절대값
 회귀 감시 밖에 있었다.
 
 이 파일이 그 공백을 메운다. 대상은 후면이 실제 전도 평면인 3분기 전부다
 (`tests/test_base_lateral.py`의 BRANCH_CASES 3·5·7):
 
-    _solve_tandem_junction_bf   Phase B / bifacial   (2L_FEST.py:6246)
-    _solve_tandem_bifacial      Phase A / bifacial   (2L_FEST.py:6877)
-    _solve_single_bifacial      단일셀 / bifacial     (2L_FEST.py:6338 디스패치)
+    _solve_tandem_junction_bf   Phase B / bifacial   (GEDOS.py:6246)
+    _solve_tandem_bifacial      Phase A / bifacial   (GEDOS.py:6877)
+    _solve_single_bifacial      단일셀 / bifacial     (GEDOS.py:6338 디스패치)
 
 각 분기를 **`Rs_base = None`(off)과 `Rs_base = 50 Ω/sq`(on) 두 상태**로 캡처한다.
 
   - **off**: 향후 변경이 무벌크 경로를 건드리지 않았다는 회귀 감시.
-            `2L_FEST.py:5199`의 `is not None` 가드가 사라지면 여기가 즉시 깨진다.
+            `GEDOS.py:5199`의 `is not None` 가드가 사라지면 여기가 즉시 깨진다.
   - **on** : 벌크 횡전도를 **전압 무관 상수**로 처리하는 현재 모델(v28.59 규약
             `docs/base_lateral_convention.md` §1-2 β)의 기준선. 나중에 bias
             point별 `Rs_base(V_junction)` 갱신을 넣으면 on 값은 **반드시**
@@ -91,7 +91,7 @@ RS_BASE_ON = 50.0
 #
 #   rs_junction : None이면 DiodeParams 기본값(5000)을 그대로 쓴다
 #                 (test_default_pin이 "DEFAULT (Phase B) path"를 핀하는 것과 같은 취지).
-#   legacy      : FEST_LEGACY_LOCAL_MATCH 환경변수
+#   legacy      : GEDOS_LEGACY_LOCAL_MATCH 환경변수
 BRANCHES = {
     "tandem_junction_bf": dict(
         solver="_solve_tandem_junction_bf",
@@ -113,7 +113,7 @@ BRANCHES = {
 # ⚠ **tandem 분기의 점 0(Vb=0)은 벌크에 대해 구조적으로 둔감하다.** 캡처 중
 #    확인한 사실이며(2026-08-26), 결함이 아니라 모델의 성질이다:
 #      · tandem의 `cell_current`는 **상부셀** 전류를 돌려준다
-#        (`2L_FEST.py:7498-7508`, 전류 정합이라 그것이 곧 셀 전류다).
+#        (`GEDOS.py:7498-7508`, 전류 정합이라 그것이 곧 셀 전류다).
 #      · Phase B / Vb=0에서 `Vtop`은 메시 전체가 정확히 0이다(실측 span = 0).
 #        그러면 `Jt = _gen·Jph_top − J01(e⁰−1) − J02(e⁰−1) − 0/Rsh = _gen·Jph_top`
 #        이라 후면 평면이 식에서 사라진다.
@@ -150,7 +150,7 @@ PINS = {
 BASE_SENSITIVE_POINTS = (1, 2)
 
 
-def _measure(fest, make_bifacial, branch_id, rs_base):
+def _measure(gedos, make_bifacial, branch_id, rs_base):
     """한 (분기, 벌크) 조합의 3점을 잰다. **fixture를 쓰지 않는다.**
 
     monkeypatch fixture 대신 try/finally로 직접 되돌리는 이유: 이 함수를 pytest
@@ -170,24 +170,24 @@ def _measure(fest, make_bifacial, branch_id, rs_base):
     """
     cfg = BRANCHES[branch_id]
 
-    prev = os.environ.get("FEST_LEGACY_LOCAL_MATCH")
+    prev = os.environ.get("GEDOS_LEGACY_LOCAL_MATCH")
     if cfg["legacy"]:
-        os.environ["FEST_LEGACY_LOCAL_MATCH"] = "1"
+        os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = "1"
     else:
-        os.environ.pop("FEST_LEGACY_LOCAL_MATCH", None)
+        os.environ.pop("GEDOS_LEGACY_LOCAL_MATCH", None)
 
     name = cfg["solver"]
-    orig = getattr(fest.FESTSolver, name)
+    orig = getattr(gedos.GEDOSSolver, name)
     seen = []
 
     def _wrapper(self, *a, **kw):
         seen.append(name)
         return orig(self, *a, **kw)
 
-    setattr(fest.FESTSolver, name, _wrapper)
+    setattr(gedos.GEDOSSolver, name, _wrapper)
     try:
         S = make_bifacial().S
-        dp = fest.DiodeParams()
+        dp = gedos.DiodeParams()
         if cfg["rs_junction"] is not None:
             dp.Rs_junction = cfg["rs_junction"]
         dp.Rs_base = rs_base
@@ -206,18 +206,18 @@ def _measure(fest, make_bifacial, branch_id, rs_base):
             Js.append(float(S.cell_current(res, dp)))
             branches.append(seen[0] if seen else None)
     finally:
-        setattr(fest.FESTSolver, name, orig)
+        setattr(gedos.GEDOSSolver, name, orig)
         if prev is None:
-            os.environ.pop("FEST_LEGACY_LOCAL_MATCH", None)
+            os.environ.pop("GEDOS_LEGACY_LOCAL_MATCH", None)
         else:
-            os.environ["FEST_LEGACY_LOCAL_MATCH"] = prev
+            os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = prev
 
     return Js, branches, Voc0
 
 
 @pytest.mark.parametrize("base_key", ["off", "on"])
 @pytest.mark.parametrize("branch_id", sorted(BRANCHES))
-def test_bifacial_pin(fest, make_bifacial, bit_pin_gate, branch_id, base_key):
+def test_bifacial_pin(gedos, make_bifacial, bit_pin_gate, branch_id, base_key):
     """bifacial 3분기 × 벌크 on/off의 cell_current를 비트 단위로 고정한다."""
     if bit_pin_gate:
         pytest.xfail(f"비트 핀 캡처 스택과 다름 ({bit_pin_gate}) — "
@@ -226,7 +226,7 @@ def test_bifacial_pin(fest, make_bifacial, bit_pin_gate, branch_id, base_key):
     pins = PINS[(branch_id, base_key)]
     rs_base = None if base_key == "off" else RS_BASE_ON
 
-    Js, branches, Voc0 = _measure(fest, make_bifacial, branch_id, rs_base)
+    Js, branches, Voc0 = _measure(gedos, make_bifacial, branch_id, rs_base)
 
     expected_branch = BRANCHES[branch_id]["solver"]
     assert branches == [expected_branch] * 3, (

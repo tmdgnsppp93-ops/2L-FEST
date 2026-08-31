@@ -13,7 +13,7 @@ python -m PyInstaller --noconfirm --windowed ^
     --name "GEDOS" ^
     --collect-all customtkinter ^
     --collect-all ezdxf ^
-    2L_FEST.py
+    GEDOS.py
 
 echo.
 echo Done. Output in:  dist\GEDOS\

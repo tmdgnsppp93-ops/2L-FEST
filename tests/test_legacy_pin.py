@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Pin test: LEGACY (Phase A local current matching) path bit-preservation.
 
-FEST_LEGACY_LOCAL_MATCH=1 + dp.Rs_junction=0 -> _K_junc is None -> tandem uses
+GEDOS_LEGACY_LOCAL_MATCH=1 + dp.Rs_junction=0 -> _K_junc is None -> tandem uses
 the legacy Phase-A local-node current-matching path. This pin guards that path
 from silent numerical drift as later phases change surrounding code.
 
@@ -20,13 +20,13 @@ PINS = [18.678777559153552, 18.276331778124046, 11.835353257148611]
 RTOL = 1e-8
 
 
-def test_legacy_pin(fest, make_mono, monkeypatch, bit_pin_gate):
+def test_legacy_pin(gedos, make_mono, monkeypatch, bit_pin_gate):
     if bit_pin_gate:
         pytest.xfail(f"비트 핀 캡처 스택과 다름 ({bit_pin_gate}) — "
                      "1e-8 비트 동일은 이 스택에서 성립하지 않는다(물리 회귀 아님)")
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S = make_mono().S
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     dp.Rs_junction = 0.0  # Phase-A trigger (allowed only under the legacy flag)
     Voc0 = dp.expected_voc()[2]
     vbs = [0.0, 0.85 * Voc0, 0.95 * Voc0]

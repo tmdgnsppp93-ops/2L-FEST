@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """Pin test: DEFAULT (Phase B) path bit-preservation (v28.33).
 
-Default DiodeParams (Rs_junction=5000, Rc_junction=0.1), FEST_LEGACY_LOCAL_MATCH
+Default DiodeParams (Rs_junction=5000, Rc_junction=0.1), GEDOS_LEGACY_LOCAL_MATCH
 unset -> tandem dispatches to the Phase B interlayer solver. Full-area mono cell.
 
 Pinned on Python 3.14.3 / numpy 2.4.3 / scipy 1.17.1 (see commit message).
@@ -20,13 +20,13 @@ PINS = [18.678777562124054, 18.215245612864987, 11.388031779177389]
 RTOL = 1e-8
 
 
-def test_default_pin(fest, make_mono, monkeypatch, bit_pin_gate):
+def test_default_pin(gedos, make_mono, monkeypatch, bit_pin_gate):
     if bit_pin_gate:
         pytest.xfail(f"비트 핀 캡처 스택과 다름 ({bit_pin_gate}) — "
                      "1e-8 비트 동일은 이 스택에서 성립하지 않는다(물리 회귀 아님)")
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     S = make_mono().S
-    dp = fest.DiodeParams()  # defaults: Rs_junction=5000, Rc_junction=0.1
+    dp = gedos.DiodeParams()  # defaults: Rs_junction=5000, Rc_junction=0.1
     Voc0 = dp.expected_voc()[2]
     vbs = [0.0, 0.85 * Voc0, 0.95 * Voc0]
     for Vb, pin in zip(vbs, PINS):

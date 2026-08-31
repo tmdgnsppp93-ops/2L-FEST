@@ -179,8 +179,8 @@ def render_preview_plots(fig, grid, plot_state, subtitle=None):
     return fig
 
 
-def open_optimizer_window(fest, parent):
-    """Optimize Electrode 창을 연다. fest=엔진 모듈, parent=메인 앱(CTk)."""
+def open_optimizer_window(gedos, parent):
+    """Optimize Electrode 창을 연다. gedos=엔진 모듈, parent=메인 앱(CTk)."""
     import customtkinter as ctk
     from matplotlib.figure import Figure
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
@@ -569,7 +569,7 @@ def open_optimizer_window(fest, parent):
             # recovery는 슬라이더로 사후 반영 → f=0으로 FEM 실행. n_probe는 미지정(=0)이라
             # adapter 가드가 다중 busbar에서 자동 10 상향. edge_margin·물성은 grid로 전달.
             opt = _opt.optimize_grid(
-                fest, cell_mm=cell, finger_widths_um=wfs, finger_pitches_mm=pitches,
+                gedos, cell_mm=cell, finger_widths_um=wfs, finger_pitches_mm=pitches,
                 n_busbars_list=nbbs, busbar_widths_mm=wbbs,
                 rho_bulk_list=(rho_l or [None]), rho_contact_list=(rho_c or [None]),
                 edge_margin_mm=edge, scenario=_opt.SCENARIO_MEASURED, recovery_factor=0.0,

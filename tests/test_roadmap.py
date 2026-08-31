@@ -117,7 +117,7 @@ def test_rejects_duplicate_label():
 
 def test_rejects_bad_schema_id():
     sc = _min_scenario()
-    sc["schema"] = "2lfest.roadmap/99"
+    sc["schema"] = "gedos.roadmap/99"
     with pytest.raises(ValueError, match="schema"):
         validate_scenario(sc)
 
@@ -170,7 +170,7 @@ from front_electrode import (  # noqa: E402
 )
 
 
-class _FakeFest:
+class _FakeGedos:
     """provenance_env가 읽는 두 심볼만 흉내낸다."""
     __build__ = {"version": "v28.53", "date": "2026-08-12"}
 
@@ -206,7 +206,7 @@ def _fake_out(eff=31.0):
 def test_provenance_env_fields():
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     assert set(env) == {"git_commit", "engine_version", "engine_sha",
                         "scenario_file", "scenario_sha256"}
     assert env["engine_version"] == "v28.53"
@@ -220,7 +220,7 @@ def test_build_row_carries_engine_raw_and_provenance():
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
     case = expand_cases(sc)[1]
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     row = build_row(case, _fake_out(), sc, env, elapsed_s=12.34)
 
     assert row["case_index"] == 1
@@ -245,14 +245,14 @@ def test_build_row_uses_engine_raw_not_recovered_efficiency():
     out = _fake_out()
     out["results"]["efficiency"] = 99.9        # 오염된 값
     out["engine_raw"]["Eff"] = 31.33           # 순수 엔진값
-    row = build_row(case, out, sc, provenance_env(_FakeFest, sc), 1.0)
+    row = build_row(case, out, sc, provenance_env(_FakeGedos, sc), 1.0)
     assert row["Eff"] == 31.33
 
 
 def test_append_row_and_completed_labels(tmp_path):
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     cases = expand_cases(sc)
     csv_path = str(tmp_path / "r.csv")
 
@@ -309,23 +309,23 @@ def test_unspecified_provenance_keys_empty_when_all_declared():
     assert unspecified_provenance_keys(sc) == []
 
 
-def test_baseline_bit_identical(fest, monkeypatch, tmp_path, capsys):
+def test_baseline_bit_identical(gedos, monkeypatch, tmp_path, capsys):
     """★ roadmap의 baseline 케이스가 evaluate_existing_simulation 직접 호출과
     비트 동일. 기존 결과 불변의 실증.
 
     tests/test_optimizer.py:96-106 test_edge_margin_zero_is_bit_identical의
     관용구를 그대로 따른다 (cell 20mm + AX/NPTS + == 비교).
     """
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc = _min_scenario()
     sc["cases"] = []                      # baseline 단독
     grid = {k: v for k, v in sc["baseline"].items() if k != "label"}
 
     direct = evaluate_existing_simulation(
-        fest, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+        gedos, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
         mode="tandem", npts=NPTS, axis_segments_override=AX)
 
-    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+    rows = run_roadmap(gedos, load_scenario(_write_scenario(tmp_path, sc)),
                        str(tmp_path / "r.csv"), axis_segments_override=AX)
 
     assert len(rows) == 1
@@ -337,25 +337,25 @@ def test_baseline_bit_identical(fest, monkeypatch, tmp_path, capsys):
     assert "provenance 미선언" in capsys.readouterr().out
 
 
-def test_case_changes_result(fest, monkeypatch, tmp_path):
+def test_case_changes_result(gedos, monkeypatch, tmp_path):
     """rho_c를 낮추면 접촉 손실이 줄고 효율이 오른다 — 케이스가 실제로 먹는지."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc = _min_scenario()
-    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+    rows = run_roadmap(gedos, load_scenario(_write_scenario(tmp_path, sc)),
                        str(tmp_path / "r.csv"), axis_segments_override=AX)
     assert len(rows) == 2
     assert rows[1]["Pc"] < rows[0]["Pc"], "rho_c를 5배 낮췄는데 접촉 손실이 안 줄었다"
     assert rows[1]["Eff"] > rows[0]["Eff"]
 
 
-def test_resume_skips_completed(fest, monkeypatch, tmp_path):
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+def test_resume_skips_completed(gedos, monkeypatch, tmp_path):
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc_path = _write_scenario(tmp_path, _min_scenario())
     csv_path = str(tmp_path / "r.csv")
-    first = run_roadmap(fest, load_scenario(sc_path), csv_path,
+    first = run_roadmap(gedos, load_scenario(sc_path), csv_path,
                         axis_segments_override=AX)
     assert len(first) == 2
-    again = run_roadmap(fest, load_scenario(sc_path), csv_path, resume=True,
+    again = run_roadmap(gedos, load_scenario(sc_path), csv_path, resume=True,
                         axis_segments_override=AX)
     assert again == [], "resume인데 완료 케이스를 다시 돌렸다"
 
@@ -369,7 +369,7 @@ from front_electrode import plot_roadmap  # noqa: E402
 def _write_demo_csv(tmp_path, effs=(31.0, 31.5)):
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     csv_path = str(tmp_path / "r.csv")
     written = False
     for c, eff in zip(expand_cases(sc), effs):
@@ -450,7 +450,7 @@ def test_build_row_carries_shading_columns():
     out = _fake_out()
     out["results"]["shading_optical"] = 0.0121      # T>0 상황
     row = build_row(expand_cases(sc)[0], out, sc,
-                    provenance_env(_FakeFest, sc), 1.0)
+                    provenance_env(_FakeGedos, sc), 1.0)
     assert row["shading_physical"] == 0.0173
     assert row["shading_optical"] == 0.0121
 
@@ -498,7 +498,7 @@ def test_build_row_records_thresholds(tmp_path):
     sc["plot"] = {"flat_thresholds": {"Jsc": 0.5}}
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
     row = build_row(expand_cases(sc)[0], _fake_out(), sc,
-                    provenance_env(_FakeFest, sc), 1.0)
+                    provenance_env(_FakeGedos, sc), 1.0)
     assert row["flat_thresh_Jsc"] == 0.5
     assert row["flat_thresh_Eff"] == DEFAULT_FLAT_THRESHOLDS["Eff"]
 
@@ -507,7 +507,7 @@ def _write_csv_with_deltas(tmp_path, jsc_delta, eff_delta):
     """baseline과 1케이스만 있는 CSV. Jsc/Eff 변화폭을 지정한다."""
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     csv_path = str(tmp_path / "r.csv")
     written = False
     for i, c in enumerate(expand_cases(sc)):

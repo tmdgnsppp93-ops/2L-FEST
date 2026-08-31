@@ -39,7 +39,7 @@
 ``spsolve(J, -F)``를 가로채 ``J`` 자체를 관측한다. 프로덕션에 디버그 훅을 남기지
 않는다.
 
-주의: ``fest.spsolve`` **하나만** 패치하면 안 된다 — 탠덤 접합 솔버 3종은 메서드
+주의: ``gedos.spsolve`` **하나만** 패치하면 안 된다 — 탠덤 접합 솔버 3종은 메서드
 안에서 다시 import 하므로 모듈 전역 패치가 무시된다. 원본
 ``scipy.sparse.linalg.spsolve``도 함께 패치해야 6개 경로가 전부 잡힌다.
 (`test_base_lateral._probe`의 주석과 같은 함정이다.)
@@ -59,7 +59,7 @@ v28.61 시점 그 표는 ``_solve_single_bifacial``까지 포함해 **6분기 �
 ``nnz``는 **명시적 0을 포함한 저장 슬롯 수**다. 그것이 곧 "희소성 패턴"이며,
 실제로 이 코드는 대각을
 ``J += csr_matrix((diag, (arange(Ns), arange(Ns))))``로 통째로 더하므로 값이 0인
-대각도 구조적으로 존재한다(`2L_FEST.py:5211-5213` 등).
+대각도 구조적으로 존재한다(`GEDOS.py:5211-5213` 등).
 
 계획: docs/superpowers/plans/2026-08-19-capacitive-effects.md (§2 · §6-0 (a))
 매뉴얼 근거: docs/griddler_feature_map.md §1-1 · §2.11-a
@@ -85,7 +85,7 @@ from test_base_lateral import (  # noqa: E402
     BRANCH_CASES, VB, _INLINE, _NAMED_SOLVERS, _dp, _plane_sizes, _solve,
 )
 
-SRC_PATH = os.path.join(_ROOT, "2L_FEST.py")
+SRC_PATH = os.path.join(_ROOT, "GEDOS.py")
 
 Layout = namedtuple("Layout", "branch ns nnz ndiag digest n_solves")
 
@@ -110,25 +110,25 @@ def _signature(A):
             int(np.count_nonzero(rows == cols)), h.hexdigest()[:16])
 
 
-def _canonical_map(fest):
+def _canonical_map(gedos):
     """`test_spatial_branch_coverage._canonical_map`과 같은 맵.
 
     노드마다 다른 배율을 다이오드 계수에 곱한다. 시간 항(``C/dt``)도 **노드마다
     다른 값을 대각에 더하는 것**이므로, 이 맵이 구조를 바꾸지 않는다는 사실이
     계획서 §2 판정의 실측 방증이 된다.
     """
-    return fest.SpatialMap(mode="gaussian", background=1.0, feature=2.0,
+    return gedos.SpatialMap(mode="gaussian", background=1.0, feature=2.0,
                            cx=1.0, cy=1.0, sigma_x=0.4, sigma_y=0.4)
 
 
-def _measure(fest, geo_factory, monkeypatch, geo, rs_j, legacy, mode,
+def _measure(gedos, geo_factory, monkeypatch, geo, rs_j, legacy, mode,
              Vb=VB, spatial_target=None):
     """한 번 풀면서 분기와 **모든 뉴턴 반복의 희소성 서명**을 관측한다."""
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
 
     calls = []
     for name in _NAMED_SOLVERS:
-        orig = getattr(fest.FESTSolver, name)
+        orig = getattr(gedos.GEDOSSolver, name)
 
         def _make(nm, o):
             def _wrapper(self, *a, **kw):
@@ -136,7 +136,7 @@ def _measure(fest, geo_factory, monkeypatch, geo, rs_j, legacy, mode,
                 return o(self, *a, **kw)
             return _wrapper
 
-        monkeypatch.setattr(fest.FESTSolver, name, _make(name, orig))
+        monkeypatch.setattr(gedos.GEDOSSolver, name, _make(name, orig))
 
     sigs = []
     orig_spsolve = _sla.spsolve
@@ -147,12 +147,12 @@ def _measure(fest, geo_factory, monkeypatch, geo, rs_j, legacy, mode,
 
     # 지역 import 경로와 모듈 전역 경로 양쪽. 하나만 하면 절반이 새어 나간다.
     monkeypatch.setattr(_sla, "spsolve", _spy)
-    monkeypatch.setattr(fest, "spsolve", _spy)
+    monkeypatch.setattr(gedos, "spsolve", _spy)
 
     m = geo_factory[geo]()          # 매번 **새 솔버** — warm-start 누수 차단
-    dp = _dp(fest, rs_j)
+    dp = _dp(gedos, rs_j)
     if spatial_target is not None:
-        fest.set_spatial_map(dp, spatial_target, _canonical_map(fest))
+        gedos.set_spatial_map(dp, spatial_target, _canonical_map(gedos))
     _solve(m, dp, Vb, mode)
 
     assert sigs, "spsolve가 한 번도 불리지 않았다 — 관측 경로가 끊겼다"
@@ -162,7 +162,7 @@ def _measure(fest, geo_factory, monkeypatch, geo, rs_j, legacy, mode,
 _CACHE = {}
 
 
-def _layout(fest, geo_factory, monkeypatch, case_values, Vb=VB,
+def _layout(gedos, geo_factory, monkeypatch, case_values, Vb=VB,
             spatial_target=None):
     """분기별 레이아웃. 같은 조건은 세션 안에서 한 번만 푼다.
 
@@ -172,16 +172,16 @@ def _layout(fest, geo_factory, monkeypatch, case_values, Vb=VB,
     label, geo, rs_j, legacy, mode = case_values[:5]
     key = (label, Vb, spatial_target)
     if key not in _CACHE:
-        branch, sigs = _measure(fest, geo_factory, monkeypatch, geo, rs_j,
+        branch, sigs = _measure(gedos, geo_factory, monkeypatch, geo, rs_j,
                                 legacy, mode, Vb=Vb,
                                 spatial_target=spatial_target)
         _CACHE[key] = (branch, sorted(set(sigs)), len(sigs))
     return _CACHE[key]
 
 
-def _one(fest, geo_factory, monkeypatch, case_values, **kw):
+def _one(gedos, geo_factory, monkeypatch, case_values, **kw):
     """서명이 하나로 수렴한 경우의 Layout. 여러 개면 실패시킨다."""
-    branch, uniq, n = _layout(fest, geo_factory, monkeypatch, case_values, **kw)
+    branch, uniq, n = _layout(gedos, geo_factory, monkeypatch, case_values, **kw)
     assert len(uniq) == 1, (
         f"한 solve 안에서 희소성 패턴이 {len(uniq)}가지로 갈렸다: {uniq}. "
         "패턴이 반복마다 바뀌면 '패턴 불변'을 말할 수 없다")
@@ -227,7 +227,7 @@ SPARSITY_PINS = {
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_unknown_vector_length_is_the_transient_baseline(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """관측된 Ns가 분기 표의 오프셋 식과 일치한다.
 
@@ -238,7 +238,7 @@ def test_unknown_vector_length_is_the_transient_baseline(
     식 자체는 import한 ``ns_fn``이므로 **표가 두 벌이 되지는 않는다.**
     """
     N, Nm, Nrm = _plane_sizes(geo_factory[geo]())
-    lay = _one(fest, geo_factory, monkeypatch,
+    lay = _one(gedos, geo_factory, monkeypatch,
                (label, geo, rs_j, legacy, mode))
     assert lay.ns == ns_fn(N, Nm, Nrm), (
         f"{label}: Ns={lay.ns}, 기대={ns_fn(N, Nm, Nrm)} "
@@ -248,14 +248,14 @@ def test_unknown_vector_length_is_the_transient_baseline(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_dispatch_target_agrees_with_the_branch_table(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """관측 경로가 실제로 표가 말하는 분기를 지난다.
 
     이 파일의 모든 측정이 그 전제 위에 있다. 디스패치가 바뀌면 아래 핀들이
     "다른 분기의 값"을 지키게 되므로 여기서 먼저 잡는다.
     """
-    lay = _one(fest, geo_factory, monkeypatch,
+    lay = _one(gedos, geo_factory, monkeypatch,
                (label, geo, rs_j, legacy, mode))
     assert lay.branch == expected_branch, (
         f"{label}: {expected_branch!r}로 가야 하는데 {lay.branch!r}로 갔다")
@@ -268,7 +268,7 @@ def test_dispatch_target_agrees_with_the_branch_table(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_every_diagonal_entry_is_structurally_present(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """**이 파일에서 가장 중요한 단언이다.**
 
@@ -279,12 +279,12 @@ def test_every_diagonal_entry_is_structurally_present(
 
     v28.61 실측: 6분기 모두 ``대각 슬롯 수 == Ns``다. 조립 코드가 대각을
     ``J += csr_matrix((diag, (arange(Ns), arange(Ns))))`` 형태로 **통째로** 더하기
-    때문이며(`2L_FEST.py:5211-5213` 등), 값이 0인 대각도 슬롯으로 남는다.
+    때문이며(`GEDOS.py:5211-5213` 등), 값이 0인 대각도 슬롯으로 남는다.
 
     누군가 그 조립을 "0은 빼고 넣자"로 최적화하면 이 테스트가 먼저 깨진다.
     그때 고칠 것은 이 테스트가 아니라 **계획서 §2의 판정**이다.
     """
-    lay = _one(fest, geo_factory, monkeypatch,
+    lay = _one(gedos, geo_factory, monkeypatch,
                (label, geo, rs_j, legacy, mode))
     assert lay.ndiag == lay.ns, (
         f"{label}: 대각 슬롯이 {lay.ndiag}/{lay.ns}개뿐이다. "
@@ -295,7 +295,7 @@ def test_every_diagonal_entry_is_structurally_present(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_sparsity_pattern_is_constant_within_one_solve(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """한 번의 solve 안에서 뉴턴 반복이 몇 번을 돌든 패턴이 하나다.
 
@@ -303,7 +303,7 @@ def test_sparsity_pattern_is_constant_within_one_solve(
     `_one`이 이미 단언하지만, **그 사실 자체를 이름 있는 테스트로** 남긴다 —
     다른 테스트가 실패했을 때 원인이 여기인지 구분할 수 있어야 한다.
     """
-    _, uniq, n_solves = _layout(fest, geo_factory, monkeypatch,
+    _, uniq, n_solves = _layout(gedos, geo_factory, monkeypatch,
                                 (label, geo, rs_j, legacy, mode))
     assert len(uniq) == 1, f"{label}: {n_solves}회 반복에서 패턴 {len(uniq)}가지"
     assert n_solves >= 1
@@ -312,7 +312,7 @@ def test_sparsity_pattern_is_constant_within_one_solve(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_sparsity_pattern_does_not_depend_on_bias_voltage(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """``Vb``를 바꿔도 패턴이 같다.
 
@@ -320,9 +320,9 @@ def test_sparsity_pattern_does_not_depend_on_bias_voltage(
     패턴이 바뀐다면 시간 스텝마다 재조립·재분해가 강제되고, "대각 기여뿐"이라는
     설계 근거도 약해진다. **지금은 바뀌지 않는다**는 것을 고정한다.
     """
-    base = _one(fest, geo_factory, monkeypatch,
+    base = _one(gedos, geo_factory, monkeypatch,
                 (label, geo, rs_j, legacy, mode))
-    other = _one(fest, geo_factory, monkeypatch,
+    other = _one(gedos, geo_factory, monkeypatch,
                  (label, geo, rs_j, legacy, mode), Vb=0.9)
     assert (base.ns, base.nnz, base.digest) == \
            (other.ns, other.nnz, other.digest), (
@@ -333,7 +333,7 @@ def test_sparsity_pattern_does_not_depend_on_bias_voltage(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_node_varying_diode_coefficients_do_not_change_the_pattern(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """노드마다 다른 다이오드 계수(공간 분포 맵)를 걸어도 패턴이 같다.
 
@@ -345,9 +345,9 @@ def test_node_varying_diode_coefficients_do_not_change_the_pattern(
     시간 항은 대각에만 들어간다. 방향이 같을 뿐이며, 결정적 근거는 위
     `test_every_diagonal_entry_is_structurally_present`다.)
     """
-    base = _one(fest, geo_factory, monkeypatch,
+    base = _one(gedos, geo_factory, monkeypatch,
                 (label, geo, rs_j, legacy, mode))
-    mapped = _one(fest, geo_factory, monkeypatch,
+    mapped = _one(gedos, geo_factory, monkeypatch,
                   (label, geo, rs_j, legacy, mode), spatial_target="j01")
     assert (base.ns, base.nnz, base.digest) == \
            (mapped.ns, mapped.nnz, mapped.digest), (
@@ -362,7 +362,7 @@ def test_node_varying_diode_coefficients_do_not_change_the_pattern(
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_sparsity_pattern_is_pinned(
-        fest, geo_factory, monkeypatch, bit_pin_gate, label, geo, rs_j,
+        gedos, geo_factory, monkeypatch, bit_pin_gate, label, geo, rs_j,
         legacy, mode, expected_branch, ns_fn):
     """``(Ns, nnz, 좌표집합 해시)``를 v28.61 실측값으로 고정한다.
 
@@ -379,7 +379,7 @@ def test_sparsity_pattern_is_pinned(
             "희소성 리터럴이 성립하지 않는다(물리 회귀 아님). 구조 불변식 "
             "테스트들은 이 머신에서도 strict로 돈다")
     case_id = _ID_BY_LABEL[label]
-    lay = _one(fest, geo_factory, monkeypatch,
+    lay = _one(gedos, geo_factory, monkeypatch,
                (label, geo, rs_j, legacy, mode))
     assert (lay.ns, lay.nnz, lay.digest) == SPARSITY_PINS[case_id], (
         f"{label}: 관측 {(lay.ns, lay.nnz, lay.digest)} vs "

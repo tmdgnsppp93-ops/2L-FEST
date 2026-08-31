@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - **T=0에서 기존 결과가 비트 동일해야 한다.** `w * (1.0 - 0.0)`은 IEEE 754에서 `w`와 정확히 같으므로 헬퍼를 거쳐도 값이 변하지 않는다. 이 성질에 기대므로 헬퍼에서 곱셈 외의 연산(반올림·클램프)을 추가하지 말 것.
-- **`_sh_geo`(2L_FEST.py:3977)는 물리 폭으로 유지한다.** 이것이 `_gen_s` 비율의 분모 기준이다. 광학으로 바꾸면 T의 효과가 상쇄된다.
+- **`_sh_geo`(GEDOS.py:3977)는 물리 폭으로 유지한다.** 이것이 `_gen_s` 비율의 분모 기준이다. 광학으로 바꾸면 T의 효과가 상쇄된다.
 - **접촉·저항 경로는 손대지 않는다** — `_Gc`(3949-3961), `assemble_K_met_1d`(3943)는 물리 폭을 계속 쓴다.
 - **`busbar_recovery_factor`가 기본, T는 opt-in.** 기존 KIST 스윕(recovery 25%)의 거동을 바꾸지 않는다.
 - **`engine_raw["total_shading"]`의 의미(물리)를 바꾸지 말 것** — 회귀 핀이 참조한다.
@@ -27,7 +27,7 @@
 
 | 파일 | 이 계획에서의 책임 |
 |---|---|
-| `2L_FEST.py` | `GridDesign` T 파라미터·`optical_widths()`, `CellGeometry.optical_shading_fraction()`, 엔진 배선 2곳, 보고 경로 10곳, rear 경고, GUI 입력·프리뷰, changelog/버전 |
+| `GEDOS.py` | `GridDesign` T 파라미터·`optical_widths()`, `CellGeometry.optical_shading_fraction()`, 엔진 배선 2곳, 보고 경로 10곳, rear 경고, GUI 입력·프리뷰, changelog/버전 |
 | `front_electrode/adapter.py` | `grid_params` 키 2개, recovery 상호배타 `ValueError`, `results`에 shading 2컬럼 |
 | `front_electrode/optimizer.py` | 스윕 축 2개, `COMBO_CONFIRM_THRESHOLD`, `confirm` 콜백 |
 | `front_electrode/roadmap.py` | CSV 행에 shading 2컬럼 |
@@ -42,7 +42,7 @@
 순수 함수만 다룬다. FEM 없음.
 
 **Files:**
-- Modify: `2L_FEST.py:960-980` (`GridDesign.__init__`), `2L_FEST.py:1302` 부근 (`CellGeometry`)
+- Modify: `GEDOS.py:960-980` (`GridDesign.__init__`), `GEDOS.py:1302` 부근 (`CellGeometry`)
 - Create: `tests/test_transparency.py`
 
 **Interfaces:**
@@ -78,47 +78,47 @@ AX = 36
 NPTS = 6
 
 
-def test_optical_widths_identity_at_zero(fest):
+def test_optical_widths_identity_at_zero(gedos):
     """T=0이면 입력 폭을 그대로 돌려준다 — 비트 동일의 근거."""
-    g = fest.GridDesign()
+    g = gedos.GridDesign()
     assert g.optical_transparency_f == 0.0
     assert g.optical_transparency_b == 0.0
     w_f, w_b = 50e-4, 200e-4
     assert g.optical_widths(w_f, w_b) == (w_f, w_b)
 
 
-def test_optical_widths_scales_each_side(fest):
+def test_optical_widths_scales_each_side(gedos):
     """finger와 busbar에 각각 다른 T가 걸린다."""
-    g = fest.GridDesign(optical_transparency_f=0.3, optical_transparency_b=0.5)
+    g = gedos.GridDesign(optical_transparency_f=0.3, optical_transparency_b=0.5)
     of, ob = g.optical_widths(100e-4, 200e-4)
     assert of == pytest.approx(70e-4)
     assert ob == pytest.approx(100e-4)
 
 
-def test_transparency_range_validation(fest):
+def test_transparency_range_validation(gedos):
     """T<0 과 T>=1 은 ValueError. T=1은 광학 폭 0이라 무의미하다."""
     with pytest.raises(ValueError, match="optical_transparency_f"):
-        fest.GridDesign(optical_transparency_f=-0.1)
+        gedos.GridDesign(optical_transparency_f=-0.1)
     with pytest.raises(ValueError, match="optical_transparency_b"):
-        fest.GridDesign(optical_transparency_b=1.0)
+        gedos.GridDesign(optical_transparency_b=1.0)
     with pytest.raises(ValueError, match="optical_transparency_b"):
-        fest.GridDesign(optical_transparency_b=1.5)
+        gedos.GridDesign(optical_transparency_b=1.5)
     # 경계값은 통과해야 한다
-    fest.GridDesign(optical_transparency_f=0.0, optical_transparency_b=0.999)
+    gedos.GridDesign(optical_transparency_f=0.0, optical_transparency_b=0.999)
 
 
-def test_optical_shading_fraction_matches_physical_at_zero(fest):
+def test_optical_shading_fraction_matches_physical_at_zero(gedos):
     """T=0에서 optical_shading_fraction == shading_fraction (비트 동일)."""
-    geo = fest.CellGeometry(cell_w=2.0, cell_h=2.0,
-                            front=fest.GridDesign(n_fingers=4, n_busbars=2))
+    geo = gedos.CellGeometry(cell_w=2.0, cell_h=2.0,
+                            front=gedos.GridDesign(n_fingers=4, n_busbars=2))
     assert geo.optical_shading_fraction() == geo.shading_fraction()
 
 
-def test_optical_shading_fraction_less_when_transparent(fest):
+def test_optical_shading_fraction_less_when_transparent(gedos):
     """T>0이면 광학 shading이 물리 shading보다 작다."""
-    geo = fest.CellGeometry(
+    geo = gedos.CellGeometry(
         cell_w=2.0, cell_h=2.0,
-        front=fest.GridDesign(n_fingers=4, n_busbars=2,
+        front=gedos.GridDesign(n_fingers=4, n_busbars=2,
                               optical_transparency_f=0.4,
                               optical_transparency_b=0.4))
     assert geo.optical_shading_fraction() < geo.shading_fraction()
@@ -131,7 +131,7 @@ Expected: `TypeError: GridDesign.__init__() got an unexpected keyword argument '
 
 - [ ] **Step 3: 최소 구현 작성**
 
-`2L_FEST.py` — `GridDesign.__init__` 시그니처 (960행 부근). `taper_dist_mm=0.0):` 를 다음으로 교체:
+`GEDOS.py` — `GridDesign.__init__` 시그니처 (960행 부근). `taper_dist_mm=0.0):` 를 다음으로 교체:
 
 ```python
                  taper_factor=1.0, taper_dist_mm=0.0,
@@ -205,7 +205,7 @@ optical_widths()는 곱셈만 써서 T=0에서 입력을 비트 그대로 돌려
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ```
 ```bash
-git add 2L_FEST.py tests/test_transparency.py
+git add GEDOS.py tests/test_transparency.py
 git commit -F msg.txt
 ```
 
@@ -216,7 +216,7 @@ git commit -F msg.txt
 **요구사항 3의 실증이 이 태스크에 있다.**
 
 **Files:**
-- Modify: `2L_FEST.py:3977-3979` (`_build`의 `_sh_case`), `2L_FEST.py:6913` (`losses`의 `shade_frac`)
+- Modify: `GEDOS.py:3977-3979` (`_build`의 `_sh_case`), `GEDOS.py:6913` (`losses`의 `shade_frac`)
 - Modify: `tests/test_transparency.py` (append)
 
 **Interfaces:**
@@ -230,23 +230,23 @@ git commit -F msg.txt
 # ---------------------------------------------------------------------------
 # 엔진 배선 (FEM, 20mm 소셀)
 # ---------------------------------------------------------------------------
-def _build_case(fest, t_f=0.0, t_b=0.0):
+def _build_case(gedos, t_f=0.0, t_b=0.0):
     """20mm 소셀 + coarse 메시로 solver/geo/dp 한 세트를 만든다."""
-    front = fest.GridDesign(n_fingers=4, n_busbars=2,
+    front = gedos.GridDesign(n_fingers=4, n_busbars=2,
                             w_finger=100e-4, w_busbar=200e-4,
                             n_probe_points=10,
                             optical_transparency_f=t_f,
                             optical_transparency_b=t_b)
-    geo = fest.CellGeometry(cell_w=2.0, cell_h=2.0, front=front)
-    pts, tri = fest.generate_mesh(geo, axis_segments_override=AX)
-    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
-    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
-    return S, geo, fest.DiodeParams()
+    geo = gedos.CellGeometry(cell_w=2.0, cell_h=2.0, front=front)
+    pts, tri = gedos.generate_mesh(geo, axis_segments_override=AX)
+    isf, isb, isp, ism, isrm, isrp = gedos.classify_nodes(pts, geo)
+    S = gedos.GEDOSSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+    return S, geo, gedos.DiodeParams()
 
 
-def _run(fest, t_f=0.0, t_b=0.0):
+def _run(gedos, t_f=0.0, t_b=0.0):
     """calc_iv + losses를 돌려 (iv, loss) 반환."""
-    S, geo, dp = _build_case(fest, t_f, t_b)
+    S, geo, dp = _build_case(gedos, t_f, t_b)
     g = geo.front
     _, _, iv = S.calc_iv(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact,
                          g.Rs_sheet, g.shape_cf, dp, mode="tandem", npts=NPTS)
@@ -260,26 +260,26 @@ def _run(fest, t_f=0.0, t_b=0.0):
     return iv, loss
 
 
-def test_transparency_zero_bit_identical(fest, monkeypatch):
+def test_transparency_zero_bit_identical(gedos, monkeypatch):
     """★ T=0 명시 전달 == 미전달. 기존 결과 불변의 실증."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
-    iv_default, loss_default = _run(fest)                 # 파라미터 미전달과 동일 (기본 0)
-    iv_zero, loss_zero = _run(fest, t_f=0.0, t_b=0.0)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
+    iv_default, loss_default = _run(gedos)                 # 파라미터 미전달과 동일 (기본 0)
+    iv_zero, loss_zero = _run(gedos, t_f=0.0, t_b=0.0)
     for k in ("Jsc", "Voc", "FF", "Eff", "Pmpp"):
         assert iv_zero[k] == iv_default[k], f"{k} 비트동일 실패"
     for k in ("Pe", "Pf_finger", "Pf_busbar", "Pc", "P_shade"):
         assert loss_zero[k] == loss_default[k], f"{k} 비트동일 실패"
 
 
-def test_transparency_does_not_touch_contact(fest, monkeypatch):
+def test_transparency_does_not_touch_contact(gedos, monkeypatch):
     """★ 이 기능의 정의 — T는 shading에만 작용한다.
 
     물리 폭이 그대로이므로 접촉 손실(Pc)과 금속 저항 손실(Pf_finger,
     Pf_busbar)은 T와 무관해야 한다. shading만 줄고 효율은 올라야 한다.
     """
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
-    iv0, l0 = _run(fest, t_f=0.0, t_b=0.0)
-    iv1, l1 = _run(fest, t_f=0.4, t_b=0.4)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
+    iv0, l0 = _run(gedos, t_f=0.0, t_b=0.0)
+    iv1, l1 = _run(gedos, t_f=0.4, t_b=0.4)
 
     assert l1["Pc"] == l0["Pc"], "T가 접촉 손실을 건드렸다 — 물리/광학 분리 실패"
     assert l1["Pf_finger"] == l0["Pf_finger"], "T가 finger 저항을 건드렸다"
@@ -289,19 +289,19 @@ def test_transparency_does_not_touch_contact(fest, monkeypatch):
     assert iv1["Eff"] > iv0["Eff"], "shading이 줄었는데 효율이 안 올랐다"
 
 
-def test_rear_transparency_warns(fest, monkeypatch, capsys):
+def test_rear_transparency_warns(gedos, monkeypatch, capsys):
     """rear T는 모델에 반영되지 않는다 — 조용한 no-op으로 두지 않고 경고한다."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
-    front = fest.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10)
-    rear = fest.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10,
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
+    front = gedos.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10)
+    rear = gedos.GridDesign(n_fingers=4, n_busbars=2, n_probe_points=10,
                            optical_transparency_f=0.3)
-    geo = fest.CellGeometry(cell_w=2.0, cell_h=2.0, front=front, rear=rear)
-    pts, tri = fest.generate_mesh(geo, axis_segments_override=AX)
-    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
-    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+    geo = gedos.CellGeometry(cell_w=2.0, cell_h=2.0, front=front, rear=rear)
+    pts, tri = gedos.generate_mesh(geo, axis_segments_override=AX)
+    isf, isb, isp, ism, isrm, isrp = gedos.classify_nodes(pts, geo)
+    S = gedos.GEDOSSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
     g = geo.front
     S._build(g.rho_bulk, g.finger_h, g.w_f, g.rho_contact, g.Rs_sheet,
-             g.shape_cf, fest.DiodeParams())
+             g.shape_cf, gedos.DiodeParams())
     assert "rear optical transparency" in capsys.readouterr().out
 ```
 
@@ -312,7 +312,7 @@ Expected: `test_transparency_does_not_touch_contact` FAIL (`P_shade`가 안 줄�
 
 - [ ] **Step 3: 최소 구현 작성**
 
-`2L_FEST.py:3978-3979` — `_sh_case` 계산을 광학 폭으로 교체. 기존:
+`GEDOS.py:3978-3979` — `_sh_case` 계산을 광학 폭으로 교체. 기존:
 
 ```python
                 _sh_case = float(self.geo.shading_fraction(w_f_opt=wf,
@@ -327,7 +327,7 @@ Expected: `test_transparency_does_not_touch_contact` FAIL (`P_shade`가 안 줄�
                 _sh_case = float(self.geo.optical_shading_fraction(wf, wb_case))
 ```
 
-`2L_FEST.py:6913` — `losses()`의 shading. 기존:
+`GEDOS.py:6913` — `losses()`의 shading. 기존:
 
 ```python
         shade_frac = self.geo.shading_fraction(wf, wb_eff)
@@ -382,7 +382,7 @@ rear T는 배선하지 않되 조용한 no-op으로 두지 않고 경고한다.
 Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ```
 ```bash
-git add 2L_FEST.py tests/test_transparency.py
+git add GEDOS.py tests/test_transparency.py
 git commit -F msg.txt
 ```
 
@@ -393,7 +393,7 @@ git commit -F msg.txt
 기계적 변경이다. T=0에서는 전부 동일하므로 회귀 위험이 없다.
 
 **Files:**
-- Modify: `2L_FEST.py` 10곳 (아래 표)
+- Modify: `GEDOS.py` 10곳 (아래 표)
 
 **Interfaces:**
 - Consumes: Task 1의 `optical_shading_fraction`
@@ -417,7 +417,7 @@ git commit -F msg.txt
 
 - [ ] **Step 2: 남은 물리 호출이 `_sh_geo` 하나뿐인지 확인**
 
-Run: `grep -n "\.shading_fraction(" 2L_FEST.py | grep -v "def shading_fraction" | grep -v "optical_shading_fraction"`
+Run: `grep -n "\.shading_fraction(" GEDOS.py | grep -v "def shading_fraction" | grep -v "optical_shading_fraction"`
 Expected: 3977(`_sh_geo`)과 `optical_shading_fraction` 내부 호출(1303 부근) 두 줄만 나온다. 주석 줄(2984)은 무시.
 
 - [ ] **Step 3: 회귀 확인**
@@ -473,40 +473,40 @@ def _grid(**over):
     return g
 
 
-def test_adapter_transparency_zero_bit_identical(fest, monkeypatch):
+def test_adapter_transparency_zero_bit_identical(gedos, monkeypatch):
     """T=0 키를 넘긴 것과 안 넘긴 것이 비트 동일."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     kw = dict(scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
               mode="tandem", npts=NPTS, axis_segments_override=AX)
-    base = evaluate_existing_simulation(fest, _grid(), **kw)
+    base = evaluate_existing_simulation(gedos, _grid(), **kw)
     zero = evaluate_existing_simulation(
-        fest, _grid(optical_transparency_finger=0.0,
+        gedos, _grid(optical_transparency_finger=0.0,
                     optical_transparency_busbar=0.0), **kw)
     for k in ("Jsc", "Voc", "FF", "Eff", "Pmpp", "Pc", "Pf_finger"):
         assert zero["engine_raw"][k] == base["engine_raw"][k], f"{k} 비트동일 실패"
 
 
-def test_shading_columns_physical_and_optical(fest, monkeypatch):
+def test_shading_columns_physical_and_optical(gedos, monkeypatch):
     """T=0이면 두 컬럼이 같고, T>0이면 optical < physical."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     kw = dict(scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
               mode="tandem", npts=NPTS, axis_segments_override=AX)
-    zero = evaluate_existing_simulation(fest, _grid(), **kw)["results"]
+    zero = evaluate_existing_simulation(gedos, _grid(), **kw)["results"]
     assert zero["shading_physical"] == zero["shading_optical"]
 
     tr = evaluate_existing_simulation(
-        fest, _grid(optical_transparency_finger=0.4,
+        gedos, _grid(optical_transparency_finger=0.4,
                     optical_transparency_busbar=0.4), **kw)["results"]
     assert tr["shading_optical"] < tr["shading_physical"]
     # 물리 shading은 T와 무관하다 (금속이 덮은 면적은 그대로)
     assert tr["shading_physical"] == pytest.approx(zero["shading_physical"])
 
 
-def test_transparency_conflicts_with_recovery(fest):
+def test_transparency_conflicts_with_recovery(gedos):
     """같은 물리를 두 번 계산하는 조합은 막는다. 메시지에 해결책 양쪽이 있어야 한다."""
     with pytest.raises(ValueError) as ei:
         evaluate_existing_simulation(
-            fest, _grid(optical_transparency_busbar=0.3),
+            gedos, _grid(optical_transparency_busbar=0.3),
             scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.25,
             mode="tandem", npts=NPTS, axis_segments_override=AX)
     msg = str(ei.value)
@@ -514,11 +514,11 @@ def test_transparency_conflicts_with_recovery(fest):
     assert "busbar_recovery_factor=0" in msg
 
 
-def test_finger_transparency_does_not_conflict(fest, monkeypatch):
+def test_finger_transparency_does_not_conflict(gedos, monkeypatch):
     """finger에는 recovery 모델이 없으므로 충돌하지 않는다."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     out = evaluate_existing_simulation(
-        fest, _grid(optical_transparency_finger=0.3),
+        gedos, _grid(optical_transparency_finger=0.3),
         scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.25,
         mode="tandem", npts=NPTS, axis_segments_override=AX)
     assert out["results"]["shading_optical"] < out["results"]["shading_physical"]
@@ -552,7 +552,7 @@ Expected: `KeyError: 'shading_physical'` 및 `DID NOT RAISE ValueError`
                        if grid_params.get(k) is not None}
 ```
 
-`geo = _build_geometry(fest, grid_params)` **바로 앞**에 상호배타 검사를 넣는다:
+`geo = _build_geometry(gedos, grid_params)` **바로 앞**에 상호배타 검사를 넣는다:
 
 ```python
     # busbar recovery factor와 optical transparency는 같은 물리(busbar 반사광
@@ -629,11 +629,11 @@ from front_electrode import (  # noqa: E402
 )
 
 
-def test_transparency_sweep_axis(fest, monkeypatch):
+def test_transparency_sweep_axis(gedos, monkeypatch):
     """T가 축이 되면 조합 수가 늘고 각 조합에 값이 실린다."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     opt = optimize_grid(
-        fest, cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
+        gedos, cell_mm=20.0, finger_widths_um=[50.0], finger_pitches_mm=[1.8],
         n_busbars_list=[2], busbar_widths_mm=[0.2],
         transparency_finger_list=[0.0, 0.4],
         scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS)
@@ -651,14 +651,14 @@ def test_combo_confirm_not_called_by_default():
     assert COMBO_CONFIRM_THRESHOLD == 50
 
 
-def test_combo_confirm_can_cancel(fest, monkeypatch):
+def test_combo_confirm_can_cancel(gedos, monkeypatch):
     """임계를 넘고 confirm이 False를 주면 실행 전에 취소된다."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     monkeypatch.setattr("front_electrode.optimizer.COMBO_CONFIRM_THRESHOLD", 1)
     calls = []
     with pytest.raises(RuntimeError, match="취소"):
         optimize_grid(
-            fest, cell_mm=20.0, finger_widths_um=[50.0, 60.0],
+            gedos, cell_mm=20.0, finger_widths_um=[50.0, 60.0],
             finger_pitches_mm=[1.8], n_busbars_list=[2], busbar_widths_mm=[0.2],
             scenario=SCENARIO_MEASURED, axis_segments_override=AX, npts=NPTS,
             confirm=lambda n: (calls.append(n), False)[1])
@@ -796,7 +796,7 @@ def test_build_row_carries_shading_columns():
     out = _fake_out()
     out["results"]["shading_optical"] = 0.0121      # T>0 상황
     row = build_row(expand_cases(sc)[0], out, sc,
-                    provenance_env(_FakeFest, sc), 1.0)
+                    provenance_env(_FakeGedos, sc), 1.0)
     assert row["shading_physical"] == 0.0173
     assert row["shading_optical"] == 0.0121
 ```
@@ -838,14 +838,14 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 ### Task 7: GUI 입력란 + 광학 폭 프리뷰 + 버전
 
 **Files:**
-- Modify: `2L_FEST.py:8368-8374` (`tb_hpat` 카드), `8907` 부근 (`_apply_grid_design` 파싱), `8945-8955` (`GridDesign(...)` 호출), `11991-12003` (DESIGN 탭 프리뷰), `276-280` (`__build__`), docstring changelog
+- Modify: `GEDOS.py:8368-8374` (`tb_hpat` 카드), `8907` 부근 (`_apply_grid_design` 파싱), `8945-8955` (`GridDesign(...)` 호출), `11991-12003` (DESIGN 탭 프리뷰), `276-280` (`__build__`), docstring changelog
 
 **Interfaces:**
 - Consumes: Task 1의 `GridDesign(optical_transparency_f=, optical_transparency_b=)`
 
 - [ ] **Step 1: 입력란 2개 추가**
 
-`2L_FEST.py:8373` 다음에 두 줄을 추가하고 `tb_hpat` 리스트를 확장한다:
+`GEDOS.py:8373` 다음에 두 줄을 추가하고 `tb_hpat` 리스트를 확장한다:
 
 ```python
         e7 = _make_entry_row2(grid_card, "Finger optical T", "0.0",  "0~1", 6)
@@ -861,7 +861,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
 - [ ] **Step 2: 파싱과 검증 추가**
 
-`2L_FEST.py:8907`의 `edge_gap = _parse_gui_float(...)` 다음에:
+`GEDOS.py:8907`의 `edge_gap = _parse_gui_float(...)` 다음에:
 
 ```python
             t_finger = _parse_gui_float(self.tb_hpat[6].get(), "Finger optical T")
@@ -874,7 +874,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
 - [ ] **Step 3: GridDesign에 전달**
 
-`2L_FEST.py:8955`의 `pattern_style=pattern_style)` 를 다음으로 교체:
+`GEDOS.py:8955`의 `pattern_style=pattern_style)` 를 다음으로 교체:
 
 ```python
                                pattern_style=pattern_style,
@@ -884,7 +884,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
 - [ ] **Step 4: DESIGN 탭에 광학 폭 오버레이**
 
-`2L_FEST.py:12003`의 pads 루프 다음에 추가:
+`GEDOS.py:12003`의 pads 루프 다음에 추가:
 
 ```python
         # v28.55: 광학 폭 오버레이. 물리 폭 사각형 위에 광학 폭을 점선으로 겹쳐
@@ -911,7 +911,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 
 Run:
 ```bash
-python -c "import sys; sys.path.insert(0,'tests'); sys.path.insert(0,'.'); import conftest; f=conftest._load_fest(); print(f.__build__); g=f.GridDesign(optical_transparency_f=0.3); print(g.optical_widths(100e-4, 200e-4))"
+python -c "import sys; sys.path.insert(0,'tests'); sys.path.insert(0,'.'); import conftest; f=conftest._load_gedos(); print(f.__build__); g=f.GridDesign(optical_transparency_f=0.3); print(g.optical_widths(100e-4, 200e-4))"
 ```
 Expected: build dict이 출력되고 `(0.007, 0.02)`가 나온다.
 

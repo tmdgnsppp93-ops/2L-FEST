@@ -72,9 +72,9 @@ def main():
         print(f"plot-only: {csv_path} -> {plot_roadmap(csv_path, args.png)}")
         return
 
-    fest = conftest._load_fest()
+    gedos = conftest._load_gedos()
     cases = expand_cases(sc)
-    print(f"GEDOS build {fest.__build__['version']} | "
+    print(f"GEDOS build {gedos.__build__['version']} | "
           f"scenario: {sc['name']} ({sc['_meta']['file']} "
           f"sha {sc['_meta']['sha256']})")
     print(f"  {len(cases)}개 케이스 (baseline 포함), CSV: {csv_path}")
@@ -83,7 +83,7 @@ def main():
               "구조 확인은 --ax 60을 먼저.")
 
     t0 = time.time()
-    rows = run_roadmap(fest, sc, csv_path, resume=args.resume,
+    rows = run_roadmap(gedos, sc, csv_path, resume=args.resume,
                        axis_segments_override=args.ax, progress=_progress)
     print(f"  {len(rows)}개 실행, {time.time() - t0:.0f}s")
 

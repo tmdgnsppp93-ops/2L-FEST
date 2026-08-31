@@ -4,9 +4,9 @@
 """Re-run the two tandem baselines under the v28.33 default (Phase B interlayer).
 
 Headless (no GUI): reuses the tests/conftest.py mock harness to import the app
-as module `fest`, then drives the FEM solver directly. For each cell it runs the
+as module `gedos`, then drives the FEM solver directly. For each cell it runs the
 SAME geometry/params under BOTH:
-  * legacy Phase A  (FEST_LEGACY_LOCAL_MATCH=1, Rs_junction=0)  -> "이전" column
+  * legacy Phase A  (GEDOS_LEGACY_LOCAL_MATCH=1, Rs_junction=0)  -> "이전" column
   * default Phase B (Rs_junction=5000, Rc_junction=0.1)         -> "신규" column
 so the "previous (Phase A)" numbers are MEASURED here, not trusted from memory.
 The hard-coded references (M10 26.113%, small 26.762%) are shown for context only.
@@ -34,14 +34,14 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 sys.path.insert(0, os.path.join(_ROOT, "tests"))
 import conftest  # noqa: E402
-fest = conftest._load_fest()
+gedos = conftest._load_gedos()
 
 
 def _versions():
     print("=" * 78)
     print(f"Python {platform.python_version()} | numpy {np.__version__} | "
           f"scipy {scipy.__version__}")
-    print(f"GEDOS build {fest.__build__['version']} ({fest.__build__['date']})")
+    print(f"GEDOS build {gedos.__build__['version']} ({gedos.__build__['date']})")
     print("=" * 78)
 
 
@@ -69,17 +69,17 @@ CELLS = {
 
 
 def _build_solver(spec):
-    geo = fest.CellGeometry(
+    geo = gedos.CellGeometry(
         cell_w=spec["cell_w"], cell_h=spec["cell_h"],
-        front=fest.GridDesign(
+        front=gedos.GridDesign(
             n_fingers=spec["n_fingers"], n_busbars=spec["n_busbars"],
             w_finger=spec["w_finger"], w_busbar=spec["w_busbar"],
             n_probe_points=spec.get("n_probe_points", 0)),
     )  # monofacial (no rear grid -> full_area)
-    pts, tri, nfin, axfin = fest._generate_mesh_for_target(
+    pts, tri, nfin, axfin = gedos._generate_mesh_for_target(
         geo, mesh_tangent="Med", mesh_perp="Med", target_nodes=spec["target_nodes"])
-    isf, isb, isp, ism, isrm, isrp = fest.classify_nodes(pts, geo)
-    S = fest.FESTSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
+    isf, isb, isp, ism, isrm, isrp = gedos.classify_nodes(pts, geo)
+    S = gedos.GEDOSSolver(pts, tri, isf, isb, isp, ism, geo, isrm, isrp)
     return geo, S, len(pts)
 
 
@@ -92,16 +92,16 @@ def _baseline_params(geo):
 
 def _run(S, geo, legacy):
     if legacy:
-        os.environ["FEST_LEGACY_LOCAL_MATCH"] = "1"
+        os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = "1"
     else:
-        os.environ.pop("FEST_LEGACY_LOCAL_MATCH", None)
-    dp = fest.DiodeParams()
+        os.environ.pop("GEDOS_LEGACY_LOCAL_MATCH", None)
+    dp = gedos.DiodeParams()
     if legacy:
         dp.Rs_junction = 0.0   # Phase A trigger (allowed under the flag)
     p = _baseline_params(geo)
     _, _, iv = S.calc_iv(p["rm"], p["hf"], p["wf"], p["rc"], p["Rs"], p["cf"],
                          dp, mode="tandem")
-    model = fest._phase_b_model_info(dp, "tandem")["interlayer_model"]
+    model = gedos._phase_b_model_info(dp, "tandem")["interlayer_model"]
     shade = 100.0 * geo.shading_fraction(p["wf"], geo.w_b)
     return dict(Jsc=iv["Jsc"], Voc=iv["Voc"], FF=iv["FF"], PCE=iv["Eff"],
                 shade=shade, model=model)

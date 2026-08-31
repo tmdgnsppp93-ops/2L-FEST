@@ -39,7 +39,7 @@ LANGUAGE_LABELS = {"en": "English", "ko": "한국어"}
 # 설정 파일 — 언어 선택을 실행 간 유지한다. 엔진에 기존 저장 메커니즘이 없어
 # 여기서 최소한으로 만든다(홈 디렉터리 JSON). 읽기/쓰기 실패는 조용히 무시하고
 # 기본값으로 동작한다(읽기 전용 FS·권한 문제로 GUI가 죽으면 안 되므로).
-SETTINGS_DIR = os.path.join(os.path.expanduser("~"), ".2l-fest")
+SETTINGS_DIR = os.path.join(os.path.expanduser("~"), ".gedos")
 SETTINGS_PATH = os.path.join(SETTINGS_DIR, "settings.json")
 
 _current = {"lang": None}        # 지연 초기화(첫 조회 시 설정 파일 읽음)

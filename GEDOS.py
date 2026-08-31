@@ -78,7 +78,7 @@ v28.33: [physics] interlayer 모델 기본화 (Griddler PRO 등가). DiodeParams
          100 mΩ·cm²). 이제 tandem은 항상 Phase B(유한 lateral interlayer plane)로
          디스패치된다. Rs_j=0(Phase A local current matching)은 물리적으로 lateral
          전도 없는 Rs_j→∞ 극한이라 라벨과 반대였으며, 이제 환경변수
-         FEST_LEGACY_LOCAL_MATCH=1 일 때만 허용(_legacy_local_match_enabled()).
+         GEDOS_LEGACY_LOCAL_MATCH=1 일 때만 허용(_legacy_local_match_enabled()).
          상수 RS_JUNCTION_MIN=0.1 로 Rs_j≤0 입력을 _build/_apply_diode_params에서
          클램프(_cache_hash 이전) → _K_junc 항상 빌드. _phase_b_model_info가
          interlayer 문자열을 iv dict에 상시 표기. solve_tandem/_solve_tandem_*
@@ -110,7 +110,7 @@ v28.38: [feat] 전면전극 최적화 연결 — 상단 툴바에 "⚙ Optimize"
          이 버튼을 쓰지 않으면 기존 결과와 완전 동일(회귀 핀 비트 동일 유지).
 v28.39: [perf] compute_metal_frac / _compute_rear_metal_frac에 bbox 사전필터
          (_elem_metal_frac 헬퍼). 이전엔 모든 (삼각형 n_elem × rect) 쌍에 정확
-         clip을 수행(M10 170k×144 ≈ 24M회, FESTSolver.__init__의 ~215초 지배).
+         clip을 수행(M10 170k×144 ≈ 24M회, GEDOSSolver.__init__의 ~215초 지배).
          이제 bbox가 겹치는 쌍만 clip — 겹치지 않는 쌍은 _tri_rect_area가 정확히
          0을 반환하므로 생략해도 **결과 비트 동일**(각 삼각형 합은 rect 순서대로
          누적, +0 생략은 부동소수 값 불변). 손실·효율·shading 수식 무변경.
@@ -233,7 +233,7 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
          · [전환] 사이드바 최상단 세그먼트 버튼(English/한국어). 재시작 불필요 —
            (위젯,키) 레지스트리로 텍스트만 다시 입혀 **위젯을 새로 만들지 않는다**
            (입력값·결과 유지). 결과가 있으면 결과 텍스트·그래프까지 재렌더
-           (FEM 재계산 없음 → 수치 비트 동일). 선택은 ~/.2l-fest/settings.json에
+           (FEM 재계산 없음 → 수치 비트 동일). 선택은 ~/.gedos/settings.json에
            저장돼 다음 실행에 유지. 저장 실패는 조용히 무시(읽기 전용 FS 대비).
          · [기본값] English — 외국인 사용자가 처음 열었을 때 읽을 수 있어야 하므로.
            저장된 설정이 있으면 그쪽 우선.
@@ -269,7 +269,7 @@ v28.47: [i18n] front_electrode 최적화 창 한/영 이중언어화 — 엔진 
              찍혔다. um/rhoL/rhoc 표기. test_plot_strings_are_ascii_safe로 회귀 차단.
          · [검사 전환: 스크린샷 → 수치] 캡처는 사람 눈에 의존하고, macOS에서 Tk를
            띄운 뒤 같은 프로세스에서 scipy sparse solve를 돌리면 GIL 오류로 죽는다
-           (실측; 순서를 뒤집으면 정상). ui가 fest를 Run 콜백에서만 쓰는 점을 이용해
+           (실측; 순서를 뒤집으면 정상). ui가 gedos를 Run 콜백에서만 쓰는 점을 이용해
            **엔진 스텁**을 넘겨 scipy를 아예 로드하지 않고 위젯 좌표만 측정한다 →
            크래시 조합이 구조적으로 성립하지 않는다. 물리 수치 검증은 반대로 Tk 없이
            돈다(둘을 섞지 않는 것이 회피 원리).
@@ -626,7 +626,7 @@ v28.61: [fix] 공간 분포 맵 분기 누락 해소 — spatial_j01/j02/gen이 
          마지막 것은 단위 0의 실측이 새로 찾아냈다 — solve_single이 rear_mode에
          따라 빠져나가는 분기이고, spatial_map_convention.md §6의 16칸 표에
          그 행이 통째로 빠져 있었다("단일셀은 4종 모두 정상"이 틀렸다).
-         [refactor] FESTSolver._diode_node_arrays 신설 — 다이오드 노드 배열
+         [refactor] GEDOSSolver._diode_node_arrays 신설 — 다이오드 노드 배열
          조립을 **한 곳으로** 모았다. 이전에는 13개 함수 34줄에 복제돼 있었다.
          결함의 원인은 "한 곳만 고쳤다"가 아니라 "여러 곳에서 각자 조립할 수
          있었다"이므로, 그 가능성 자체를 없애는 것이 핵심 산출물이다. 배선한
@@ -786,7 +786,7 @@ v28.66: [fix] **FF 워터폴 탭의 J0 Decomposition 패널이 공간 분포 맵
          보여 줬다. 정규식을 **임의 식별자**까지 넓혔다 — 이름을 열거하는
          방식 자체가 새는 감시라는 것이 교훈이고, 숫자가 안 변한다는 것은
          감시가 촘촘하다는 증거가 아니다.
-         [refactor] 조립을 GUI 밖 `FESTSolver.j0_decomposition`으로 옮겼다.
+         [refactor] 조립을 GUI 밖 `GEDOSSolver.j0_decomposition`으로 옮겼다.
          식이 GUI 안에 있었던 것이 이 자리가 테스트 밖이었던 직접적 원인이다.
          가중치도 노드 단순 평균 → `recomb_currents`와 같은 **면적 가중**으로
          고쳤다(메시가 핑거 근처에서 촘촘해 단순 평균은 그 영역을 과대 가중
@@ -794,7 +794,7 @@ v28.66: [fix] **FF 워터폴 탭의 J0 Decomposition 패널이 공간 분포 맵
          **표시 전용 경로라 비트 핀 대상이 아니다.** 무맵에서도 v28.65와
          표시값이 미세하게 달라진다.
          [refactor] `assemble_K`의 노드 면적 계산을 모듈 함수 `nodal_areas`로
-         뽑고 `FESTSolver._nodal_areas()`(지연 계산) 추가 — 표시 경로가
+         뽑고 `GEDOSSolver._nodal_areas()`(지연 계산) 추가 — 표시 경로가
          강성 조립을 강제하지 않게 한다.
 
         [feat] **벌크 횡전도 `Rs_base` GUI 입력란 추가** [Ω/sq, ↔].
@@ -872,6 +872,29 @@ v28.69: [naming] **약칭 확정 — GEDO → GEDOS.**
          표시 버전은 **GEDOS v1.0**, 화면 표기 `GEDOS v1.0  [v28.69]`.
          범위는 v28.68과 같다(표시·배포·현재 상태 문서). 소스 파일명 ·
          클래스 · 환경변수는 이번에도 그대로다 — 이유도 v28.68 항목과 같다.
+
+v28.70: [naming] **이름 전면 통일 — 2L-FEST / GEDO 잔존 제거.**
+         v28.68·v28.69는 표시 계층만 바꾸고 내부 이름은 남겨둔다 —
+         **그 두 항목의 "바꾸지 않은 것" 단서는 이 항목으로 무효화된다.**
+         사용자가 폴더에 GEDOS가 없다고 본 것이 계기 — 파일명이 여전히
+         2L_FEST.py였기 때문이다. 이름이 두 벌인 상태 자체가 비용이었다.
+         바꾼 것 (전수):
+           · 소스 파일   `2L_FEST.py`             → `GEDOS.py`
+           · 클래스     `FESTSolver` / `FESTProApp` → `GEDOSSolver` / `GEDOSApp`
+           · 환경변수   `FEST_LEGACY_LOCAL_MATCH`  → `GEDOS_LEGACY_LOCAL_MATCH`
+           · 테스트     픽스처 `fest` → `gedos`, `_FakeFest` → `_FakeGedos`
+           · 교차검증   `drive_2lfest.py` → `drive_gedos.py`, 그림 3종 `2LFEST_*` → `GEDOS_*`
+           · 문서·스크립트·CI 전수
+         ⚠ 환경변수는 **외부 계약이다.** 구이름을 쓰던 스크립트는
+         오류 없이 조용히 기본 경로로 돌아간다. 하위 호환 별칭은 두지
+         않는다 — 이름을 없애달라는 것이 이번 지시였기 때문이다.
+         ⚠ 보존한 것: 위 v28.51·v28.68·v28.69 개명 항목의 본문과
+         예전 파일명 `2L_FEST_v28_18_wf_wired.py`. 그 시점의 기록이라
+         고치면 거짓문이 된다. git 이력도 그대로다(git mv로 보존).
+         [fix] 곁들여 해소: 묶은 실행 파일의 배너가 `build unknown`으로
+         뜨던 문제. `_build_sha()`가 `__file__`을 열어 해시하는데 번들에는
+         그 경로에 파일이 없었다. `sys.frozen`이면 `sys.executable`을
+         해시하도록 바꿨다 — 소스 실행 시 동작은 종전과 완전히 같다.
 
 
 Author: Seunghoon (KIST, Dr. Inho Kim's Solar Cell Research Team)
@@ -971,8 +994,8 @@ q_e = 1.602e-19; kB = 1.381e-23; T = 298.15; VT = kB * T / q_e
 PAD_SIZE = 0.030
 
 __build__ = {
-    "version": "v28.69",
-    "date": "2026-08-21",
+    "version": "v28.70",
+    "date": "2026-08-31",
 }
 _BUILD_SHA_CACHE = None
 
@@ -981,8 +1004,12 @@ def _build_sha():
     global _BUILD_SHA_CACHE
     if _BUILD_SHA_CACHE is not None:
         return _BUILD_SHA_CACHE
+    # v28.70: PyInstaller 번들에는 __file__ 경로에 실제 파일이 없어 예전에는
+    # 배너가 "build unknown"으로 떴다. 묶인 경우엔 실행 파일 자체를 해시한다 —
+    # "이 빌드를 유일하게 식별한다"는 목적은 같다.
+    _src = sys.executable if getattr(sys, "frozen", False) else __file__
     try:
-        with open(__file__, "rb") as handle:
+        with open(_src, "rb") as handle:
             _BUILD_SHA_CACHE = hashlib.sha256(handle.read()).hexdigest()[:12]
     except Exception:
         _BUILD_SHA_CACHE = "unknown"
@@ -1013,13 +1040,13 @@ RS_JUNCTION_MIN = 0.1
 
 
 def _legacy_local_match_enabled():
-    """True only when env FEST_LEGACY_LOCAL_MATCH=1.
+    """True only when env GEDOS_LEGACY_LOCAL_MATCH=1.
 
     Enables the legacy Rs_junction=0 Phase-A local current-matching path.
     os.environ is read on EVERY call (never cached at import) so tests can
     monkeypatch the environment between solves.
     """
-    return os.environ.get("FEST_LEGACY_LOCAL_MATCH", "") == "1"
+    return os.environ.get("GEDOS_LEGACY_LOCAL_MATCH", "") == "1"
 
 
 def _parse_gui_float(raw, name, *, scale=1.0, allow_blank=False, blank_value=0.0):
@@ -1293,7 +1320,7 @@ _TR = {
               'infinite conductance.',
         'KR': '벌크 횡전도 R은 유한하고 양수인 면저항이어야 한다 [Ω/sq]. '
               '끄려면 빈칸으로 둘 것 — 0은 "끔"이 아니라 무한 컨덕턴스다.'},
-    # full_area 거부 안내. 엔진의 ValueError(2L_FEST.py `_build`)와 **같은
+    # full_area 거부 안내. 엔진의 ValueError(GEDOS.py `_build`)와 **같은
     # 사실**을 말한다. GUI에서 먼저 막는 이유는 그 예외가 COMPARE 도중에
     # 터져서 사용자가 어느 입력 탓인지 알기 어렵기 때문이다.
     'rs_base_full_area': {
@@ -2303,7 +2330,7 @@ class DiodeParams:
     # Phase B (default, v28.33): the interlayer is ALWAYS a finite lateral sheet-R
     # plane — the Griddler PRO model (Manual v7.0 §7). Phase A local current
     # matching (Rs_j=0) is the Rs_j→∞ limit (no lateral conduction) and is only
-    # reachable via the FEST_LEGACY_LOCAL_MATCH escape hatch.
+    # reachable via the GEDOS_LEGACY_LOCAL_MATCH escape hatch.
     #
     # Rc_junction: vertical contact resistivity between top and bot subcells.
     # Default 0.1 Ω·cm² = PRO 100 mΩ·cm². Typical PST: 0.02-0.2, poor contact: 0.5-2.
@@ -3156,7 +3183,7 @@ def nodal_areas(simplices, areas):
 
     v28.66에서 `assemble_K` 본문에서 뽑아냈다. `assemble_K`는 `_build`가 부르는데,
     `_build`를 거치지 않고도 노드 면적이 필요한 곳이 생겼기 때문이다
-    (`FESTSolver.j0_decomposition` — 표시 전용이라 강성 조립을 요구할 이유가 없다).
+    (`GEDOSSolver.j0_decomposition` — 표시 전용이라 강성 조립을 요구할 이유가 없다).
 
     **복제하지 않고 뽑아낸 이유**: 두 벌이 되면 `valid` 판정이나 1/3 분배가 한쪽만
     바뀌어도 아무 오류 없이 값이 갈린다. 노드 면적은 손실 적분의 가중치라 그 갈림이
@@ -3455,7 +3482,7 @@ def assemble_K_met_1d(points, ism, geo, rm, hf, cf, w_f=None, w_b=None, gc_max=0
 # 0D ANALYTICAL TANDEM SOLVER (v28.4 — Step 4)
 # =============================================================
 # 검증 목적: 2D FEM 손실(시트R, 금속R, 접촉R, interlayer)이 모두 0인
-# 극한 조건에서 2L-FEST tandem 결과가 수학적으로 등가한 0D 2-diode
+# 극한 조건에서 GEDOS tandem 결과가 수학적으로 등가한 0D 2-diode
 # 직렬 모델과 일치해야 한다. 일치 → 솔버의 다이오드 핵심 로직 검증.
 # 불일치 → 솔버 버그 또는 FEM에 R이 잔류.
 
@@ -4699,7 +4726,7 @@ class MeshProlongationSeedProvider:
 # =============================================================
 # UNIFIED SOLVER (Single-cell + Tandem, with Rear Plane)
 # =============================================================
-class FESTSolver:
+class GEDOSSolver:
     """
     v5.0 Unified Solver.
 
@@ -8613,7 +8640,7 @@ DP = DiodeParams()
 TP = DP  # Backward compatibility alias
 pts, tri = generate_mesh(GEO, pass_density=2)
 isf, isb, isp, ism, isrm, isrp = classify_nodes(pts, GEO)
-S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
+S = GEDOSSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
 triang = mtri.Triangulation(pts[:,0]*10, pts[:,1]*10, tri.simplices)
 print(f"  Mesh: {len(pts)} nodes, {len(tri.simplices)} tri ({time.time()-t0:.2f}s)")
 print(f"  Metal: {np.sum(ism)} nodes ({np.sum(ism)/len(pts)*100:.1f}%)")
@@ -9436,7 +9463,7 @@ class _UserCancelled(Exception):
 # =============================================================
 # CUSTOMTKINTER PRO GUI
 # =============================================================
-class FESTProApp(ctk.CTk):
+class GEDOSApp(ctk.CTk):
     def __init__(self):
         super().__init__()
         # Build tag: bump this whenever the file changes so the window title
@@ -10609,7 +10636,7 @@ class FESTProApp(ctk.CTk):
                 pts, tri = generate_mesh(GEO, pass_density=2,
                                          mesh_tangent=mt_v, mesh_perp=mp_v)
             isf, isb, isp, ism, isrm, isrp = classify_nodes(pts, GEO)
-            S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
+            S = GEDOSSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
             triang = mtri.Triangulation(pts[:,0]*10, pts[:,1]*10, tri.simplices)
             self._update_info_label()
             self._status(f"Mesh updated: {len(pts)} nodes, {len(tri.simplices)} tri, {nf}F+{nb}BB  [{wafer_shape}, Mesh: T={mt_v}/P={mp_v}]")
@@ -11336,7 +11363,7 @@ class FESTProApp(ctk.CTk):
         try:
             pts, tri = generate_mesh_poly(GEO)
             isf, isb, isp, ism, isrm, isrp = classify_nodes_poly(pts, GEO)
-            S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
+            S = GEDOSSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
             triang = mtri.Triangulation(pts[:, 0] * 10, pts[:, 1] * 10, tri.simplices)
             self._status(f"DXF extraction: terminals re-spaced to {len(new_terms)} "
                          f"(evenly, geometry unchanged) — press a tab to recompute")
@@ -11414,7 +11441,7 @@ class FESTProApp(ctk.CTk):
 
             # 4) Solver. _build dispatches to the poly 1D metal assembler
             #    automatically because GEO._dxf_finger_rects is present.
-            S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
+            S = GEDOSSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
             triang = mtri.Triangulation(pts[:, 0] * 10, pts[:, 1] * 10, tri.simplices)
 
             shading_pct = GEO.optical_shading_fraction() * 100
@@ -12084,11 +12111,11 @@ class FESTProApp(ctk.CTk):
                     if _mode_now == 'tandem' and rs_val <= 0 and not _legacy:
                         # Phase 1 (v28.33): Rs_j≤0 is the Phase-A trigger; clamp to
                         # RS_JUNCTION_MIN to keep Phase B. Legacy Phase A requires
-                        # FEST_LEGACY_LOCAL_MATCH=1.
+                        # GEDOS_LEGACY_LOCAL_MATCH=1.
                         DP.Rs_junction = RS_JUNCTION_MIN
                         self._status(
                             f"Rs_junction≤0 → {RS_JUNCTION_MIN} Ω/sq로 클램프 (Phase B 유지). "
-                            f"legacy Phase A는 FEST_LEGACY_LOCAL_MATCH=1 필요.")
+                            f"legacy Phase A는 GEDOS_LEGACY_LOCAL_MATCH=1 필요.")
                     else:
                         DP.Rs_junction = rs_val
             except (ValueError, IndexError) as e:
@@ -13240,8 +13267,8 @@ class FESTProApp(ctk.CTk):
         else:
             cm_b = cm_a = None
         # R_series, G_shunt
-        Rs_ext_b, Gsh_b = FESTSolver.extract_rs_gsh(Vs_b, Js_b)
-        Rs_ext_a, Gsh_a = FESTSolver.extract_rs_gsh(Vs_a, Js_a)
+        Rs_ext_b, Gsh_b = GEDOSSolver.extract_rs_gsh(Vs_b, Js_b)
+        Rs_ext_a, Gsh_a = GEDOSSolver.extract_rs_gsh(Vs_a, Js_a)
         health_b = _iv_health(iv_b)
         health_a = _iv_health(iv_a)
         self._cache.update(dict(bp=bp,ap=ap,mode=mode,Vs_b=Vs_b,Js_b=Js_b,iv_b=iv_b,
@@ -13896,7 +13923,7 @@ class FESTProApp(ctk.CTk):
             # 않았다. v28.66은 배선과 함께 그 정규식을 임의 식별자까지 넓혔다 —
             # test_spatial_branch_coverage.INLINE_ASSEMBLY_RE.
             #
-            # 조립은 `FESTSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
+            # 조립은 `GEDOSSolver.j0_decomposition`으로 옮겼다 — 식이 GUI 안에
             # 있었던 것이 이 결함이 테스트 밖에 있었던 이유다. 가중치도 노드
             # 단순 평균에서 `recomb_currents`와 같은 **면적 가중**으로 바꿨다
             # (근거는 그 메서드 독스트링). 무맵에서도 표시값이 미세하게
@@ -15397,5 +15424,5 @@ class FESTProApp(ctk.CTk):
 # RUN
 # =============================================================
 if __name__ == "__main__":
-    app = FESTProApp()
+    app = GEDOSApp()
     app.mainloop()

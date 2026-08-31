@@ -4,7 +4,7 @@
 
 **Goal:** 사용자가 txt/csv 2D 행렬 파일로 비균일 공간 분포를 넣을 수 있게 한다. 파일 로더 + GUI까지가 1단계다. 이미지(jpg/tif/bmp) 지원은 **2단계로 분리**한다.
 
-**Architecture:** 엔진은 이미 완성되어 있다. `SpatialMap`(`2L_FEST.py:3248`)이 노드 좌표에서 배율 배열을 만들고, `_spatial_mult`(`2L_FEST.py:3838`)를 거쳐 접촉 컨덕턴스·J01/J02/광생성에 곱해진다. **없는 것은 사용자가 맵 객체를 만들 방법 하나뿐이다** — 저장소 전체에서 `SpatialMap(`을 생성하는 코드는 `_audit.py:135-145`(스모크 스크립트)뿐이고 앱 코드에는 0건이다(2026-08-17 재확인). 따라서 이 작업은 **입력 경로(I/O + GUI) 추가**이며 물리 경로는 건드리지 않는다.
+**Architecture:** 엔진은 이미 완성되어 있다. `SpatialMap`(`GEDOS.py:3248`)이 노드 좌표에서 배율 배열을 만들고, `_spatial_mult`(`GEDOS.py:3838`)를 거쳐 접촉 컨덕턴스·J01/J02/광생성에 곱해진다. **없는 것은 사용자가 맵 객체를 만들 방법 하나뿐이다** — 저장소 전체에서 `SpatialMap(`을 생성하는 코드는 `_audit.py:135-145`(스모크 스크립트)뿐이고 앱 코드에는 0건이다(2026-08-17 재확인). 따라서 이 작업은 **입력 경로(I/O + GUI) 추가**이며 물리 경로는 건드리지 않는다.
 
 **Tech Stack:** Python ≥3.10, numpy/scipy/customtkinter (모두 기존 의존성). **1단계에서 신규 의존성 없음.**
 
@@ -30,14 +30,14 @@
 | 이미지 (2단계) | **상대값** | **평균 1로 정규화** |
 
 - 근거: Griddler 매뉴얼 §3.1 (Nonuniform cell parameters). 대조 기록은 `docs/audit_2026-08-13.md` §3.1 항.
-- **교차검증 요구사항: 같은 파일을 2L-FEST와 Griddler 양쪽에 넣을 수 있어야 한다.** 이것이 규약을 Griddler에 맞추는 이유이고, 아래 §미해결 2건이 여기서 나온다.
+- **교차검증 요구사항: 같은 파일을 GEDOS와 Griddler 양쪽에 넣을 수 있어야 한다.** 이것이 규약을 Griddler에 맞추는 이유이고, 아래 §미해결 2건이 여기서 나온다.
 
 ### 대상 물성
 
-`SPATIAL_TARGETS = ("j01", "j02", "gen", "rc")` (`2L_FEST.py:3334`) 4종을 그대로 쓴다. **2026-08-17 확정 — 새 대상을 추가하지 않는다**(근거는 §미해결 3).
+`SPATIAL_TARGETS = ("j01", "j02", "gen", "rc")` (`GEDOS.py:3334`) 4종을 그대로 쓴다. **2026-08-17 확정 — 새 대상을 추가하지 않는다**(근거는 §미해결 3).
 
-- `spatial_j01` / `spatial_j02` / `spatial_gen` / `spatial_rc` (`2L_FEST.py:1704-1707`, 기본 `None`)
-- `rc`만 의미가 반대다 — 맵이 **접촉 저항 R을 곱하고 컨덕턴스 Gc를 나눈다**(`2L_FEST.py:4028-4030`). 사용자가 "1.5 = 접촉이 1.5배 좋아짐"으로 오해하기 쉽다. **GUI 라벨 문구 확정(2026-08-17):**
+- `spatial_j01` / `spatial_j02` / `spatial_gen` / `spatial_rc` (`GEDOS.py:1704-1707`, 기본 `None`)
+- `rc`만 의미가 반대다 — 맵이 **접촉 저항 R을 곱하고 컨덕턴스 Gc를 나눈다**(`GEDOS.py:4028-4030`). 사용자가 "1.5 = 접촉이 1.5배 좋아짐"으로 오해하기 쉽다. **GUI 라벨 문구 확정(2026-08-17):**
 
   ```
   접촉 저항률 배율 (rc) — 값이 클수록 접촉이 나쁨
@@ -49,13 +49,13 @@
 
 ### 값 제약
 
-`evaluate()`가 **유한하고 양수**가 아니면 `ValueError`를 던진다(`2L_FEST.py:3327-3328`). 로더는 이 제약을 **파일 읽는 시점에 먼저** 검사해서, 솔버 실행 중이 아니라 파일 선택 직후에 오류를 보여줘야 한다. 0·음수·NaN이 들어간 파일은 조용히 고치지 말고 거부한다(v28.43 `n_probe_points=0`, v28.54 `extraction_method` 전례).
+`evaluate()`가 **유한하고 양수**가 아니면 `ValueError`를 던진다(`GEDOS.py:3327-3328`). 로더는 이 제약을 **파일 읽는 시점에 먼저** 검사해서, 솔버 실행 중이 아니라 파일 선택 직후에 오류를 보여줘야 한다. 0·음수·NaN이 들어간 파일은 조용히 고치지 말고 거부한다(v28.43 `n_probe_points=0`, v28.54 `extraction_method` 전례).
 
 ---
 
 ## 메시 노드로의 보간 방식
 
-**이미 구현되어 있고, 바꾸지 않는다.** `SpatialMap.evaluate()`의 `csv` 분기(`2L_FEST.py:3310-3322`):
+**이미 구현되어 있고, 바꾸지 않는다.** `SpatialMap.evaluate()`의 `csv` 분기(`GEDOS.py:3310-3322`):
 
 ```
 y_axis = np.linspace(0.0, H_cm, ny_)        # 행 방향
@@ -81,28 +81,28 @@ result = interp(column_stack((clip(y,0,H), clip(x,0,W))))
 
 **(1) 기본값이 `None`이고, `None`이면 곱셈 자체가 실행되지 않는다.**
 
-`dp.spatial_*`의 클래스 기본값은 `None`이다(`2L_FEST.py:1704-1707`). `_spatial_mult`는 spec이 `None`이면 배열을 만들지 않고 **`None`을 반환한다**(`3844-3846`, 주석: *"caller treats None as all-ones (skips the multiply)"*). 소비 지점 전부가 `if ... is not None:` 가드 안에 있다:
+`dp.spatial_*`의 클래스 기본값은 `None`이다(`GEDOS.py:1704-1707`). `_spatial_mult`는 spec이 `None`이면 배열을 만들지 않고 **`None`을 반환한다**(`3844-3846`, 주석: *"caller treats None as all-ones (skips the multiply)"*). 소비 지점 전부가 `if ... is not None:` 가드 안에 있다:
 
 | 위치 | 대상 | 가드 |
 |---|---|---|
-| `2L_FEST.py:4028-4030` | `_Gc` (접촉 컨덕턴스) | `if _m_rc is not None:` |
-| `2L_FEST.py:4368-4374` | J01/J02 top | `if _m_j01 is not None:` / `if _m_j02 is not None:` |
-| `2L_FEST.py:5867-5869` | 단일셀 경로 | 동일 패턴 |
-| `2L_FEST.py:6153-6155` | 보고/손실 경로 | 동일 패턴 |
+| `GEDOS.py:4028-4030` | `_Gc` (접촉 컨덕턴스) | `if _m_rc is not None:` |
+| `GEDOS.py:4368-4374` | J01/J02 top | `if _m_j01 is not None:` / `if _m_j02 is not None:` |
+| `GEDOS.py:5867-5869` | 단일셀 경로 | 동일 패턴 |
+| `GEDOS.py:6153-6155` | 보고/손실 경로 | 동일 패턴 |
 
 → 맵이 없으면 **부동소수점 연산이 하나도 추가되지 않는다.** 이것이 1차 근거다.
 
 **(2) 예외적으로 곱셈이 실행되는 bottom-cell 경로는 리터럴 `1.0` 곱이다.**
 
 ```python
-_J01b = dp.J01_bot * (_m_j01 if _m_j01 is not None else 1.0)   # 2L_FEST.py:4378 부근
+_J01b = dp.J01_bot * (_m_j01 if _m_j01 is not None else 1.0)   # GEDOS.py:4378 부근
 ```
 
 여기는 가드 대신 `1.0`을 곱한다. **IEEE 754에서 `x * 1.0 == x`가 정확히 성립**하므로 비트 동일이 산술로 보장된다. Metal Optical Transparency 작업의 `optical_widths()`가 곱셈만 쓴 것과 **같은 근거**다(`docs/WORKLOG.md` §2-3).
 
 > ⚠ **이 성질에 기대므로, 로더·GUI가 "맵 없음"을 `None`이 아닌 `SpatialMap(mode='uniform')`으로 표현하면 안 된다.** uniform 맵은 `np.full(N, 1.0)` 배열을 만들어 실제 곱셈을 실행시킨다. 값은 같겠지만 **가드를 우회하므로 위 (1)의 근거가 사라진다.** 맵 해제는 반드시 `dp.spatial_x = None`이어야 한다. 이건 단위 4에서 테스트로 고정한다.
 
-**(3) 맵을 붙일 대상 인스턴스 주의.** `spatial_*`는 클래스 속성이므로, GUI가 전역 `DP`(`2L_FEST.py:7201`)에 맵을 붙여도 `solve()` 내부 폴백 `dp = DiodeParams()`(`4272`, `5828`, `6145`, `6203`, `6342`, `6452`, `6919`, `7159`)로 만들어진 인스턴스는 맵을 못 본다. **반대로 `DiodeParams.spatial_j01 = ...`처럼 클래스에 직접 붙이면 모든 인스턴스에 전역 누출된다.** 로더/GUI는 항상 **`solve()`에 실제로 전달되는 dp 인스턴스**에만 붙인다.
+**(3) 맵을 붙일 대상 인스턴스 주의.** `spatial_*`는 클래스 속성이므로, GUI가 전역 `DP`(`GEDOS.py:7201`)에 맵을 붙여도 `solve()` 내부 폴백 `dp = DiodeParams()`(`4272`, `5828`, `6145`, `6203`, `6342`, `6452`, `6919`, `7159`)로 만들어진 인스턴스는 맵을 못 본다. **반대로 `DiodeParams.spatial_j01 = ...`처럼 클래스에 직접 붙이면 모든 인스턴스에 전역 누출된다.** 로더/GUI는 항상 **`solve()`에 실제로 전달되는 dp 인스턴스**에만 붙인다.
 
 ---
 
@@ -151,7 +151,7 @@ _J01b = dp.J01_bot * (_m_j01 if _m_j01 is not None else 1.0)   # 2L_FEST.py:4378
 >
 > `_sm_tag`는 `_build`의 지역 변수라 직접 읽을 수 없다. 그래서 태그의 **재료**인 `SpatialMap.content_key()` 계약을 결정론적으로 검사한다 — 같은 내용 → 같은 키(별개 객체라도), 13개 필드 각각을 바꾸면 다른 키, 행렬은 값·형상으로 비교. id() 기반은 "별개 객체는 항상 다른 id"라 이 계약을 결정론적으로 위반한다.
 >
-> **정정:** `SpatialMap.content_key()`(`2L_FEST.py:3277` 부근) 신설 → `_sm_tag`·`_spatial_cache` 키 양쪽에서 사용. 행렬은 바이트 대신 **형상 + sha256 다이제스트**(큰 행렬 대비). **맵이 없으면 예전과 같이 `0`으로 태그**하므로 무맵 경로는 캐시 거동·비트 동일·비용 모두 불변이다(`content_key()` 호출 자체가 없다).
+> **정정:** `SpatialMap.content_key()`(`GEDOS.py:3277` 부근) 신설 → `_sm_tag`·`_spatial_cache` 키 양쪽에서 사용. 행렬은 바이트 대신 **형상 + sha256 다이제스트**(큰 행렬 대비). **맵이 없으면 예전과 같이 `0`으로 태그**하므로 무맵 경로는 캐시 거동·비트 동일·비용 모두 불변이다(`content_key()` 호출 자체가 없다).
 >
 > **확인(수정 후): `tests/test_spatial_map.py` 54 passed.** 전체 스위트 199 passed / 2 deselected / 8 xfailed (801s) — 단위 0의 175에서 +24, deselected·xfailed 불변 → **기존 테스트 회귀 0건.**
 >
@@ -159,7 +159,7 @@ _J01b = dp.J01_bot * (_m_j01 if _m_j01 is not None else 1.0)   # 2L_FEST.py:4378
 >
 > ⚠ **계획 대비 편차: 버전을 여기서 올렸다(v28.55 → v28.56).** 원래 계획은 단위 5에서 일괄 처리였으나, 이 단위가 **프로덕션 동작을 바꾸므로** `__build__`가 v28.55인 채로 두면 "같은 버전인데 거동이 다른" 상태가 된다(v28.51에서 파일명의 거짓 버전을 정리한 것과 같은 이유). 단위 5에서는 최종 버전만 다시 확인한다.
 
-**단위 2 이전에 반드시 해야 한다.** 지금 빌드 캐시는 맵의 **`id()`**로 변경을 감지한다(`2L_FEST.py:3897-3901`, 주석도 *"cheap id()-based tag"*라고 인정):
+**단위 2 이전에 반드시 해야 한다.** 지금 빌드 캐시는 맵의 **`id()`**로 변경을 감지한다(`GEDOS.py:3897-3901`, 주석도 *"cheap id()-based tag"*라고 인정):
 
 ```python
 _sm_tag = (id(dp.spatial_j01) if ... else 0, ...)
@@ -191,7 +191,7 @@ if self._cache_hash == h: return        # 3902-3904
 >
 > 결과: `tests/test_spatial_map.py` 80 passed (단위 0의 30 + 단위 1의 24 + 단위 2의 26).
 
-- 신규 함수: `load_spatial_map_txt(path, *, delimiter=None) -> SpatialMap` (`2L_FEST.py`, `SpatialMap` 정의 바로 뒤)
+- 신규 함수: `load_spatial_map_txt(path, *, delimiter=None) -> SpatialMap` (`GEDOS.py`, `SpatialMap` 정의 바로 뒤)
 - `np.loadtxt`/`np.genfromtxt`로 2D 행렬 읽기 → `SpatialMap(mode='csv', matrix=M)` 반환
 - **절대값 규약**: 읽은 값을 그대로 쓴다. 정규화·스케일링 **금지**
 - 구분자 자동 판별(콤마/공백/탭). 판별 실패 시 오류 메시지에 후보를 적어 반환
@@ -199,7 +199,7 @@ if self._cache_hash == h: return        # 3902-3904
   - 2D인가, 최소 2×2인가
   - 전부 유한하고 양수인가 (`evaluate()`가 던지기 전에 여기서 잡는다)
   - 행/열 수가 비상식적으로 큰가 → 보간 비용 경고 (거부는 하지 않음)
-- 오류는 `ValueError`로 던지고 **경로·행·열·발견한 값**을 메시지에 담는다. DXF 로더(`load_dxf_grid`, `2L_FEST.py:2910`)의 `report` 패턴이 선례
+- 오류는 `ValueError`로 던지고 **경로·행·열·발견한 값**을 메시지에 담는다. DXF 로더(`load_dxf_grid`, `GEDOS.py:2910`)의 `report` 패턴이 선례
 
 **회귀 영향 범위: 없음.** 신규 함수이고 호출처가 아직 없다. 이 단위 종료 시점에서 앱 동작은 완전히 이전과 같다. 테스트로만 호출된다.
 
@@ -282,7 +282,7 @@ if self._cache_hash == h: return        # 3902-3904
 
 
 - 대상 물성 4종(j01 / j02 / gen / rc) 각각에 대해: 파일 선택 버튼, 현재 파일명 표시, **해제(Clear) 버튼**, 미리보기
-- 파일 선택은 `filedialog.askopenfilename` — `_load_dxf`(`2L_FEST.py:9896-9920`)의 패턴(파일 선택 → 파싱 → 검증 → 실패 시 messagebox, 성공 시 상태 반영)을 그대로 따른다
+- 파일 선택은 `filedialog.askopenfilename` — `_load_dxf`(`GEDOS.py:9896-9920`)의 패턴(파일 선택 → 파싱 → 검증 → 실패 시 messagebox, 성공 시 상태 반영)을 그대로 따른다
 - **해제는 `dp.spatial_x = None`이어야 한다.** `SpatialMap(mode='uniform')`으로 대체하면 §비트 동일 근거 (1)의 가드가 우회된다
 - 맵은 **`solve()`에 전달되는 dp 인스턴스**에 붙인다(§비트 동일 근거 (3)). 클래스 속성에 붙이지 말 것
 - `rc` 라벨에 의미 반전 명시: "맵이 접촉 저항 R을 곱한다(값↑ = 접촉 나빠짐)"
@@ -337,7 +337,7 @@ if self._cache_hash == h: return        # 3902-3904
 > 두 줄을 추가했다.
 
 
-- `2L_FEST.py` 헤더 changelog + `__build__` 버전 올림
+- `GEDOS.py` 헤더 changelog + `__build__` 버전 올림
 - `docs/pro_feature_map_2026-08-14.md` #6을 **부분구현 → 구현**으로 갱신(감사 문서는 읽기 전용 원칙이므로, 개정 이력 줄을 남기고 고칠 것)
 - 교차검증 절차와 단위 3의 판정 결과를 문서화
 - `docs/WORKLOG.md` §3 우선순위 1을 완료로 이동

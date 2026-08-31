@@ -54,7 +54,7 @@
 > 있었다"** 이고, 복제는 그 조건을 늘린다. 다음 사람이 6번째 분기를 추가할 때 같은
 > 일이 다시 일어난다.
 
-`FESTSolver._diode_node_arrays(dp, mode)` 하나가 다이오드 노드 배열을 조립하고,
+`GEDOSSolver._diode_node_arrays(dp, mode)` 하나가 다이오드 노드 배열을 조립하고,
 **13개 소비 지점 전부가 이 메서드만 거친다.** 그러면 `cell_current` 주석이
 주장하는 *"the same spatial multipliers the solver used"* 가 **구조적으로 참**이
 된다 — 지금까지처럼 "그렇게 되어 있기를 바라는" 상태가 아니다.

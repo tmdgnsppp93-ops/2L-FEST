@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""Shared helpers for the Solcore Quasi-3D <-> 2L-FEST cross-validation.
+"""Shared helpers for the Solcore Quasi-3D <-> GEDOS cross-validation.
 
 KEY LESSON (debugged 2026-06): the high-level solve_quasi_3D() first runs
 solar_cell_solver(cell,'iv'), which for a kind='2D' junction is "ignored in
@@ -31,12 +31,12 @@ from solcore.spice.quasi_3D_solver import solve_circuit_quasi3D
 CM2_PER_M2 = 1e4
 q = 1.602e-19; kB = 1.381e-23; T_DEFAULT = 298.15
 VT_DEFAULT = kB * T_DEFAULT / q
-_T_CELSIUS = 25.0   # match 2L-FEST T=298.15 K; Solcore hardcodes 20 C otherwise
+_T_CELSIUS = 25.0   # match GEDOS T=298.15 K; Solcore hardcodes 20 C otherwise
 
 
 def _create_header_25C(I01, I02, n1, n2, Eg, T=_T_CELSIUS):
     """Replacement for Solcore's create_header that sets TNOM=TEMP=25 C so the
-    diode saturation currents we pass are used as-is at 2L-FEST's temperature
+    diode saturation currents we pass are used as-is at GEDOS's temperature
     (the stock version hardcodes TNOM=20, biasing Voc by ~2%)."""
     title = "*** A SPICE simulation with python (xval, 25 C)\n\n"
     diodes = ""
@@ -62,7 +62,7 @@ def run_quasi3d(injection, contacts, *, jsc, j01, j02, n1, n2, Eg,
                 Lx=10e-6, Ly=10e-6, vini=0.0, vfin=0.78, step=0.005):
     """Drive Solcore's low-level quasi-3D SPICE solver for a SINGLE junction.
 
-    All electrical inputs are in 2L-FEST native cm units; converted to SI here.
+    All electrical inputs are in GEDOS native cm units; converted to SI here.
         jsc, j01, j02 : A/cm^2
         Rshunt, Rcontact, Rseries : Ohm*cm^2
         RsTop, RsBot, Rline : Ohm/sq

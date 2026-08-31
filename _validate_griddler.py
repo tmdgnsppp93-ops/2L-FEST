@@ -10,7 +10,7 @@ spatial resistive loss -- the quantity a Griddler-style tool exists to compute.
 """
 import importlib.util, numpy as np
 
-spec = importlib.util.spec_from_file_location('fest', '2L_FEST.py')
+spec = importlib.util.spec_from_file_location('gedos', 'GEDOS.py')
 m = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(m)

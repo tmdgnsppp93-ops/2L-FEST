@@ -102,7 +102,7 @@ metallization"* 필드에 들어간다. **즉 A.5는 `Rs_vert_bot`과 같은 층
 | 7 | `:6421` | `solve_single` (**bifacial**) | 14,024 = `2N+Nm+Nrm` | ✅ 1.8e-04 |
 
 **Δ = 0인 세 곳은 전부 `full_area`다.** 그 모드의 `_Kr`은 `assemble_K(0.001)`
-하드코딩(`2L_FEST.py:4389-4390`)이고 `Vr ≡ 0`(span 0.000e+00)이라 **`K_r`을 어떻게
+하드코딩(`GEDOS.py:4389-4390`)이고 `Vr ≡ 0`(span 0.000e+00)이라 **`K_r`을 어떻게
 바꿔도 결과가 수학적으로 불변**이다. 그래서 `full_area`는 지원 대상이 아니라
 **거부 대상**이다(§설계 결정 3).
 
@@ -138,7 +138,7 @@ metallization"* 필드에 들어간다. **즉 A.5는 `Rs_vert_bot`과 같은 층
 > `assemble_K`를 한 번만 부른다.** off일 때는 합성을 건너뛰어 인자가 예전과
 > **같은 실수**가 되게 한다.
 
-`Rs_rear_tco`는 솔버에서 **정확히 한 곳**(`2L_FEST.py:4341`의 `assemble_K` 호출)에서만
+`Rs_rear_tco`는 솔버에서 **정확히 한 곳**(`GEDOS.py:4341`의 `assemble_K` 호출)에서만
 소비되므로 합성은 그 호출 인자에서만 한다. `dp.Rs_rear_tco` 자체는 건드리지
 않는다 — GUI 표시와 캐시 해시가 사용자 입력 그대로 남아야 한다.
 
@@ -256,9 +256,9 @@ Jp = q · μp · p · ∇ε_fp
 | 방향 | 수직 `↕` | 수직 `↕` | **횡 `↔`** |
 | 단위 | Ω·cm² | Ω·cm² | **Ω/sq** |
 | 성격 | 집중정수 | 집중정수 | **분포(FEM 평면)** |
-| 적용 | 접촉저항 입력란 | 터미널 IR 강하로 사후 적용 (`2L_FEST.py:1720-1729`) | **`_Kr` 면전도에 병렬 합성** |
+| 적용 | 접촉저항 입력란 | 터미널 IR 강하로 사후 적용 (`GEDOS.py:1720-1729`) | **`_Kr` 면전도에 병렬 합성** |
 
-2L-FEST에는 **이미 `Rs_vert_bot`이 그 자리를 차지하고 있다.** A.5를 따라
+GEDOS에는 **이미 `Rs_vert_bot`이 그 자리를 차지하고 있다.** A.5를 따라
 구현했다면 만들어질 것은 이 기능이 아니라 **`Rs_vert_bot`의 중복 구현**이었고,
 초안 §설계 결정 3이 *"이중 계산"*으로 판정한 바로 그 상태가 됐을 것이다.
 
@@ -329,7 +329,7 @@ self._Kr, _ = assemble_K(self.pts, self.simp, Rs_r_eff, self.areas, self.b, self
 
 ### 캐시
 
-`_build`의 해시 튜플(`2L_FEST.py:4317`)에 `Rs_base`를 넣어야 한다. 넣지 않으면
+`_build`의 해시 튜플(`GEDOS.py:4317`)에 `Rs_base`를 넣어야 한다. 넣지 않으면
 `Rs_base`만 바꿨을 때 재빌드가 일어나지 않아 **옛 `_Kr`이 조용히 재사용된다** —
 v28.56이 `id()` 캐시에서 겪은 실패와 같은 형태다.
 
@@ -357,7 +357,7 @@ v28.56이 `id()` 캐시에서 겪은 실패와 같은 형태다.
 > 관측했고, 6개 live 분기가 전부 예측한 오프셋 식과 일치했다. 분기 4(`_v29` Schur)는
 > 어떤 설정에서도 도달하지 않아 죽은 코드임이 확인됐다.
 >
-> ⚠ **`fest.spsolve` 하나만 패치하면 절반이 새어 나간다.**
+> ⚠ **`gedos.spsolve` 하나만 패치하면 절반이 새어 나간다.**
 > `_solve_tandem_junction`(`:5041`) · `_solve_tandem_junction_bf`(`:5392`) ·
 > `_v29`(`:5733`)는 **메서드 안에서 다시 import** 하므로 모듈 전역 패치가 무시된다.
 > `scipy.sparse.linalg.spsolve`도 함께 패치해야 한다.
@@ -378,10 +378,10 @@ VB = 0.5
 _build_args(dp)                                         -> dict   # _build(**_build_args(dp))
 _solve(m, dp, Vb=VB, mode="tandem")                     -> dict
 _cell_current(m, dp, Vb=VB, mode="tandem")              -> float
-_probe(fest, m, dp, monkeypatch, Vb=VB, mode=...)       -> (branch_name, ns_tuple)
-_observed_Ns(fest, m, dp, monkeypatch, Vb=VB, mode=...) -> int
+_probe(gedos, m, dp, monkeypatch, Vb=VB, mode=...)       -> (branch_name, ns_tuple)
+_observed_Ns(gedos, m, dp, monkeypatch, Vb=VB, mode=...) -> int
 _plane_sizes(m)                                         -> (N, Nm, Nrm)
-_dp(fest, rs_junction=None)                             -> DiodeParams
+_dp(gedos, rs_junction=None)                             -> DiodeParams
 ```
 
 > `_probe`·`_observed_Ns`는 `monkeypatch`를 받는다(`spsolve`를 가로채므로).
@@ -411,59 +411,59 @@ _dp(fest, rs_junction=None)                             -> DiodeParams
 무효가 되는데, 문서만으로는 알 수 없다.
 
 ```python
-def test_assemble_K_is_linear_in_sheet_conductance(fest, make_mono):
+def test_assemble_K_is_linear_in_sheet_conductance(gedos, make_mono):
     """β의 수학적 근거 — 병렬 합성 = 행렬 덧셈.
 
     assemble_K의 coeff = 1/(4·A·Rs)가 1/Rs에 선형이라 성립한다. 이것이 깨지면
     "유효 면저항 한 번 계산"이 "두 평면을 더한 것"과 달라져 규약이 무효가 된다.
     """
     m = make_mono()
-    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
-    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
-    Kp, _ = fest.assemble_K(m.pts, m.S.simp, 1.0 / (1 / 50.0 + 1 / 500.0),
+    Ka, _ = gedos.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = gedos.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    Kp, _ = gedos.assemble_K(m.pts, m.S.simp, 1.0 / (1 / 50.0 + 1 / 500.0),
                             m.S.areas, m.S.b, m.S.c)
     d = abs((Ka + Kb).tocsr() - Kp)
     assert (d.max() if d.nnz else 0.0) / abs(Kp).max() < 1e-14
 
 
-def test_assemble_K_sparsity_is_independent_of_sheet_resistance(fest, make_mono):
+def test_assemble_K_sparsity_is_independent_of_sheet_resistance(gedos, make_mono):
     """패턴이 같아야 Ns·SuperLU 열 순열이 같다 — β의 구조적 근거."""
     m = make_mono()
-    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
-    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    Ka, _ = gedos.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = gedos.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
     assert Ka.shape == Kb.shape and Ka.nnz == Kb.nnz
     assert np.array_equal(Ka.indices, Kb.indices)
     assert np.array_equal(Ka.indptr, Kb.indptr)
 
 
-def test_full_area_rear_plane_is_an_ideal_equipotential(fest, make_mono):
+def test_full_area_rear_plane_is_an_ideal_equipotential(gedos, make_mono):
     """full_area를 거부하는 근거 — Vr ≡ 0이라 K_r을 바꿔도 결과가 불변이다.
 
     이 성질이 깨지면(후면을 실제 면저항으로 바꾸면) full_area도 지원 대상이
     되므로 규약 §3-4를 다시 판정해야 한다.
     """
     m = make_mono()
-    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    Vr = np.asarray(_solve(m, _dp(gedos, 100.0))["Vr"])
     assert float(Vr.max() - Vr.min()) == 0.0
 
 
-def test_full_area_result_is_insensitive_to_rear_plane(fest, make_mono):
+def test_full_area_result_is_insensitive_to_rear_plane(gedos, make_mono):
     """full_area에서 _Kr을 2배로 해도 전류가 비트 동일하다.
 
     _build는 _cache_hash가 같으면 조기 반환하므로, 여기서 평면을 직접 바꾸면
     다음 solve가 그 값을 그대로 쓴다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j0 = _cell_current(m, dp)
     m.S._Kr = (m.S._Kr * 2.0).tocsr()
     assert _cell_current(m, dp) == j0
 
 
-def test_bifacial_rear_plane_carries_a_real_lateral_drop(fest, make_bifacial):
+def test_bifacial_rear_plane_carries_a_real_lateral_drop(gedos, make_bifacial):
     """bifacial은 반대다 — Vr에 실제 전압강하가 있어 벌크 전도가 의미를 갖는다."""
     m = make_bifacial()
-    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    Vr = np.asarray(_solve(m, _dp(gedos, 100.0))["Vr"])
     assert float(Vr.max() - Vr.min()) > 1e-3
 ```
 
@@ -480,7 +480,7 @@ Expected: PASS
 > 모델이 아니라 **연속법 램프**였다.
 >
 > `Rs_junction > 50`이면 `solve_tandem`이 `[50, 200, 1000, 5000, target]`으로
-> 램프하며 **각 단계마다 `_build`를 부른다**(`2L_FEST.py:4713-4726`). 그 호출은
+> 램프하며 **각 단계마다 `_build`를 부른다**(`GEDOS.py:4713-4726`). 그 호출은
 > `Rs_junction`이 달라 캐시 해시가 어긋나므로 **전체 재빌드**가 일어나고, 손으로
 > 넣은 `_Kr`이 버려진다. warm-start 캐시가 있으면 램프를 통째로 건너뛰므로(`:4713`)
 > 살아남는다.
@@ -571,7 +571,7 @@ git commit -m "docs: 벌크 횡전도 규약 확정 (β 토폴로지) + A.5 오�
 거부)가 여기와 단위 3으로 합쳐진다.
 
 **Files:**
-- Modify: `2L_FEST.py:1786` 부근(`DiodeParams.Rs_base`), `:4299` 부근(검증 + 유효 면저항), `:4317`(캐시 해시), `:4341`(`assemble_K` 호출 인자)
+- Modify: `GEDOS.py:1786` 부근(`DiodeParams.Rs_base`), `:4299` 부근(검증 + 유효 면저항), `:4317`(캐시 해시), `:4341`(`assemble_K` 호출 인자)
 - Test: `tests/test_base_lateral.py`
 
 **Interfaces:**
@@ -580,50 +580,50 @@ git commit -m "docs: 벌크 횡전도 규약 확정 (β 토폴로지) + A.5 오�
 - [ ] **Step 1: 실패하는 테스트를 쓴다**
 
 ```python
-def test_rs_base_defaults_to_none(fest):
-    assert fest.DiodeParams.Rs_base is None
+def test_rs_base_defaults_to_none(gedos):
+    assert gedos.DiodeParams.Rs_base is None
 
 
-def test_base_off_is_bit_identical(fest, make_bifacial):
+def test_base_off_is_bit_identical(gedos, make_bifacial):
     """**off는 assemble_K 인자를 건드리지 않는다.**
 
     Rs_base is None이면 Rs_r_eff가 Rs_rear_tco 그대로이므로 부동소수점 연산이
     하나도 추가되지 않는다 — 공간 분포의 "곱셈을 아예 하지 않음"과 같은 계열.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j0 = _cell_current(m, dp)
     dp.Rs_base = None
     assert _cell_current(m, dp) == j0          # 비트 동일
 
 
-def test_base_on_matches_parallel_sheet_resistance(fest, make_bifacial):
+def test_base_on_matches_parallel_sheet_resistance(gedos, make_bifacial):
     """벌크 500 Ω/sq를 켠 결과 == 후면 TCO를 병렬 합성값으로 바꾼 결과.
 
     규약 §1의 4번(병렬 합)을 직접 고정한다.
     """
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0); dp1.Rs_base = 500.0
-    dp2 = _dp(fest, 100.0)
+    dp1 = _dp(gedos, 100.0); dp1.Rs_base = 500.0
+    dp2 = _dp(gedos, 100.0)
     dp2.Rs_rear_tco = 1.0 / (1.0 / dp2.Rs_rear_tco + 1.0 / 500.0)
     assert _cell_current(m1, dp1) == pytest.approx(_cell_current(m2, dp2),
                                                    rel=1e-12)
 
 
-def test_base_does_not_mutate_user_rear_tco(fest, make_bifacial):
+def test_base_does_not_mutate_user_rear_tco(gedos, make_bifacial):
     """dp.Rs_rear_tco는 사용자 입력 그대로 남아야 한다 (GUI 표시·캐시 해시)."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0); dp.Rs_base = 500.0
+    dp = _dp(gedos, 100.0); dp.Rs_base = 500.0
     before = dp.Rs_rear_tco
     _solve(m, dp)
     assert dp.Rs_rear_tco == before
 
 
-def test_base_change_invalidates_build_cache(fest, make_bifacial):
+def test_base_change_invalidates_build_cache(gedos, make_bifacial):
     """Rs_base를 바꿨는데 재빌드가 안 되면 옛 _Kr이 조용히 재사용된다 —
     v28.56이 id() 캐시에서 겪은 실패와 같은 형태다."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     h0 = m.S._cache_hash
     dp.Rs_base = 500.0
@@ -631,10 +631,10 @@ def test_base_change_invalidates_build_cache(fest, make_bifacial):
     assert m.S._cache_hash != h0
 
 
-def test_base_none_keeps_cache_tag_unchanged(fest, make_bifacial):
+def test_base_none_keeps_cache_tag_unchanged(gedos, make_bifacial):
     """맵 없을 때 _sm_tag가 0인 것과 같은 처리 — off 경로의 캐시 거동 보존."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     h0 = m.S._cache_hash
     dp.Rs_base = None
@@ -642,22 +642,22 @@ def test_base_none_keeps_cache_tag_unchanged(fest, make_bifacial):
     assert m.S._cache_hash == h0
 
 
-def test_unknown_layout_unchanged_by_base(fest, make_bifacial, monkeypatch):
+def test_unknown_layout_unchanged_by_base(gedos, make_bifacial, monkeypatch):
     """**β의 핵심** — 벌크를 켜도 미지 벡터가 변하지 않는다."""
     m = make_bifacial()
     N, Nm, Nrm = _plane_sizes(m)
-    dp = _dp(fest, 100.0)
-    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+    dp = _dp(gedos, 100.0)
+    assert _observed_Ns(gedos, m, dp, monkeypatch) == 4 * N + Nm + Nrm
     dp.Rs_base = 500.0
-    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+    assert _observed_Ns(gedos, m, dp, monkeypatch) == 4 * N + Nm + Nrm
 
 
 @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
-def test_base_rejects_non_positive_or_non_finite(fest, make_bifacial, bad):
+def test_base_rejects_non_positive_or_non_finite(gedos, make_bifacial, bad):
     """면저항은 유한하고 양수여야 한다. 0은 무한 컨덕턴스라 물리적으로 성립하지
     않고, assemble_K의 coeff = 1/(4·A·Rs)가 0으로 나눈다(:2649)."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0); dp.Rs_base = bad
+    dp = _dp(gedos, 100.0); dp.Rs_base = bad
     with pytest.raises(ValueError) as exc:
         _solve(m, dp)
     assert "Rs_base" in str(exc.value)
@@ -671,7 +671,7 @@ Expected: FAIL — `AttributeError: type object 'DiodeParams' has no attribute '
 - [ ] **Step 3: 최소 구현**
 
 ```python
-# DiodeParams — 2L_FEST.py:1786 Rs_rear_tco 옆
+# DiodeParams — GEDOS.py:1786 Rs_rear_tco 옆
     # 벌크 횡전도 면저항 [Ω/sq, ↔]. None = 끔(기존과 비트 동일).
     # 후면 평면(_Kr)의 면전도에 **병렬**로 더해진다 — 새 평면·새 미지수 없음.
     # 매뉴얼 §4.3 항목 1의 "add these bulk current terms"에 대응.
@@ -718,7 +718,7 @@ Expected: **2 passed** (xfail 아님). 깨지면 해시 튜플 변경이 off 경
 
 ```bash
 python -m pytest -q -m "not slow"        # 279+N passed / 2 deselected / 6 xfailed
-git add 2L_FEST.py tests/test_base_lateral.py
+git add GEDOS.py tests/test_base_lateral.py
 git commit -m "v28.59: 벌크 횡전도 — 후면 평면 면전도에 병렬 합성 (미지 벡터 불변)"
 ```
 
@@ -784,20 +784,20 @@ git commit -m "v28.59: 벌크 횡전도 — 후면 평면 면전도에 병렬 �
 않는다(실측 Δ = 0.00e+00) — 알려주지 않으면 사용자는 *"켰는데 안 변한다"*를 겪는다.
 
 **Files:**
-- Modify: `2L_FEST.py:4299` 부근 (단위 2의 검증 블록에 이어서)
+- Modify: `GEDOS.py:4299` 부근 (단위 2의 검증 블록에 이어서)
 - Test: `tests/test_base_lateral.py`
 
 - [ ] **Step 1: 실패하는 테스트**
 
 ```python
-def test_full_area_rejects_base_lateral(fest, make_mono):
+def test_full_area_rejects_base_lateral(gedos, make_mono):
     """full_area는 후면을 이상적 접촉으로 두므로 벌크 횡전도를 표현할 수 없다.
 
     조용히 무시하면 "켰는데 결과가 안 변한다"로 나타난다 — 오류도 경고도 없이.
     v28.43 · v28.54 · v28.57과 같은 판단: 거부하고 길을 알려준다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0); dp.Rs_base = 500.0
+    dp = _dp(gedos, 100.0); dp.Rs_base = 500.0
     with pytest.raises(ValueError) as exc:
         _solve(m, dp)
     msg = str(exc.value)
@@ -807,16 +807,16 @@ def test_full_area_rejects_base_lateral(fest, make_mono):
     assert "None" in msg                                # 끄는 방법
 
 
-def test_full_area_is_silent_when_base_is_off(fest, make_mono):
+def test_full_area_is_silent_when_base_is_off(gedos, make_mono):
     """Rs_base가 None이면 full_area도 예전처럼 조용히 잘 돈다."""
     m = make_mono()
-    assert _cell_current(m, _dp(fest, 100.0)) > 0
+    assert _cell_current(m, _dp(gedos, 100.0)) > 0
 
 
-def test_single_mode_bifacial_supports_base(fest, make_bifacial):
+def test_single_mode_bifacial_supports_base(gedos, make_bifacial):
     """단일셀도 rear_mode만 맞으면 지원한다 — β에서는 tandem/single 구분이 없다."""
     m = make_bifacial()
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     j0 = _cell_current(m, dp, mode="single")
     dp.Rs_base = 500.0
     assert _cell_current(m, dp, mode="single") != j0
@@ -860,23 +860,23 @@ git commit -m "v28.60: 벌크 횡전도 — full_area 거부 게이트 (조용�
 - [ ] **Step 1: 극한 3개**
 
 ```python
-def test_base_infinite_sheet_r_approaches_off(fest, make_bifacial):
+def test_base_infinite_sheet_r_approaches_off(gedos, make_bifacial):
     """Rs_base → ∞ (벌크 횡전도 없음)이면 off와 같은 답에 수렴한다.
 
     비트 동일은 기대하지 않는다 — 1/(1/Rs + 1/1e12)가 Rs와 비트 동일하지 않다.
     물리적 동등성 수준의 일치를 본다(registration_material.md §5-1의 두 층 구분).
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j_off = _cell_current(m, dp)
     dp.Rs_base = 1e12
     assert _cell_current(m, dp) == pytest.approx(j_off, rel=1e-9)
 
 
-def test_base_lower_sheet_r_raises_current(fest, make_bifacial):
+def test_base_lower_sheet_r_raises_current(gedos, make_bifacial):
     """벌크 횡전도가 좋아지면 후면 저항 손실이 줄어 전류가 오른다."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 1000.0
     j_weak = _cell_current(m, dp)
     dp.Rs_base = 50.0
@@ -884,11 +884,11 @@ def test_base_lower_sheet_r_raises_current(fest, make_bifacial):
     assert j_strong > j_weak
 
 
-def test_base_equal_to_tco_halves_effective_sheet_r(fest, make_bifacial):
+def test_base_equal_to_tco_halves_effective_sheet_r(gedos, make_bifacial):
     """Rs_base == Rs_rear_tco이면 유효 면저항이 정확히 절반이 된다."""
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0); dp1.Rs_base = dp1.Rs_rear_tco
-    dp2 = _dp(fest, 100.0); dp2.Rs_rear_tco = dp2.Rs_rear_tco / 2.0
+    dp1 = _dp(gedos, 100.0); dp1.Rs_base = dp1.Rs_rear_tco
+    dp2 = _dp(gedos, 100.0); dp2.Rs_rear_tco = dp2.Rs_rear_tco / 2.0
     assert _cell_current(m1, dp1) == pytest.approx(_cell_current(m2, dp2),
                                                    rel=1e-12)
 ```
@@ -931,7 +931,7 @@ i18n 키 EN/KR 양쪽. 힌트에 **두 가지**를 적는다:
 
 | 문서 | 갱신 |
 |---|---|
-| `2L_FEST.py` 헤더 changelog + `__build__` | 최종 확인 |
+| `GEDOS.py` 헤더 changelog + `__build__` | 최종 확인 |
 | `docs/base_lateral_convention.md` | 구현과 일치 확인 |
 | `docs/pro_feature_map_2026-08-14.md` #8 | **미구현 → 구현(범위·근사 명시)**. 개정 이력 표에 줄 추가. #6에서 *"자체 규약"*을 명시한 것과 같은 이유로 **"저주입 극한 한정 · full_area 미지원"**을 판정 문구에 넣는다 |
 | `docs/registration_material.md` | §2-5 기능 목록 + §7 한계(**소수캐리어 전압 의존 미모델링 · full_area 미지원 · 벌크 손실 분리 불가**) + 수치 재생성 |

@@ -12,7 +12,7 @@ leaves the rear at its baseline.
 (b-ctrl) fallback mode: _Krm DOES track front rm (legacy bit-identical)  -> control.
 (c) full_area monofacial is unaffected by Rs_rear_metal_sheet (no rear grid).
 
-Bifacial tests use the legacy Phase-A bifacial path (FEST_LEGACY_LOCAL_MATCH=1 +
+Bifacial tests use the legacy Phase-A bifacial path (GEDOS_LEGACY_LOCAL_MATCH=1 +
 Rs_junction=0) for a simple, deterministic solve. Pinned on Python 3.14.3 /
 numpy 2.4.3 / scipy 1.17.1.
 """
@@ -28,24 +28,24 @@ def _solve_bif(S, dp, rm):
                    0.85 * Voc0, BIF["cf"], dp, "tandem")
 
 
-def test_rear_wiring_live(fest, make_bifacial, monkeypatch):
+def test_rear_wiring_live(gedos, make_bifacial, monkeypatch):
     """(a) fixed rear sheet R != front-coupled fallback -> Rs_rear is wired in."""
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S1 = make_bifacial().S
-    dp1 = fest.DiodeParams(); dp1.Rs_rear_metal_sheet = 0.01322
+    dp1 = gedos.DiodeParams(); dp1.Rs_rear_metal_sheet = 0.01322
     J_fixed = float(S1.cell_current(_solve_bif(S1, dp1, 3e-6), dp1))
     S2 = make_bifacial().S
-    dp2 = fest.DiodeParams(); dp2.Rs_rear_metal_sheet = 0.0  # fallback -> rm/hf
+    dp2 = gedos.DiodeParams(); dp2.Rs_rear_metal_sheet = 0.0  # fallback -> rm/hf
     J_fallback = float(S2.cell_current(_solve_bif(S2, dp2, 3e-6), dp2))
     rel = abs(J_fixed - J_fallback) / abs(J_fallback)
     assert rel > 1e-5, f"fixed vs fallback nearly identical ({rel:.2e}) -> wiring dead"
 
 
-def test_rear_decoupled_from_front_rm(fest, make_bifacial, monkeypatch):
+def test_rear_decoupled_from_front_rm(gedos, make_bifacial, monkeypatch):
     """(b) fixed mode: front rm change leaves rear _Krm bit-identical."""
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S = make_bifacial().S
-    dp = fest.DiodeParams(); dp.Rs_rear_metal_sheet = 0.01322
+    dp = gedos.DiodeParams(); dp.Rs_rear_metal_sheet = 0.01322
     _solve_bif(S, dp, 3e-6); Krm_a = S._Krm.copy()
     _solve_bif(S, dp, 2e-6); Krm_b = S._Krm.copy()
     d = (Krm_a - Krm_b)
@@ -53,11 +53,11 @@ def test_rear_decoupled_from_front_rm(fest, make_bifacial, monkeypatch):
     assert maxabs == 0.0, f"rear _Krm changed with front rm ({maxabs:.2e}) -> still coupled"
 
 
-def test_rear_fallback_still_coupled(fest, make_bifacial, monkeypatch):
+def test_rear_fallback_still_coupled(gedos, make_bifacial, monkeypatch):
     """(b-control) fallback (Rs_rear_metal_sheet<=0) rear tracks front rm (legacy)."""
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     S = make_bifacial().S
-    dp = fest.DiodeParams(); dp.Rs_rear_metal_sheet = 0.0
+    dp = gedos.DiodeParams(); dp.Rs_rear_metal_sheet = 0.0
     _solve_bif(S, dp, 3e-6); Ka = S._Krm.copy()
     _solve_bif(S, dp, 2e-6); Kb = S._Krm.copy()
     d = (Ka - Kb)
@@ -65,14 +65,14 @@ def test_rear_fallback_still_coupled(fest, make_bifacial, monkeypatch):
     assert maxabs > 0.0, "fallback rear should track front rm (bit-identical to legacy)"
 
 
-def test_monofacial_unaffected(fest, make_mono, monkeypatch):
+def test_monofacial_unaffected(gedos, make_mono, monkeypatch):
     """(c) full_area monofacial has no rear metal grid -> Rs_rear_metal_sheet no-op."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     p = dict(rm=3e-6, hf=10e-4, wf=50e-4, rc=5e-3, Rs=15.0, cf=1.0)
     S1 = make_mono().S
-    dp1 = fest.DiodeParams(); dp1.Rs_rear_metal_sheet = 0.01322
+    dp1 = gedos.DiodeParams(); dp1.Rs_rear_metal_sheet = 0.01322
     S2 = make_mono().S
-    dp2 = fest.DiodeParams(); dp2.Rs_rear_metal_sheet = 0.0
+    dp2 = gedos.DiodeParams(); dp2.Rs_rear_metal_sheet = 0.0
     Vb = 0.85 * dp1.expected_voc()[2]
     J1 = float(S1.cell_current(
         S1.solve(p["rm"], p["hf"], p["wf"], p["rc"], p["Rs"], Vb, p["cf"], dp1, "tandem"), dp1))

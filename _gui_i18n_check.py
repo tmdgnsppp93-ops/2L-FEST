@@ -10,7 +10,7 @@
 → optimize_grid 순서에서 `PyEval_RestoreThread ... GIL released`; 순서를 뒤집으면
 정상). 그래서 여기서는 **위젯 좌표를 직접 읽어 수치로 판정**한다.
 
-크래시 회피 근거: `ui.open_optimizer_window(fest, parent)`는 `fest`를 Run 버튼
+크래시 회피 근거: `ui.open_optimizer_window(gedos, parent)`는 `gedos`를 Run 버튼
 콜백 안에서만 쓴다(ui.py의 optimize_grid 호출 1곳). 따라서 **엔진을 스텁으로 넘기면
 scipy가 이 프로세스에 아예 로드되지 않아** 위 조합이 성립할 수 없다. 수치 검증
 (효율 비트 동일 등)은 반대로 Tk 없이 pytest에서 돈다 — 둘을 섞지 않는다.
@@ -42,7 +42,7 @@ class _EngineStub:
 
     def __getattr__(self, name):
         raise AssertionError(
-            f"레이아웃 검사에서 엔진이 호출됐다(fest.{name}) — "
+            f"레이아웃 검사에서 엔진이 호출됐다(gedos.{name}) — "
             "이 검사는 계산 없이 위젯 배치만 봐야 한다")
 
 

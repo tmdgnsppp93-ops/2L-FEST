@@ -4,7 +4,7 @@
 
 **Goal:** 시나리오 JSON에 적힌 baseline 설계에서 파라미터를 순차 누적 변경하며 각 케이스의 I-V를 재실행하고, 결과를 CSV에 누적한 뒤 Jsc/Voc/FF/Eff 4-panel PNG로 출력하는 CLI 러너를 만든다.
 
-**Architecture:** 엔진(`2L_FEST.py`)과 `front_electrode/adapter.py`를 **한 줄도 수정하지 않는다.** 신규 모듈이 기존 `evaluate_existing_simulation()`을 그대로 호출하므로 기존 스윕·최적화 경로가 새 코드에 도달할 수 없고, "기존 결과 비트 불변"이 구조적으로 성립한다. 순수 함수(로드·검증·누적전개)와 부작용(FEM 실행·CSV·플롯)을 파일 단위로 분리해, 로직 대부분을 FEM 없이 밀리초 단위로 테스트한다.
+**Architecture:** 엔진(`GEDOS.py`)과 `front_electrode/adapter.py`를 **한 줄도 수정하지 않는다.** 신규 모듈이 기존 `evaluate_existing_simulation()`을 그대로 호출하므로 기존 스윕·최적화 경로가 새 코드에 도달할 수 없고, "기존 결과 비트 불변"이 구조적으로 성립한다. 순수 함수(로드·검증·누적전개)와 부작용(FEM 실행·CSV·플롯)을 파일 단위로 분리해, 로직 대부분을 FEM 없이 밀리초 단위로 테스트한다.
 
 **Tech Stack:** Python ≥3.10, 표준 라이브러리 `json`·`csv`·`hashlib`·`subprocess`, numpy/matplotlib(이미 의존성), pytest.
 
@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **엔진 `2L_FEST.py`와 `front_electrode/adapter.py`는 수정 금지.** 유일하게 수정하는 기존 파일은 `front_electrode/__init__.py`이며 export 추가(가산적)만 한다.
+- **엔진 `GEDOS.py`와 `front_electrode/adapter.py`는 수정 금지.** 유일하게 수정하는 기존 파일은 `front_electrode/__init__.py`이며 export 추가(가산적)만 한다.
 - **PyYAML 금지.** 시나리오는 stdlib `json`. (PyInstaller 번들 앱이라 런타임 의존성 추가에 비용이 있다.)
 - 모든 신규 `.py` 파일은 저장소 SPDX 헤더로 시작한다:
   ```python
@@ -51,7 +51,7 @@
 **Interfaces:**
 - Consumes: `front_electrode.optimizer.SCENARIO_MEASURED`, `SCENARIO_AS_CURED`, `SCENARIO_ENGINE_DEFAULT` (이미 존재)
 - Produces:
-  - `SCHEMA_ID: str = "2lfest.roadmap/1"`
+  - `SCHEMA_ID: str = "gedos.roadmap/1"`
   - `PROV_TAGS: tuple = ("measured", "assumed", "derived")`
   - `SCENARIO_MAP: dict[str, dict]` — 문자열 → 시나리오 상수
   - `validate_scenario(sc: dict) -> None` — 위반 시 `ValueError`
@@ -182,7 +182,7 @@ def test_rejects_duplicate_label():
 
 def test_rejects_bad_schema_id():
     sc = _min_scenario()
-    sc["schema"] = "2lfest.roadmap/99"
+    sc["schema"] = "gedos.roadmap/99"
     with pytest.raises(ValueError, match="schema"):
         validate_scenario(sc)
 
@@ -246,7 +246,7 @@ docs/superpowers/specs/2026-08-13-roadmap-runner-design.md 참조.
 합치면 "이 막대가 파라미터 변경의 효과인가 재최적화의 효과인가"를 구분할 수
 없게 된다. 최적 설계가 필요한 분석은 스펙 §2의 2단계 워크플로우를 따른다.
 
-엔진(2L_FEST.py)과 adapter.py는 수정하지 않는다 — evaluate_existing_simulation을
+엔진(GEDOS.py)과 adapter.py는 수정하지 않는다 — evaluate_existing_simulation을
 그대로 호출한다.
 """
 import hashlib
@@ -259,7 +259,7 @@ from .optimizer import (
     SCENARIO_MEASURED,
 )
 
-SCHEMA_ID = "2lfest.roadmap/1"
+SCHEMA_ID = "gedos.roadmap/1"
 
 # 데이터 출처 태그. 기능 명세 §3.2가 제안한 provenance 강제를 이 범위에서 실현한다.
 #   measured — 랩/협력기관 실측값
@@ -461,7 +461,7 @@ FEM 없이 검증 가능한 부작용 계층. 가짜 `out` dict로 테스트한�
 - Produces:
   - `ENGINE_RAW_KEYS: tuple` — CSV로 옮길 `engine_raw` 필드
   - `NONDETERMINISTIC_COLS: tuple = ("elapsed_s", "timestamp")`
-  - `provenance_env(fest, sc: dict) -> dict` — 5개 환경 필드
+  - `provenance_env(gedos, sc: dict) -> dict` — 5개 환경 필드
   - `build_row(case: dict, out: dict, sc: dict, env: dict, elapsed_s: float) -> dict`
   - `append_row(csv_path: str, row: dict, header_written: bool) -> bool` — 갱신된 header_written 반환
   - `completed_labels(csv_path: str) -> set[str]`
@@ -480,7 +480,7 @@ from front_electrode import (  # noqa: E402
 )
 
 
-class _FakeFest:
+class _FakeGedos:
     """provenance_env가 읽는 두 심볼만 흉내낸다."""
     __build__ = {"version": "v28.53", "date": "2026-08-12"}
 
@@ -515,7 +515,7 @@ def _fake_out(eff=31.0):
 def test_provenance_env_fields():
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     assert set(env) == {"git_commit", "engine_version", "engine_sha",
                         "scenario_file", "scenario_sha256"}
     assert env["engine_version"] == "v28.53"
@@ -529,7 +529,7 @@ def test_build_row_carries_engine_raw_and_provenance():
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
     case = expand_cases(sc)[1]
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     row = build_row(case, _fake_out(), sc, env, elapsed_s=12.34)
 
     assert row["case_index"] == 1
@@ -554,14 +554,14 @@ def test_build_row_uses_engine_raw_not_recovered_efficiency():
     out = _fake_out()
     out["results"]["efficiency"] = 99.9        # 오염된 값
     out["engine_raw"]["Eff"] = 31.33           # 순수 엔진값
-    row = build_row(case, out, sc, provenance_env(_FakeFest, sc), 1.0)
+    row = build_row(case, out, sc, provenance_env(_FakeGedos, sc), 1.0)
     assert row["Eff"] == 31.33
 
 
 def test_append_row_and_completed_labels(tmp_path):
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     cases = expand_cases(sc)
     csv_path = str(tmp_path / "r.csv")
 
@@ -625,7 +625,7 @@ def _git_commit():
         return "unknown"
 
 
-def provenance_env(fest, sc):
+def provenance_env(gedos, sc):
     """실행 환경 provenance.
 
     engine_sha가 git_commit보다 강한 앵커다 — 커밋하지 않고 엔진을 고친 채
@@ -634,8 +634,8 @@ def provenance_env(fest, sc):
     meta = sc.get("_meta", {})
     return {
         "git_commit": _git_commit(),
-        "engine_version": fest.__build__["version"],
-        "engine_sha": fest._build_sha(),
+        "engine_version": gedos.__build__["version"],
+        "engine_sha": gedos._build_sha(),
         "scenario_file": meta.get("file", "unknown"),
         "scenario_sha256": meta.get("sha256", "unknown"),
     }
@@ -722,7 +722,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: Task 1의 `expand_cases`·`SCENARIO_MAP`, Task 2의 `provenance_env`/`build_row`/`append_row`/`completed_labels`, `adapter.evaluate_existing_simulation`
-- Produces: `run_roadmap(fest, sc, csv_path, *, resume=False, axis_segments_override=None, progress=None) -> list[dict]`
+- Produces: `run_roadmap(gedos, sc, csv_path, *, resume=False, axis_segments_override=None, progress=None) -> list[dict]`
 
 - [ ] **Step 1: 실패하는 테스트 작성**
 
@@ -742,23 +742,23 @@ def _write_scenario(tmp_path, sc):
     return str(p)
 
 
-def test_baseline_bit_identical(fest, monkeypatch, tmp_path):
+def test_baseline_bit_identical(gedos, monkeypatch, tmp_path):
     """★ roadmap의 baseline 케이스가 evaluate_existing_simulation 직접 호출과
     비트 동일. 기존 결과 불변의 실증.
 
     tests/test_optimizer.py:96-106 test_edge_margin_zero_is_bit_identical의
     관용구를 그대로 따른다 (cell 20mm + AX/NPTS + == 비교).
     """
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc = _min_scenario()
     sc["cases"] = []                      # baseline 단독
     grid = {k: v for k, v in sc["baseline"].items() if k != "label"}
 
     direct = evaluate_existing_simulation(
-        fest, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+        gedos, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
         mode="tandem", npts=NPTS, axis_segments_override=AX)
 
-    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+    rows = run_roadmap(gedos, load_scenario(_write_scenario(tmp_path, sc)),
                        str(tmp_path / "r.csv"), axis_segments_override=AX)
 
     assert len(rows) == 1
@@ -767,25 +767,25 @@ def test_baseline_bit_identical(fest, monkeypatch, tmp_path):
     assert rows[0]["total_loss"] == direct["results"]["total_loss"]
 
 
-def test_case_changes_result(fest, monkeypatch, tmp_path):
+def test_case_changes_result(gedos, monkeypatch, tmp_path):
     """rho_c를 낮추면 접촉 손실이 줄고 효율이 오른다 — 케이스가 실제로 먹는지."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc = _min_scenario()
-    rows = run_roadmap(fest, load_scenario(_write_scenario(tmp_path, sc)),
+    rows = run_roadmap(gedos, load_scenario(_write_scenario(tmp_path, sc)),
                        str(tmp_path / "r.csv"), axis_segments_override=AX)
     assert len(rows) == 2
     assert rows[1]["Pc"] < rows[0]["Pc"], "rho_c를 5배 낮췄는데 접촉 손실이 안 줄었다"
     assert rows[1]["Eff"] > rows[0]["Eff"]
 
 
-def test_resume_skips_completed(fest, monkeypatch, tmp_path):
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+def test_resume_skips_completed(gedos, monkeypatch, tmp_path):
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     sc_path = _write_scenario(tmp_path, _min_scenario())
     csv_path = str(tmp_path / "r.csv")
-    first = run_roadmap(fest, load_scenario(sc_path), csv_path,
+    first = run_roadmap(gedos, load_scenario(sc_path), csv_path,
                         axis_segments_override=AX)
     assert len(first) == 2
-    again = run_roadmap(fest, load_scenario(sc_path), csv_path, resume=True,
+    again = run_roadmap(gedos, load_scenario(sc_path), csv_path, resume=True,
                         axis_segments_override=AX)
     assert again == [], "resume인데 완료 케이스를 다시 돌렸다"
 ```
@@ -800,7 +800,7 @@ Expected: `ImportError: cannot import name 'run_roadmap' from 'front_electrode'`
 `front_electrode/roadmap.py` 끝에 append (`import` 블록에 `from .adapter import evaluate_existing_simulation` 추가):
 
 ```python
-def run_roadmap(fest, sc, csv_path, *, resume=False,
+def run_roadmap(gedos, sc, csv_path, *, resume=False,
                 axis_segments_override=None, progress=None):
     """시나리오의 각 케이스를 순차 실행하고 CSV에 누적한다.
 
@@ -818,7 +818,7 @@ def run_roadmap(fest, sc, csv_path, *, resume=False,
     # axis_segments_override(테스트·빠른 미리보기)가 target_nodes보다 우선한다.
     target_nodes = None if axis_segments_override is not None else eng.get("target_nodes")
 
-    env = provenance_env(fest, sc)
+    env = provenance_env(gedos, sc)
     done = completed_labels(csv_path) if resume else set()
     header_written = os.path.exists(csv_path) and os.path.getsize(csv_path) > 0
 
@@ -828,7 +828,7 @@ def run_roadmap(fest, sc, csv_path, *, resume=False,
             continue
         t0 = time.time()
         out = evaluate_existing_simulation(
-            fest, case["grid_params"],
+            gedos, case["grid_params"],
             scenario=scenario_const,
             busbar_recovery_factor=0.0,
             mode=mode,
@@ -895,7 +895,7 @@ def test_plot_roadmap_creates_png(tmp_path):
     """FEM 없이 CSV만으로 그림을 다시 그릴 수 있어야 한다."""
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     csv_path = str(tmp_path / "r.csv")
     written = False
     for i, c in enumerate(expand_cases(sc)):
@@ -911,7 +911,7 @@ def test_plot_roadmap_creates_png(tmp_path):
 def test_plot_roadmap_explicit_path(tmp_path):
     sc = _min_scenario()
     sc["_meta"] = {"file": "s.json", "sha256": "0123456789ab"}
-    env = provenance_env(_FakeFest, sc)
+    env = provenance_env(_FakeGedos, sc)
     csv_path = str(tmp_path / "r.csv")
     written = False
     for c in expand_cases(sc):
@@ -1106,7 +1106,7 @@ Expected: `FileNotFoundError: ... scripts/scenarios/unist_tco.json`
 
 ```json
 {
-  "schema": "2lfest.roadmap/1",
+  "schema": "gedos.roadmap/1",
   "name": "UNIST TCO modification",
 
   "engine": {
@@ -1230,9 +1230,9 @@ def main():
         print(f"plot-only: {csv_path} -> {plot_roadmap(csv_path, args.png)}")
         return
 
-    fest = conftest._load_fest()
+    gedos = conftest._load_gedos()
     cases = expand_cases(sc)
-    print(f"2L-FEST build {fest.__build__['version']} | "
+    print(f"GEDOS build {gedos.__build__['version']} | "
           f"scenario: {sc['name']} ({sc['_meta']['file']} "
           f"sha {sc['_meta']['sha256']})")
     print(f"  {len(cases)}개 케이스 (baseline 포함), CSV: {csv_path}")
@@ -1241,7 +1241,7 @@ def main():
               "구조 확인은 --ax 60을 먼저.")
 
     t0 = time.time()
-    rows = run_roadmap(fest, sc, csv_path, resume=args.resume,
+    rows = run_roadmap(gedos, sc, csv_path, resume=args.resume,
                        axis_segments_override=args.ax, progress=_progress)
     print(f"  {len(rows)}개 실행, {time.time() - t0:.0f}s")
 
@@ -1307,7 +1307,7 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
 **3. 타입 일관성**
 - `expand_cases` 반환 원소 키 `{case_index, label, note, grid_params}` — Task 2 `build_row`, Task 3 `run_roadmap`에서 동일하게 사용
 - `append_row(csv_path, row, header_written) -> bool` — Task 2 정의, Task 3에서 `header_written = append_row(...)`로 동일 사용
-- `provenance_env(fest, sc)` 인자 순서 — Task 2 정의와 Task 3 호출 일치
+- `provenance_env(gedos, sc)` 인자 순서 — Task 2 정의와 Task 3 호출 일치
 - `plot_roadmap(csv_path, png_path=None) -> str` — Task 4 정의, Task 5 CLI에서 동일 사용
 - `ENGINE_RAW_KEYS` — Task 2에서 정의, Task 3 비트동일 테스트에서 순회
 

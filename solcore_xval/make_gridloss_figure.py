@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
 """M10 front-grid resistive loss before/after hot pressing — report figure.
 
-High-mesh 2L-FEST result (mesh-converged; matches Rehman 2023 analytical and
+High-mesh GEDOS result (mesh-converged; matches Rehman 2023 analytical and
 the rho-linear scaling). Conference-ready bar chart + table.
 """
 import os
@@ -35,7 +35,7 @@ gs = GridSpec(1, 2, figure=fig, width_ratios=[1, 1.12], left=0.07, right=0.975,
 fig.suptitle("M10 탠덤 셀 — Hot Pressing 전/후 앞면 그리드 저항손실",
              fontsize=15, fontweight="bold", y=0.965)
 fig.text(0.5, 0.90, "182×182 mm · 132 finger + 16 busbar · 프로브 12/BB · 동작전류 ~17.3 mA/cm² · "
-         "High mesh (2L-FEST FEM)", ha="center", fontsize=9.5, color="#555")
+         "High mesh (GEDOS FEM)", ha="center", fontsize=9.5, color="#555")
 
 # (A) grouped bar chart
 axA = fig.add_subplot(gs[0, 0])

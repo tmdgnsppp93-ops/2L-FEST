@@ -68,7 +68,7 @@ def _objective_value(result, objective):
     return result["results"]["total_loss"]
 
 
-def _sweep(fest, grid_list, *, scenario, recovery_factor, mode, npts,
+def _sweep(gedos, grid_list, *, scenario, recovery_factor, mode, npts,
            axis_segments_override, target_nodes, objective, progress, stage):
     """grid_list의 각 파라미터 조합을 adapter로 평가 후 objective로 정렬."""
     results = []
@@ -76,7 +76,7 @@ def _sweep(fest, grid_list, *, scenario, recovery_factor, mode, npts,
     label = (scenario or {}).get("label", "engine_default")
     for i, grid in enumerate(grid_list):
         out = evaluate_existing_simulation(
-            fest, grid, scenario=scenario, busbar_recovery_factor=recovery_factor,
+            gedos, grid, scenario=scenario, busbar_recovery_factor=recovery_factor,
             mode=mode, npts=npts, axis_segments_override=axis_segments_override,
             target_nodes=target_nodes)
         out["scenario_label"] = label
@@ -93,7 +93,7 @@ def _sweep(fest, grid_list, *, scenario, recovery_factor, mode, npts,
     }
 
 
-def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
+def optimize_fingers(gedos, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
                      busbar_number=3, busbar_width_mm=0.3, n_probe_points=0,
                      edge_margin_mm=0.0,
                      scenario=None, recovery_factor=0.0, mode="tandem", npts=14,
@@ -116,7 +116,7 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
             finger_spacing_mm=pitch_mm, w_finger_um=wf_um,
             n_busbars=busbar_number, w_busbar_mm=busbar_width_mm,
             n_probe_points=n_probe_points, edge_margin_mm=edge_margin_mm))
-    out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
+    out = _sweep(gedos, grid_list, scenario=scenario, recovery_factor=recovery_factor,
                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
                  target_nodes=target_nodes, objective=objective, progress=progress,
                  stage="fingers")
@@ -126,7 +126,7 @@ def optimize_fingers(fest, *, cell_mm=39.0, finger_widths_um, finger_pitches_mm,
     return out
 
 
-def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
+def optimize_grid(gedos, *, cell_mm, finger_widths_um, finger_pitches_mm,
                   n_busbars_list, busbar_widths_mm, rho_bulk_list=(None,),
                   rho_contact_list=(None,), edge_margin_mm=0.0,
                   edge_margins_mm=None, n_probe_points=0,
@@ -198,7 +198,7 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
             raise RuntimeError(
                 f"{len(grid_list)}개 조합 실행이 사용자에 의해 취소되었다")
 
-    out = _sweep(fest, grid_list, scenario=scenario, recovery_factor=recovery_factor,
+    out = _sweep(gedos, grid_list, scenario=scenario, recovery_factor=recovery_factor,
                  mode=mode, npts=npts, axis_segments_override=axis_segments_override,
                  target_nodes=target_nodes, objective=objective, progress=progress,
                  stage="grid")
@@ -219,7 +219,7 @@ def optimize_grid(fest, *, cell_mm, finger_widths_um, finger_pitches_mm,
     return out
 
 
-def roundtrip_check(fest, best, *, scenario=None, recovery_factor=0.0, mode="tandem",
+def roundtrip_check(gedos, best, *, scenario=None, recovery_factor=0.0, mode="tandem",
                     npts=14, axis_segments_override=None, target_nodes=None):
     """최적 조건을 엔진에 '직접 재입력'했을 때 동일한 손실·효율이 나오는지 확인.
 
@@ -249,7 +249,7 @@ def roundtrip_check(fest, best, *, scenario=None, recovery_factor=0.0, mode="tan
     # 조합별 override(edge_margin/rho_bulk/rho_contact)를 원본 입력 그대로 복원.
     grid.update(best.get("meta", {}).get("grid_overrides", {}))
     re = evaluate_existing_simulation(
-        fest, grid, scenario=scenario, busbar_recovery_factor=recovery_factor,
+        gedos, grid, scenario=scenario, busbar_recovery_factor=recovery_factor,
         mode=mode, npts=npts, axis_segments_override=axis_segments_override,
         target_nodes=target_nodes)
     ok = (re["results"]["total_loss"] == best["results"]["total_loss"]

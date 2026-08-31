@@ -8,13 +8,13 @@ the app without a display and build both a monofacial and a bifacial solver.
 """
 
 
-def test_fest_imports(fest):
-    assert hasattr(fest, "FESTSolver")
-    assert hasattr(fest, "generate_mesh")
-    assert hasattr(fest, "classify_nodes")
-    assert hasattr(fest, "CellGeometry")
-    assert hasattr(fest, "GridDesign")
-    assert hasattr(fest, "DiodeParams")
+def test_gedos_imports(gedos):
+    assert hasattr(gedos, "GEDOSSolver")
+    assert hasattr(gedos, "generate_mesh")
+    assert hasattr(gedos, "classify_nodes")
+    assert hasattr(gedos, "CellGeometry")
+    assert hasattr(gedos, "GridDesign")
+    assert hasattr(gedos, "DiodeParams")
 
 
 def test_mono_fixture(mono):

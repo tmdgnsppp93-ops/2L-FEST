@@ -24,20 +24,20 @@ RTOL_A = 1e-6        # A등급(결과 불변): 상대오차
 ATOL_B_ABS = 1e-4    # B등급(샘플링 변경): Eff/Voc 등 %abs·V 절대오차
 
 
-def _run(fest):
+def _run(gedos):
     from front_electrode import evaluate_existing_simulation, SCENARIO_MEASURED
     grid = dict(cell_w_mm=182.0, cell_h_mm=182.0, finger_spacing_mm=1.77,
                 w_finger_um=20.0, n_busbars=8, w_busbar_mm=0.20, n_probe_points=10)
     return evaluate_existing_simulation(
-        fest, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
+        gedos, grid, scenario=SCENARIO_MEASURED, busbar_recovery_factor=0.0,
         mode="tandem", npts=14, target_nodes=82000)
 
 
 @pytest.mark.slow
-def test_m10_8bb_pin_Agrade(fest, monkeypatch):
+def test_m10_8bb_pin_Agrade(gedos, monkeypatch):
     """A등급: 상대 1e-6 이내(행렬·솔버 재사용 등 결과 불변 변경용)."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
-    out = _run(fest)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
+    out = _run(gedos)
     er = out["engine_raw"]
     assert out["parameters"]["n_fingers"] == PIN["n_fingers"]
     for k, v in (("Jsc", er["Jsc"]), ("Voc", er["Voc"]), ("FF", er["FF"]),
@@ -50,10 +50,10 @@ def test_m10_8bb_pin_Agrade(fest, monkeypatch):
 
 @pytest.mark.slow
 @pytest.mark.bgrade
-def test_m10_8bb_pin_Bgrade(fest, monkeypatch):
+def test_m10_8bb_pin_Bgrade(gedos, monkeypatch):
     """B등급: Eff/Voc는 1e-4 %abs·V 이내, Jsc/n_f는 불변(샘플링 변경 무관)."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
-    out = _run(fest)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
+    out = _run(gedos)
     er = out["engine_raw"]
     assert out["parameters"]["n_fingers"] == PIN["n_fingers"]
     # Jsc는 Vb=0 해라 샘플링과 무관 → A등급 유지

@@ -36,7 +36,7 @@ for _stream in (sys.stdout, sys.stderr):
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ROOT = os.path.dirname(_HERE)
 DOC = os.path.join(_ROOT, "docs", "registration_material.md")
-ENGINE = os.path.join(_ROOT, "2L_FEST.py")
+ENGINE = os.path.join(_ROOT, "GEDOS.py")
 
 # 라인 수 집계 단위. 앞에서부터 먼저 맞는 접두사로 분류하며, 어디에도 안 맞으면
 # "본체 엔진 (루트)"로 간다. 새 디렉터리가 생기면 여기에 추가하면 된다.
@@ -220,7 +220,7 @@ def block_scale(s):
         f"| Python 소스 파일 | {s['py_files']}개 |",
         f"| Python 총 라인 수 | {s['py_lines']:,}줄 |",
         f"| 저장소 추적 파일 총계 | {s['tracked_files']}개 |",
-        f"| 그중 `2L_FEST.py` (엔진+GUI 단일 파일) | {s['engine_lines']:,}줄 |",
+        f"| 그중 `GEDOS.py` (엔진+GUI 단일 파일) | {s['engine_lines']:,}줄 |",
         "",
         "구성 단위별 라인 수:",
         "",

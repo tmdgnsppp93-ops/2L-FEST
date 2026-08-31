@@ -15,7 +15,7 @@
 `spatial_j01` / `spatial_j02` / `spatial_gen` 세 맵이 프로덕션 tandem 설정 전부에서
 잔차에 반영되지 않는다. 상세는 `docs/spatial_map_convention.md` §6에 있다. 요약만:
 
-- `solve_tandem`이 배율 블록(`2L_FEST.py:4932`)보다 **앞에서** 디스패치한다
+- `solve_tandem`이 배율 블록(`GEDOS.py:4932`)보다 **앞에서** 디스패치한다
 - 네 분기(`:5224` `:5595` `:5914` `:6191`)가 `J01_top_arr`를 스칼라로만 만든다
 - **기본 설정이 결함 경로다** (`Rs_junction = 5000`이 클래스 기본값)
 - `cell_current`(`:6717`)는 맵을 무조건 적용해 **자기모순 값**을 낸다
@@ -34,7 +34,7 @@
 
 ### 무엇을 만드는가
 
-`FESTSolver`에 메서드 하나:
+`GEDOSSolver`에 메서드 하나:
 
 ```
 _diode_node_arrays(dp, mode='tandem')
@@ -151,7 +151,7 @@ v28.60이 게이트와 조립을 `_rear_is_a_plane` boolean 하나로 묶은 것
 
 두 겹으로 둔다:
 
-1. **소스 검사** — `2L_FEST.py`를 읽어 `J01_top_pass * (1 - mf)` 패턴이
+1. **소스 검사** — `GEDOS.py`를 읽어 `J01_top_pass * (1 - mf)` 패턴이
    `_diode_node_arrays` 본문 **밖**에 나타나면 실패. 새 분기를 추가하면서 배열을
    직접 조립하면 이 테스트가 잡는다.
 2. **런타임 계수** — 각 분기를 실제로 풀면서 `_diode_node_arrays` 호출을 세어

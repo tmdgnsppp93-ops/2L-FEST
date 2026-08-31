@@ -28,8 +28,8 @@
 prebuilt, sha256 검증, 소스 빌드 아님):
 
 ```
-인터프리터  ~/.local/share/2lfest-pin/python/bin/python3.14
-venv        ~/.venvs/2lfest-pin        (저장소 밖 — 유지 중)
+인터프리터  ~/.local/share/gedos-pin/python/bin/python3.14
+venv        ~/.venvs/gedos-pin        (저장소 밖 — 유지 중)
 스택        3.14.3 / 2.4.3 / 1.17.1    = PINNED_STACK 완전 일치
 ```
 

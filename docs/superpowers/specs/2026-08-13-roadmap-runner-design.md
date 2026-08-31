@@ -1,7 +1,7 @@
 # Roadmap 러너 설계 — Griddler PRO §5.1 Efficiency Improvement Diagram 상당
 
 > **작성**: 2026-08-13
-> **대상 빌드**: `2L_FEST.py` v28.53, `main` = `1b91d8a`
+> **대상 빌드**: `GEDOS.py` v28.53, `main` = `1b91d8a`
 > **근거**: `docs/audit_2026-08-13.md` §6 권고 5
 > **상태**: 설계 승인됨 (2026-08-13)
 
@@ -77,7 +77,7 @@ tests/test_roadmap.py             신규 — 단위·회귀 테스트
 front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추가, 가산적)
 ```
 
-엔진(`2L_FEST.py`)과 `adapter.py`는 **한 줄도 수정하지 않는다.** 요구사항 "기존 결과 비트 불변"이 구조적으로 성립한다 — 기존 스윕/최적화 경로가 새 코드에 물리적으로 도달할 수 없다.
+엔진(`GEDOS.py`)과 `adapter.py`는 **한 줄도 수정하지 않는다.** 요구사항 "기존 결과 비트 불변"이 구조적으로 성립한다 — 기존 스윕/최적화 경로가 새 코드에 물리적으로 도달할 수 없다.
 
 계산(`roadmap.py`)과 그림(`roadmap_plot.py`)을 분리하는 이유는 CSV만 있으면 FEM 재실행 없이 그림을 다시 그릴 수 있어야 하기 때문이다. 논문 figure는 스타일을 여러 번 고친다.
 
@@ -91,7 +91,7 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
 
 ```json
 {
-  "schema": "2lfest.roadmap/1",
+  "schema": "gedos.roadmap/1",
   "name": "UNIST TCO modification",
 
   "engine": {
@@ -141,7 +141,7 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
 
 **`set`의 키는 `baseline` 키의 부분집합만 허용한다.** 모르는 키는 즉시 `ValueError`다. 이 저장소가 반복해서 겪은 사고(v28.43 `n_probe_points=0`, `extraction_method` 죽은 파라미터)는 전부 "조용히 무시되고 그럴듯한 틀린 값"이었다. 오타난 키를 통과시키면 같은 계열의 버그를 새로 만드는 셈이다.
 
-**`schema` 버전 필드**를 둔다. 나중에 다이오드 파라미터 축을 열 때 `2lfest.roadmap/2`로 구분한다.
+**`schema` 버전 필드**를 둔다. 나중에 다이오드 파라미터 축을 열 때 `gedos.roadmap/2`로 구분한다.
 
 **`engine.scenario`는 문자열 → 상수 매핑이다.** `"measured"` → `SCENARIO_MEASURED`, `"default"` → `SCENARIO_ENGINE_DEFAULT` (둘 다 `front_electrode`가 이미 export한다). 그 외 문자열은 `ValueError`.
 
@@ -181,8 +181,8 @@ front_electrode/__init__.py       ★ 유일한 기존 파일 수정 (export 추
 | 필드 | 취득 | 잡아내는 것 |
 |---|---|---|
 | `git_commit` | `git rev-parse --short HEAD` (+ dirty 표시) | 저장소 상태 |
-| `engine_version` | `fest.__build__["version"]` | 엔진 버전 라벨 |
-| `engine_sha` | `fest._build_sha()` — 엔진 파일 sha256 앞 12자 | **커밋되지 않은 엔진 수정** |
+| `engine_version` | `gedos.__build__["version"]` | 엔진 버전 라벨 |
+| `engine_sha` | `gedos._build_sha()` — 엔진 파일 sha256 앞 12자 | **커밋되지 않은 엔진 수정** |
 | `scenario_file` | 파일 basename | 어떤 시나리오인지 |
 | `scenario_sha256` | 파일 바이트 sha256 앞 12자 | 시나리오 파일의 조용한 수정 |
 
@@ -198,9 +198,9 @@ git 명령 실패는 치명적이지 않다 — `"unknown"`으로 기록하고 �
 load_scenario(path)                   → Scenario      (스키마·provenance 검증)
 expand_cases(scenario)                → [(idx, label, note, grid_params), ...]
                                         ★ 순수 함수 — 누적 전개, FEM 불필요
-run_roadmap(fest, sc, csv_path, resume=False)
+run_roadmap(gedos, sc, csv_path, resume=False)
     for 각 케이스 (순차):
-        out = evaluate_existing_simulation(fest, grid, scenario=..., mode=...,
+        out = evaluate_existing_simulation(gedos, grid, scenario=..., mode=...,
                                            npts=..., target_nodes=...)
         append_row(csv) + flush        ← optimize_m10.py 패턴 재사용
 plot_roadmap(csv_path, png_path)
@@ -286,7 +286,7 @@ FEM이 필요한 테스트는 **기존 선례 `tests/test_optimizer.py:96-106` `
 
 ## 9. 비범위 (이번에 하지 않는 것)
 
-- **다이오드 파라미터 축** — `adapter.py:259`가 `dp = fest.DiodeParams()`로 기본값을 새로 만들므로 J01 / Rsh / Rs_junction 등은 현재 경로로 바꿀 수 없다. 열려면 adapter에 override 주입구가 필요하고, 그 변경이 기존 스윕에 영향 없음을 별도로 증명해야 한다. `schema` 버전 필드로 후속 확장 여지를 남긴다.
+- **다이오드 파라미터 축** — `adapter.py:259`가 `dp = gedos.DiodeParams()`로 기본값을 새로 만들므로 J01 / Rsh / Rs_junction 등은 현재 경로로 바꿀 수 없다. 열려면 adapter에 override 주입구가 필요하고, 그 변경이 기존 스윕에 영향 없음을 별도로 증명해야 한다. `schema` 버전 필드로 후속 확장 여지를 남긴다.
 - **독립(비누적) 케이스 모드** — 누적만 지원한다.
 - **병렬 실행** — §6 참조.
 - **GUI 연동** — CLI 전용. GUI 세션 상태에 묶이지 않는 것이 이 도구의 존재 이유다.

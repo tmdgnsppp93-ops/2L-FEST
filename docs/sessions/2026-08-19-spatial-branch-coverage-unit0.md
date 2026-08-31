@@ -104,7 +104,7 @@ phaseB_full_area + gen 맵:   전압장 Δ = 0 (비트 동일)   ΔJ = +4.426 mA
 
 > 단일셀(`solve_single` `:6431`)은 4종 모두 정상이다.
 
-**단일셀 full_area만 정상이다.** `solve_single`은 `2L_FEST.py:6396`에서
+**단일셀 full_area만 정상이다.** `solve_single`은 `GEDOS.py:6396`에서
 
 ```python
 if (self.geo.rear_mode in ('bifacial', 'patterned')
@@ -163,7 +163,7 @@ if (self.geo.rear_mode in ('bifacial', 'patterned')
 지시대로 확인했다. **`Rs_base`에는 이 누락으로 인한 공백이 없다** — 구조적
 이유가 있다.
 
-`Rs_base`는 `_build`(`2L_FEST.py:4396-4488`) 안에서 후면 평면 면전도에 병렬
+`Rs_base`는 `_build`(`GEDOS.py:4396-4488`) 안에서 후면 평면 면전도에 병렬
 합성된다:
 
 ```
@@ -313,7 +313,7 @@ Phase A / full_area는 현재 **유일하게 올바른 탠덤 경로**다. 단�
 건드리지 않았다는 증거로 쓰려고 수정 전에 캡처했다.
 
 캡처 조건: mono 지오메트리(2×2 mm, 8F+1BB, `axis_segments_override=36`),
-`PARAMS`, `Vb = 0.5`, `FEST_LEGACY_LOCAL_MATCH=1`, `Rs_junction = 0.0`,
+`PARAMS`, `Vb = 0.5`, `GEDOS_LEGACY_LOCAL_MATCH=1`, `Rs_junction = 0.0`,
 gaussian 맵(bg 1.0 / feature 2.0 / center (1,1) / σ 0.4).
 
 | 맵 | `cell_current` [mA/cm²] | 전압장 sha256 (앞 16자) |

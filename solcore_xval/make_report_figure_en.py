@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""English presentation figure — 2L-FEST (FEM) vs Solcore Quasi-3D (SPICE/FDM).
+"""English presentation figure — GEDOS (FEM) vs Solcore Quasi-3D (SPICE/FDM).
 
 Same data as the KR figure (compare_result.npz), English labels.
     <solcore venv>/bin/python make_report_figure_en.py
@@ -36,7 +36,7 @@ fig = plt.figure(figsize=(13.8, 9.4), facecolor="white")
 gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 1.05], width_ratios=[1, 1.2],
               hspace=0.34, wspace=0.2, left=0.06, right=0.975, top=0.845, bottom=0.055)
 
-fig.suptitle("2L-FEST (FEM)  vs  Solcore Quasi-3D (SPICE / FDM) — single-cell cross-validation",
+fig.suptitle("GEDOS (FEM)  vs  Solcore Quasi-3D (SPICE / FDM) — single-cell cross-validation",
              fontsize=15, fontweight="bold", y=0.97)
 fig.text(0.5, 0.927,
          f"{W*10:.0f}x{H*10:.0f} mm c-Si | realistic {n_f}-finger grid | identical 2-diode / sheet-R / "
@@ -61,7 +61,7 @@ axA.text(0.02, 0.98, f"{contacts.shape[0]}x{contacts.shape[1]} px @ {pix:.0f} um
 
 # (B) IV overlay
 axB = fig.add_subplot(gs[0, 1])
-axB.plot(Vf, Jf, "o-", color=C_FEM, ms=4, lw=1.9, label="2L-FEST (FEM)")
+axB.plot(Vf, Jf, "o-", color=C_FEM, ms=4, lw=1.9, label="GEDOS (FEM)")
 axB.plot(Vs, Js, "s--", color=C_SPICE, ms=3, lw=1.6, label="Solcore Quasi-3D (SPICE/FDM)")
 axB.set_title("(B) Illuminated I-V overlay", fontsize=11, fontweight="bold")
 axB.set_xlabel("Voltage [V]"); axB.set_ylabel("Current density J [mA/cm$^2$]")
@@ -75,7 +75,7 @@ axC = fig.add_subplot(gs[1, 0]); axC.axis("off")
 axC.set_title("(C) Metric comparison (absolute + relative)", fontsize=11, fontweight="bold", y=0.99)
 rows = [("Jsc [mA/cm2]", mf["Jsc"], ms["Jsc"]), ("Voc [V]", mf["Voc"], ms["Voc"]),
         ("FF [%]", mf["FF"], ms["FF"]), ("Eff [%]", mf["Eff"], ms["Eff"])]
-cells = [["metric", "2L-FEST", "Solcore", "abs.diff", "rel %"]]; colors = [["#1F2937"]*5]
+cells = [["metric", "GEDOS", "Solcore", "abs.diff", "rel %"]]; colors = [["#1F2937"]*5]
 for name, a, b in rows:
     dabs = b - a; rel = 100*dabs/a if a else 0
     cells.append([name, f"{a:.2f}", f"{b:.2f}", f"{dabs:+.2f}", f"{rel:+.2f}"])
@@ -105,11 +105,11 @@ axD.text(0.0, 0.69,
     f"   so each finger fills a full / straddles two pixel rows ->\n"
     f"   electrical shading {shade_elec:.1f}% = ~2x the optical shading {shade_opt:.1f}%.\n"
     f"   - Solcore Jsc loss {loss_s:.1f}% =~ electrical shading {shade_elec:.1f}%  (matches)\n"
-    f"   - 2L-FEST Jsc loss {loss_f:.1f}% =~ optical shading {shade_opt:.1f}%  (correct)\n"
+    f"   - GEDOS Jsc loss {loss_f:.1f}% =~ optical shading {shade_opt:.1f}%  (correct)\n"
     f"   - lowering sheet R 55->1 leaves the gap unchanged -> pure shading, not collection.",
     transform=axD.transAxes, va="top", fontsize=8.7, color="#92400E", linespacing=1.4)
 axD.text(0.0, 0.265,
-    "[ACCURACY]  2L-FEST is the more accurate one here.\n"
+    "[ACCURACY]  GEDOS is the more accurate one here.\n"
     "   Its constrained FEM mesh puts finger edges exactly on mesh lines, so the\n"
     "   50um finger -> geometrically correct shading. Solcore's binary pixel grid\n"
     "   structurally over-shades whenever pixel > finger (matching needs pixel <= 50um,\n"
@@ -118,6 +118,6 @@ axD.text(0.0, 0.265,
 axD.add_patch(plt.Rectangle((-0.02, -0.02), 1.04, 1.0, transform=axD.transAxes,
               fill=False, ec="#cbd5e1", lw=1.0, clip_on=False))
 
-out = f"{HERE}/2LFEST_vs_Solcore_quasi3D_EN.png"
+out = f"{HERE}/GEDOS_vs_Solcore_quasi3D_EN.png"
 fig.savefig(out, dpi=160)
 print("saved", out); print("FIG_DONE")

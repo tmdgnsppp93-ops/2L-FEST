@@ -16,14 +16,14 @@ MESH = sys.argv[1] if len(sys.argv) > 1 else "High"
 JPH_TANDEM = 19.65e-3   # A/cm^2 — perovskite/Si tandem operating current (Jph_top)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-FEST = os.path.join(os.path.dirname(HERE), "2L_FEST.py")
-spec = importlib.util.spec_from_file_location("fest", FEST)
+GEDOS = os.path.join(os.path.dirname(HERE), "GEDOS.py")
+spec = importlib.util.spec_from_file_location("gedos", GEDOS)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)
 except SystemExit: pass
 m.messagebox.showinfo = m.messagebox.showerror = m.messagebox.showwarning = lambda *a, **k: None
 
-app = m.FESTProApp(); app.update_idletasks(); app.update()
+app = m.GEDOSApp(); app.update_idletasks(); app.update()
 app._mode_var.set("single")
 app._mesh_tangent_var.set(MESH); app._mesh_perp_var.set(MESH)
 # cell 182x182 mm, 132 fingers, 16 busbars

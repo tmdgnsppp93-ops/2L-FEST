@@ -11,7 +11,7 @@ see the current-matching clamp directly.
 """
 import importlib.util, numpy as np
 
-spec = importlib.util.spec_from_file_location('fest', '2L_FEST.py')
+spec = importlib.util.spec_from_file_location('gedos', 'GEDOS.py')
 m = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(m)
@@ -20,7 +20,7 @@ except SystemExit:
 
 GridDesign   = m.GridDesign
 CellGeometry = m.CellGeometry
-FESTSolver   = m.FESTSolver
+GEDOSSolver   = m.GEDOSSolver
 
 # --- Build a bifacial geometry: front H-pattern + rear H-pattern ---
 front = GridDesign(n_fingers=2, n_busbars=1, w_finger=50e-4, w_busbar=50e-4)
@@ -30,7 +30,7 @@ print(f"rear_mode = {GEO.rear_mode}")
 
 pts, tri = m.generate_mesh(GEO, pass_density=2)
 isf, isb, isp, ism, isrm, isrp = m.classify_nodes(pts, GEO)
-S = FESTSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
+S = GEDOSSolver(pts, tri, isf, isb, isp, ism, GEO, isrm, isrp)
 print(f"mesh: {len(pts)} nodes, {len(tri.simplices)} tri")
 
 # realistic-R operating point (same as _validate_tandem 'realistic')

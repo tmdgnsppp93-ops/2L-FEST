@@ -41,7 +41,7 @@ v28.61이 그 자기모순을 없앴지만(솔버와 `cell_current`가 같은 �
 
 이 파일이 새로 찾아낸 것 (2026-08-19)
 --------------------------------------
-1. **`_solve_single_bifacial`(`2L_FEST.py:6513`)이 5번째 결함 분기다.**
+1. **`_solve_single_bifacial`(`GEDOS.py:6513`)이 5번째 결함 분기다.**
    `docs/spatial_map_convention.md` §6은 *"단일셀(`solve_single` `:6431`)은 4종
    모두 정상이다"* 라고 적었으나, `solve_single`은 rear가 patterned/bifacial이면
    `:6396`에서 `_solve_single_bifacial`로 **빠져나간다.** 그쪽은 `_spatial_mult`
@@ -98,7 +98,7 @@ sys.path.insert(0, _TESTS_DIR)
 # 분기 표는 **import 한다.** 복제하면 두 벌이 되어 갈린다(계획 §T2).
 from test_base_lateral import BRANCH_CASES, PARAMS, VB, _INLINE  # noqa: E402
 
-SRC_PATH = os.path.join(_ROOT, "2L_FEST.py")
+SRC_PATH = os.path.join(_ROOT, "GEDOS.py")
 
 # 줄바꿈 문자. 이 파일은 소스를 줄 단위로 다루는 코드가 많은데, 그 안에
 # 이스케이프를 쓰면 "이 파일 자신"을 편집하는 스크립트에서 한 번 더 해석돼
@@ -157,21 +157,21 @@ TARGET_LOCALS = {
 _ALL_LOCALS = tuple(sorted({n for v in TARGET_LOCALS.values() for n in v}))
 
 
-def _canonical_map(fest):
+def _canonical_map(gedos):
     """모든 대상에 공통으로 쓰는 맵. 셀 중앙에 완만한 2배 피크.
 
     `feature=2.0`은 배율이므로 어느 대상에 붙여도 부호가 뒤집히지 않는다
     (`SpatialMap.evaluate`가 양수를 강제한다). 형상을 대상별로 바꾸면 칸끼리
     비교할 수 없으므로 **하나로 고정**한다.
     """
-    return fest.SpatialMap(mode="gaussian", background=1.0, feature=2.0,
+    return gedos.SpatialMap(mode="gaussian", background=1.0, feature=2.0,
                            cx=1.0, cy=1.0, sigma_x=0.4, sigma_y=0.4)
 
 
 def _voltage_field(result):
     """수렴 전압장을 하나의 1D 배열로. **비트 비교용이다.**
 
-    `Vm`은 비금속 노드가 NaN이라(`2L_FEST.py:6368`) 그대로 두면 `==`도
+    `Vm`은 비금속 노드가 NaN이라(`GEDOS.py:6368`) 그대로 두면 `==`도
     `np.array_equal`도 항상 False가 된다. NaN 위치는 메시 구조가 정하는 것이라
     두 실행에서 동일하므로 0.0으로 치환한다. `Vtop`/`Vint`는 단일셀에서 None이다.
     """
@@ -228,8 +228,8 @@ class Observation:
             np.ascontiguousarray(self.V, dtype=np.float64).tobytes()).hexdigest()
 
 
-def _dp(fest, rs_j, mode, target):
-    dp = fest.DiodeParams()
+def _dp(gedos, rs_j, mode, target):
+    dp = gedos.DiodeParams()
     if rs_j is not None:
         dp.Rs_junction = rs_j
     if mode == "single":
@@ -237,22 +237,22 @@ def _dp(fest, rs_j, mode, target):
         dp.J02_single_pass = J02_SINGLE_PROBE
         dp.J02_single_metal = J02_SINGLE_PROBE
     if target is not None:
-        fest.set_spatial_map(dp, target, _canonical_map(fest))
+        gedos.set_spatial_map(dp, target, _canonical_map(gedos))
     return dp
 
 
-def _observe(fest, solver_factory, rs_j, legacy, mode, target):
+def _observe(gedos, solver_factory, rs_j, legacy, mode, target):
     """solve 한 번 = 관측 하나. **매번 새 솔버**를 쓴다.
 
     warm-start(`_warm_V_junc_bf` 등)가 남으면 무맵 실행의 해가 유맵 실행의
     출발점이 되어 "맵을 봤는가"의 판정이 오염된다.
     """
-    prev = os.environ.get("FEST_LEGACY_LOCAL_MATCH")
-    os.environ["FEST_LEGACY_LOCAL_MATCH"] = "1" if legacy else ""
+    prev = os.environ.get("GEDOS_LEGACY_LOCAL_MATCH")
+    os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = "1" if legacy else ""
     frames, loc = [], {}
     try:
         m = solver_factory()
-        dp = _dp(fest, rs_j, mode, target)
+        dp = _dp(gedos, rs_j, mode, target)
         sys.settrace(_make_tracer(frames, loc))
         try:
             result = m.S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"],
@@ -265,9 +265,9 @@ def _observe(fest, solver_factory, rs_j, legacy, mode, target):
                            float(m.S.cell_current(result, dp)), loc)
     finally:
         if prev is None:
-            os.environ.pop("FEST_LEGACY_LOCAL_MATCH", None)
+            os.environ.pop("GEDOS_LEGACY_LOCAL_MATCH", None)
         else:
-            os.environ["FEST_LEGACY_LOCAL_MATCH"] = prev
+            os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = prev
 
 
 # 관측 캐시. 24칸 x (무맵 + 유맵) = 48회 solve인데, 무맵 기준은 분기당 하나면
@@ -276,11 +276,11 @@ def _observe(fest, solver_factory, rs_j, legacy, mode, target):
 _CACHE = {}
 
 
-def _cached(fest, geo_factory, case, target):
+def _cached(gedos, geo_factory, case, target):
     label, geo, rs_j, legacy, mode = case[:5]
     key = (label, target)
     if key not in _CACHE:
-        _CACHE[key] = _observe(fest, geo_factory[geo], rs_j, legacy, mode,
+        _CACHE[key] = _observe(gedos, geo_factory[geo], rs_j, legacy, mode,
                                target)
     return _CACHE[key]
 
@@ -387,7 +387,7 @@ ACTUAL_BRANCH = {
     "single_bifacial": "_solve_single_bifacial",
 }
 
-# 이 표가 덮으려는 대상. **`fest.SPATIAL_TARGETS`와 다를 수 있다** — 아직
+# 이 표가 덮으려는 대상. **`gedos.SPATIAL_TARGETS`와 다를 수 있다** — 아직
 # 구현되지 않은 대상을 여기 먼저 올리고 결함 칸을 `False`로 두는 것이 단위 0의
 # 방식이기 때문이다(그 칸에 strict xfail이 붙어 구현되는 순간 XPASS로 뒤집힌다).
 TARGETS = ("j01", "j02", "gen", "rc", "rsh", "rcj")
@@ -460,7 +460,7 @@ def test_cross_table_matches_branch_cases():
     assert set(RESIDUAL_SEES_MAP) == {(i, t) for i in ids for t in TARGETS}
 
 
-def test_spatial_targets_registry_matches_the_table(fest):
+def test_spatial_targets_registry_matches_the_table(gedos):
     """엔진 레지스트리 == 이 표에서 **구현됐다고 적은** 대상.
 
     대상이 늘었는데 표가 안 늘면 새 대상이 감시 밖에 놓인다. 반대로 표에만
@@ -470,13 +470,13 @@ def test_spatial_targets_registry_matches_the_table(fest):
     구현이 끝나면 `NOT_YET_IMPLEMENTED`를 비우고, 그 순간 이 단언이 5종을
     요구하게 된다.
     """
-    assert fest.SPATIAL_TARGETS == IMPLEMENTED_TARGETS, (
-        f"레지스트리={fest.SPATIAL_TARGETS} vs 표의 구현분={IMPLEMENTED_TARGETS} — "
+    assert gedos.SPATIAL_TARGETS == IMPLEMENTED_TARGETS, (
+        f"레지스트리={gedos.SPATIAL_TARGETS} vs 표의 구현분={IMPLEMENTED_TARGETS} — "
         f"대상을 추가했으면 TARGETS와 RESIDUAL_SEES_MAP을 함께 갱신할 것")
 
 
 @pytest.mark.parametrize("target", NOT_YET_IMPLEMENTED or ["<none>"])
-def test_not_yet_implemented_targets_are_actually_rejected(fest, target):
+def test_not_yet_implemented_targets_are_actually_rejected(gedos, target):
     """미구현이라고 적은 대상이 **실제로** 거부되는지 확인한다.
 
     이 테스트가 없으면 `NOT_YET_IMPLEMENTED`가 낡아도 아무도 모른다 — 구현이
@@ -489,10 +489,10 @@ def test_not_yet_implemented_targets_are_actually_rejected(fest, target):
     if target == "<none>":
         assert not NOT_YET_IMPLEMENTED
         return
-    assert target not in fest.SPATIAL_TARGETS
-    assert not hasattr(fest.DiodeParams, f"spatial_{target}")
+    assert target not in gedos.SPATIAL_TARGETS
+    assert not hasattr(gedos.DiodeParams, f"spatial_{target}")
     with pytest.raises(ValueError) as exc:
-        fest.set_spatial_map(fest.DiodeParams(), target, fest.SpatialMap())
+        gedos.set_spatial_map(gedos.DiodeParams(), target, gedos.SpatialMap())
     assert target in str(exc.value)
 
 
@@ -539,14 +539,14 @@ _INLINE_FRAMES = ("solve_tandem", "solve_single")
 
 
 @pytest.mark.parametrize("case_id", sorted(ACTUAL_BRANCH))
-def test_actual_branch_is_pinned(fest, geo_factory, case_id):
+def test_actual_branch_is_pinned(gedos, geo_factory, case_id):
     """**실제** 도달 분기를 고정한다 — `_solve_single_bifacial` 포함.
 
     `BRANCH_CASES`는 인라인 두 경로를 `_INLINE` 하나로 묶으므로, 여기서는
     프레임 이름까지 구분해 더 촘촘하게 못 박는다.
     """
     case = _case_by_id()[case_id]
-    obs = _cached(fest, geo_factory, case, None)
+    obs = _cached(gedos, geo_factory, case, None)
     assert obs.branch == ACTUAL_BRANCH[case_id], (
         f"{case[0]}: {ACTUAL_BRANCH[case_id]!r}로 가야 하는데 "
         f"{obs.branch!r}로 갔다")
@@ -593,7 +593,7 @@ def test_named_solvers_covers_single_bifacial():
 # =============================================================================
 
 @pytest.mark.parametrize("case,target", _cross())
-def test_residual_sees_spatial_map(fest, geo_factory, case, target):
+def test_residual_sees_spatial_map(gedos, geo_factory, case, target):
     """**맵을 붙이면 수렴 전압장이 달라져야 한다.**
 
     달라지지 않으면 잔차가 맵을 보지 않은 것이다. 비교는 허용오차가 아니라
@@ -602,8 +602,8 @@ def test_residual_sees_spatial_map(fest, geo_factory, case, target):
 
     ⚠ `cell_current` 차이를 근거로 쓰지 않는다 — 파일 상단 참조.
     """
-    base = _cached(fest, geo_factory, case, None)
-    with_map = _cached(fest, geo_factory, case, target)
+    base = _cached(gedos, geo_factory, case, None)
+    with_map = _cached(gedos, geo_factory, case, target)
     assert base.V.shape == with_map.V.shape
     assert not np.array_equal(base.V, with_map.V), (
         f"{case[0]} / spatial_{target}: 맵을 붙였는데 수렴 전압장이 비트 동일이다 "
@@ -620,7 +620,7 @@ _LOCAL_OBSERVED_TARGETS = tuple(t for t in TARGETS if TARGET_LOCALS[t])
 
 
 @pytest.mark.parametrize("case,target", _cross(targets=_LOCAL_OBSERVED_TARGETS))
-def test_branch_local_diode_arrays_carry_the_map(fest, geo_factory, case,
+def test_branch_local_diode_arrays_carry_the_map(gedos, geo_factory, case,
                                                  target):
     """분기 프레임의 다이오드 지역 배열이 맵을 싣고 있는가 — 직접 관측.
 
@@ -632,8 +632,8 @@ def test_branch_local_diode_arrays_carry_the_map(fest, geo_factory, case,
 
     `rc`는 여기 없다 — 강성 조립(B 계층)이라 다이오드 배열에 나타나지 않는다.
     """
-    base = _cached(fest, geo_factory, case, None)
-    with_map = _cached(fest, geo_factory, case, target)
+    base = _cached(gedos, geo_factory, case, None)
+    with_map = _cached(gedos, geo_factory, case, target)
     names = TARGET_LOCALS[target]
     observed = [(fr, nm) for (fr, nm) in with_map.locals if nm in names]
     changed = [k for k in observed
@@ -812,10 +812,10 @@ def test_inline_assembly_census_is_pinned():
         f"  줄 번호={[(ln, fn) for ln, fn in sites]}")
 
 
-def test_helper_exists(fest):
+def test_helper_exists(gedos):
     """중앙 헬퍼 (v28.61 신설). 단위 0 시점에는 없어서 xfail이었다."""
-    assert hasattr(fest.FESTSolver, HELPER_NAME), (
-        f"FESTSolver.{HELPER_NAME}가 없다 — v28.61이 만든 중앙 조립 지점이다")
+    assert hasattr(gedos.GEDOSSolver, HELPER_NAME), (
+        f"GEDOSSolver.{HELPER_NAME}가 없다 — v28.61이 만든 중앙 조립 지점이다")
 
 
 def test_inline_assembly_only_inside_helper():
@@ -838,7 +838,7 @@ def test_inline_assembly_only_inside_helper():
 
 
 @pytest.mark.parametrize("case_id", sorted(ACTUAL_BRANCH))
-def test_every_branch_calls_the_helper(fest, geo_factory, monkeypatch,
+def test_every_branch_calls_the_helper(gedos, geo_factory, monkeypatch,
                                        case_id):
     """**T1-(2) 런타임 계수.** 각 분기가 헬퍼를 최소 1회 부른다.
 
@@ -846,17 +846,17 @@ def test_every_branch_calls_the_helper(fest, geo_factory, monkeypatch,
     생긴 분기라도 **실제로 풀어 보고** 판정하므로 문자열에 의존하지 않는다.
     """
     label, geo, rs_j, legacy, mode = _case_by_id()[case_id][:5]
-    orig = getattr(fest.FESTSolver, HELPER_NAME)   # 없으면 AttributeError
+    orig = getattr(gedos.GEDOSSolver, HELPER_NAME)   # 없으면 AttributeError
     calls = []
 
     def _spy(self, *a, **kw):
         calls.append(1)
         return orig(self, *a, **kw)
 
-    monkeypatch.setattr(fest.FESTSolver, HELPER_NAME, _spy)
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    monkeypatch.setattr(gedos.GEDOSSolver, HELPER_NAME, _spy)
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
     m = geo_factory[geo]()
-    dp = _dp(fest, rs_j, mode, None)
+    dp = _dp(gedos, rs_j, mode, None)
     m.S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
               PARAMS["Rs"], VB, PARAMS["cf"], dp, mode)
     assert calls, f"{label}: {HELPER_NAME}를 한 번도 부르지 않았다"
@@ -875,7 +875,7 @@ def test_every_branch_calls_the_helper(fest, geo_factory, monkeypatch,
 # 2026-08-19 캡처 (Windows AMD64 · python 3.14.3 · numpy 2.4.3 · scipy 1.17.1 ·
 # numpy BLAS = scipy-openblas). 캡처 조건: conftest의 mono 지오메트리
 # (2x2mm, 8F+1BB, axis_segments_override=36), PARAMS, Vb=0.5,
-# FEST_LEGACY_LOCAL_MATCH=1, Rs_junction=0.0, _canonical_map.
+# GEDOS_LEGACY_LOCAL_MATCH=1, Rs_junction=0.0, _canonical_map.
 #
 # `sha256`은 `_voltage_field()`가 만든 float64 배열의 바이트다 — 비트 단위 증거.
 # `J`는 사람이 읽을 진단용이며 판정에도 함께 쓴다(어긋났을 때 크기를 보려고).
@@ -895,7 +895,7 @@ PHASE_A_PINS = {
 
 @pytest.mark.parametrize("target", [None, "j01", "j02", "gen", "rc"],
                          ids=["nomap", "j01", "j02", "gen", "rc"])
-def test_phase_a_full_area_values_are_pinned(fest, geo_factory, bit_pin_gate,
+def test_phase_a_full_area_values_are_pinned(gedos, geo_factory, bit_pin_gate,
                                              target):
     """Phase A / full_area의 현재 값을 **수정 전에** 못 박는다.
 
@@ -909,7 +909,7 @@ def test_phase_a_full_area_values_are_pinned(fest, geo_factory, bit_pin_gate,
         pytest.xfail(f"비트 핀 캡처 스택과 다름 ({bit_pin_gate}) — "
                      f"SuperLU/BLAS 차이로 비트 재현 불가")
     case = _case_by_id()["phaseA_full_area"]
-    obs = _cached(fest, geo_factory, case, target)
+    obs = _cached(gedos, geo_factory, case, target)
     exp_J, exp_sha = PHASE_A_PINS[target]
     assert obs.digest() == exp_sha, (
         f"Phase A / full_area (map={target}) 전압장이 캡처와 다르다.\n"
@@ -921,7 +921,7 @@ def test_phase_a_full_area_values_are_pinned(fest, geo_factory, bit_pin_gate,
 
 @pytest.mark.parametrize("case_id", sorted(ACTUAL_BRANCH))
 @pytest.mark.parametrize("target", IMPLEMENTED_TARGETS)
-def test_clearing_map_restores_bit_identical_result(fest, geo_factory,
+def test_clearing_map_restores_bit_identical_result(gedos, geo_factory,
                                                     case_id, target):
     """맵을 붙였다 **None으로 떼면** 무맵 결과와 비트 동일이다 — 6분기 전부.
 
@@ -936,23 +936,23 @@ def test_clearing_map_restores_bit_identical_result(fest, geo_factory,
     """
     case = _case_by_id()[case_id]
     label, geo, rs_j, legacy, mode = case[:5]
-    base = _cached(fest, geo_factory, case, None)
+    base = _cached(gedos, geo_factory, case, None)
 
-    prev = os.environ.get("FEST_LEGACY_LOCAL_MATCH")
-    os.environ["FEST_LEGACY_LOCAL_MATCH"] = "1" if legacy else ""
+    prev = os.environ.get("GEDOS_LEGACY_LOCAL_MATCH")
+    os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = "1" if legacy else ""
     try:
         m = geo_factory[geo]()
-        dp = _dp(fest, rs_j, mode, target)
-        fest.clear_spatial_map(dp, target)
-        assert fest.get_spatial_map(dp, target) is None
+        dp = _dp(gedos, rs_j, mode, target)
+        gedos.clear_spatial_map(dp, target)
+        assert gedos.get_spatial_map(dp, target) is None
         result = m.S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"],
                            PARAMS["rc"], PARAMS["Rs"], VB, PARAMS["cf"],
                            dp, mode)
     finally:
         if prev is None:
-            os.environ.pop("FEST_LEGACY_LOCAL_MATCH", None)
+            os.environ.pop("GEDOS_LEGACY_LOCAL_MATCH", None)
         else:
-            os.environ["FEST_LEGACY_LOCAL_MATCH"] = prev
+            os.environ["GEDOS_LEGACY_LOCAL_MATCH"] = prev
 
     assert np.array_equal(_voltage_field(result), base.V), (
         f"{label}: spatial_{target}를 붙였다 떼었더니 무맵 결과와 달라졌다 — "
@@ -963,7 +963,7 @@ def test_clearing_map_restores_bit_identical_result(fest, geo_factory,
 # 6. 함정 자체를 고정한다
 # =============================================================================
 
-def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
+def test_phase_b_gen_map_now_reaches_the_residual(gedos, geo_factory):
     """**판정 함정이 사라졌다는 것 자체를 고정한다.**
 
     v28.60에서 이 조합(Phase B / full_area + `gen`)은 이랬다:
@@ -981,8 +981,8 @@ def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
     > 전에도 참이었다. 새 물성을 추가할 때 판정은 항상 수렴 전압장으로 한다.
     """
     case = _case_by_id()["phaseB_full_area"]
-    no_map = _cached(fest, geo_factory, case, None)
-    with_map = _cached(fest, geo_factory, case, "gen")
+    no_map = _cached(gedos, geo_factory, case, None)
+    with_map = _cached(gedos, geo_factory, case, "gen")
 
     assert not np.array_equal(no_map.V, with_map.V), (
         "Phase B / full_area가 gen 맵을 잔차에 반영하지 않는다 — "
@@ -1011,7 +1011,7 @@ def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
 #
 # 그래서 두 겹으로 막는다.
 #   (1) 정규식을 임의 식별자로 넓혔다 (위 `INLINE_ASSEMBLY_RE`)
-#   (2) 조립을 GUI 밖 `FESTSolver.j0_decomposition`으로 옮겨 **Tk 없이 값으로**
+#   (2) 조립을 GUI 밖 `GEDOSSolver.j0_decomposition`으로 옮겨 **Tk 없이 값으로**
 #       검증한다 — 아래 테스트들. 식이 GUI 안에 있었던 것이 이 자리가 그동안
 #       테스트 밖이었던 직접적인 원인이다.
 # (1)만 두면 다음 우회는 또 다른 이름으로 새고, (2)만 두면 새 GUI 패널이 다시
@@ -1020,10 +1020,10 @@ def test_phase_b_gen_map_now_reaches_the_residual(fest, geo_factory):
 J0_PANEL_OWNER = "j0_decomposition"
 
 
-def test_j0_panel_helper_exists(fest):
+def test_j0_panel_helper_exists(gedos):
     """v28.66이 만든 조립 지점. GUI 밖이라 Tk 없이 부를 수 있다."""
-    assert hasattr(fest.FESTSolver, J0_PANEL_OWNER), (
-        f"FESTSolver.{J0_PANEL_OWNER}가 없다 — J0 패널 조립을 GUI 밖으로 "
+    assert hasattr(gedos.GEDOSSolver, J0_PANEL_OWNER), (
+        f"GEDOSSolver.{J0_PANEL_OWNER}가 없다 — J0 패널 조립을 GUI 밖으로 "
         f"꺼낸 것이 v28.66의 핵심이다")
 
 
@@ -1057,11 +1057,11 @@ def test_waterfall_tab_does_not_read_diode_scalars():
     ]
     assert not offenders, (
         f"_tab_waterfall가 다이오드 스칼라를 직독한다: {offenders} — "
-        f"맵이 반영될 수 없는 경로다. FESTSolver.{J0_PANEL_OWNER}를 쓸 것")
+        f"맵이 반영될 수 없는 경로다. GEDOSSolver.{J0_PANEL_OWNER}를 쓸 것")
 
 
 @pytest.mark.parametrize("mode,rs_j", [("tandem", None), ("single", 0.0)])
-def test_j0_decomposition_sees_the_map(fest, make_mono, mode, rs_j):
+def test_j0_decomposition_sees_the_map(gedos, make_mono, mode, rs_j):
     """맵을 붙이면 J0 분해가 **실제로** 움직인다.
 
     v28.65에서는 이 단언이 실패했다 — 맵을 붙여도 네 값이 1비트도 변하지
@@ -1071,13 +1071,13 @@ def test_j0_decomposition_sees_the_map(fest, make_mono, mode, rs_j):
     한쪽 맵이 반대쪽 칸까지 움직이면 헬퍼의 성분 분리가 깨진 것이다.
     """
     m = make_mono()
-    base = m.S.j0_decomposition(_dp(fest, rs_j, mode, None), mode=mode)
+    base = m.S.j0_decomposition(_dp(gedos, rs_j, mode, None), mode=mode)
 
     for target, moved, still in (("j01", ("pass_n1", "met_n1"),
                                   ("pass_n2", "met_n2")),
                                  ("j02", ("pass_n2", "met_n2"),
                                   ("pass_n1", "met_n1"))):
-        got = m.S.j0_decomposition(_dp(fest, rs_j, mode, target), mode=mode)
+        got = m.S.j0_decomposition(_dp(gedos, rs_j, mode, target), mode=mode)
         for k in moved:
             if base[k] == 0.0:
                 continue          # 기본값이 0인 칸은 배율로 움직일 수 없다
@@ -1089,7 +1089,7 @@ def test_j0_decomposition_sees_the_map(fest, make_mono, mode, rs_j):
                 f"{mode}/{target}: {k}까지 움직였다 — 성분 분리가 깨졌다")
 
 
-def test_j0_decomposition_uses_area_weighting(fest, make_mono):
+def test_j0_decomposition_uses_area_weighting(gedos, make_mono):
     """면적 가중이다 — 노드 단순 평균이 아니다.
 
     메시는 핑거 근처가 촘촘하다. 단순 평균은 그 영역을 과대 가중하므로,
@@ -1100,7 +1100,7 @@ def test_j0_decomposition_uses_area_weighting(fest, make_mono):
     이 단언은 무엇도 구분하지 못한다.
     """
     m = make_mono()
-    dp = _dp(fest, None, "tandem", None)
+    dp = _dp(gedos, None, "tandem", None)
     got = m.S.j0_decomposition(dp, mode="tandem")
 
     _dna = m.S._diode_node_arrays(dp, mode="tandem")
@@ -1116,14 +1116,14 @@ def test_j0_decomposition_uses_area_weighting(fest, make_mono):
         f"area={area_w!r}, mean={plain!r})")
 
 
-def test_j0_decomposition_weights_sum_to_one(fest, make_mono):
+def test_j0_decomposition_weights_sum_to_one(gedos, make_mono):
     """가중치의 합이 1이다 — `recomb_currents`와 같은 규약.
 
     이게 깨지면 J0가 통째로 배율만큼 어긋나는데, 표시 전용 값이라
     아무도 눈치채지 못한다. 무맵·균일 물성에서 스칼라와 같아야 한다.
     """
     m = make_mono()
-    dp = _dp(fest, None, "tandem", None)
+    dp = _dp(gedos, None, "tandem", None)
     dp.J01_top_pass = 1.0e-15
     dp.J01_top_metal = 1.0e-15      # pass/metal이 같으면 합은 metal_frac 무관
     got = m.S.j0_decomposition(dp, mode="tandem")

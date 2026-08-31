@@ -92,7 +92,7 @@
 
 `DiodeParams.Rs_junction = 5000.0`(`:1916`)이 클래스 기본값이고, `Rs_j ≤ 0`은
 `RS_JUNCTION_MIN`으로 클램프된다(`:4436-4440`). **Phase A는
-`FEST_LEGACY_LOCAL_MATCH` 환경변수로만 도달한다.**
+`GEDOS_LEGACY_LOCAL_MATCH` 환경변수로만 도달한다.**
 
 즉 정상 동작하는 유일한 tandem 칸이 레거시 전용이다. 아무것도 건드리지 않고
 GUI에서 맵을 불러오면 결함 경로로 간다.

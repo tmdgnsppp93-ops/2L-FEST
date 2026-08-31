@@ -17,7 +17,7 @@ echo "Building GEDOS with $PY ..."
     --name "GEDOS" \
     --collect-all customtkinter \
     --collect-all ezdxf \
-    2L_FEST.py
+    GEDOS.py
 
 echo
 echo "Done. Output in:  dist/"

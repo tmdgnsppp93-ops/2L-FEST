@@ -7,6 +7,7 @@ __pycache__/
 _validate_*_out.txt
 build/
 dist/
+build_venv/
 solcore_xval/*.npz
 solcore_xval/__pycache__/
 solcore_xval/compare_iv.png
@@ -21,8 +22,6 @@ scripts/scenarios/_*.png
 #   실험 결과 CSV(_*_results.csv)는 반대로 **추적한다** — 조건은
 #   _experiments_README.md에 기록되어 있다.
 GEDOS_Results.csv
-# 이름 변경 전(v28.68 이전) 산출물
-2L-FEST_Results.csv
 pytest.log
 _edgeopt_out.txt
 

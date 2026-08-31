@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""Presentation figure (KR/EN) for Dr. Kim — 2L-FEST (FEM) vs Solcore Quasi-3D.
+"""Presentation figure (KR/EN) for Dr. Kim — GEDOS (FEM) vs Solcore Quasi-3D.
 
 Loads compare_result.npz (realistic 10-finger cell). Table shows absolute AND
 relative differences; conclusion (Korean) explains WHY the gap appears and WHICH
@@ -50,7 +50,7 @@ fig = plt.figure(figsize=(13.8, 9.4), facecolor="white")
 gs = GridSpec(2, 2, figure=fig, height_ratios=[1, 1.05], width_ratios=[1, 1.2],
               hspace=0.34, wspace=0.2, left=0.06, right=0.975, top=0.845, bottom=0.055)
 
-fig.suptitle("2L-FEST (FEM)  vs  Solcore Quasi-3D (SPICE) — 단일셀 교차검증",
+fig.suptitle("GEDOS (FEM)  vs  Solcore Quasi-3D (SPICE) — 단일셀 교차검증",
              fontsize=15.5, fontweight="bold", y=0.97)
 fig.text(0.5, 0.927,
          f"{W*10:.0f}×{H*10:.0f} mm c-Si · {n_f}핑거 그리드 · 동일 2-diode/sheet-R/contact · "
@@ -75,7 +75,7 @@ axA.text(0.02, 0.98, f"{contacts.shape[0]}×{contacts.shape[1]} px @ {pix:.0f}um
 
 # (B) IV overlay -----------------------------------------------------------
 axB = fig.add_subplot(gs[0, 1])
-axB.plot(Vf, Jf, "o-", color=C_FEM, ms=4, lw=1.9, label="2L-FEST (FEM)")
+axB.plot(Vf, Jf, "o-", color=C_FEM, ms=4, lw=1.9, label="GEDOS (FEM)")
 axB.plot(Vs, Js, "s--", color=C_SPICE, ms=3, lw=1.6, label="Solcore Quasi-3D (SPICE)")
 axB.set_title("(B) 조사 I–V 곡선 비교", fontsize=11, fontweight="bold")
 axB.set_xlabel("전압 [V]"); axB.set_ylabel("전류밀도 J [mA/cm2]")
@@ -91,7 +91,7 @@ rows = [("Jsc [mA/cm2]", mf["Jsc"], ms["Jsc"]),
         ("Voc [V]",       mf["Voc"], ms["Voc"]),
         ("FF [%]",        mf["FF"],  ms["FF"]),
         ("Eff [%]",       mf["Eff"], ms["Eff"])]
-cells = [["지표", "2L-FEST", "Solcore", "절대차", "상대차%"]]
+cells = [["지표", "GEDOS", "Solcore", "절대차", "상대차%"]]
 colors = [["#1F2937"]*5]
 for name, a, b in rows:
     dabs = b - a; rel = 100*dabs/a if a else float("nan")
@@ -125,19 +125,19 @@ axD.text(0.0, 0.69,
     f"   (50um)라 핑거가 픽셀행을 통째로/2행에 걸쳐 금속노드化 →\n"
     f"   전기적 그늘 {shade_elec:.1f}% = 광학 그늘 {shade_opt:.1f}%의 약 2배.\n"
     f"   · Solcore Jsc 손실 {loss_s:.1f}% ≈ 전기적 그늘 {shade_elec:.1f}%  (일치)\n"
-    f"   · 2L-FEST Jsc 손실 {loss_f:.1f}% ≈ 광학 그늘 {shade_opt:.1f}%  (정상)\n"
+    f"   · GEDOS Jsc 손실 {loss_f:.1f}% ≈ 광학 그늘 {shade_opt:.1f}%  (정상)\n"
     f"   · sheet R=1로 낮춰도 갭 불변 → 수집(collection) 아님, 순수 그늘 확인.",
     transform=axD.transAxes, va="top", fontsize=8.7, color="#92400E", linespacing=1.4)
 axD.text(0.0, 0.265,
-    "[정확도]  이 항목은 2L-FEST가 더 정확하다.\n"
-    "   2L-FEST는 구속 FEM 메시가 핑거 경계를 메시 선에 정확히 올려 50um\n"
+    "[정확도]  이 항목은 GEDOS가 더 정확하다.\n"
+    "   GEDOS는 구속 FEM 메시가 핑거 경계를 메시 선에 정확히 올려 50um\n"
     "   핑거를 그대로 표현 → 그늘이 기하학적으로 정확. Solcore binary 픽셀은\n"
     "   픽셀>핑거인 한 구조적으로 과대 그늘(정합엔 픽셀<=핑거 필요, ngspice 한계).",
     transform=axD.transAxes, va="top", fontsize=8.7, color="#1E293B", linespacing=1.4)
 axD.add_patch(plt.Rectangle((-0.02, -0.02), 1.04, 1.0, transform=axD.transAxes,
               fill=False, ec="#cbd5e1", lw=1.0, clip_on=False))
 
-out = f"{HERE}/2LFEST_vs_Solcore_quasi3D.png"
+out = f"{HERE}/GEDOS_vs_Solcore_quasi3D.png"
 fig.savefig(out, dpi=160)
 print("saved", out)
 print("FIG_DONE")

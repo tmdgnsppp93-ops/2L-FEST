@@ -132,7 +132,7 @@ GUI가 `rc`의 힌트만 앰버로 칠하고 있었고, 그 조건이 `target ==
 
 ## 4. Griddler와 곱셈 방향이 반대다 — 이 작업에서 가장 중요한 사실
 
-| | Griddler | 2L-FEST |
+| | Griddler | GEDOS |
 |---|---|---|
 | 상태량 | **컨덕턴스** `G_shunt` | **저항** `Rsh` |
 | 단위 | S/cm² | Ω·cm² |

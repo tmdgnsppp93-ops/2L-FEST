@@ -4,7 +4,7 @@ for _s in (sys.stdout, sys.stderr):
     except Exception: pass
 import matplotlib; matplotlib.use("Agg", force=True); matplotlib.use=lambda *a,**k:None
 _H=os.path.dirname(os.path.abspath(__file__)); sys.path.insert(0,os.path.join(_H,"tests")); sys.path.insert(0,_H)
-import conftest; fest=conftest._load_fest()
+import conftest; gedos=conftest._load_gedos()
 from front_electrode import optimize_grid, apply_recovery, SCENARIO_MEASURED
 import csv
 pitches=[1.8,2.2,2.6]; nbbs=[6,8,10]; REC=0.25
@@ -12,7 +12,7 @@ rows=[]
 print("### edge_margin 0 vs 1.0mm 최적점 이동 (cell182 wf20 wbb0.20 rec0.25, pitch1.8~2.6×nbb6/8/10) ###", flush=True)
 print(f"  {'edge':>5} {'opt_nbb':>8} {'opt_pitch':>10} {'eff[%]':>8}", flush=True)
 for edge in (0.0, 1.0):
-    opt=optimize_grid(fest, cell_mm=182.0, finger_widths_um=[20.0], finger_pitches_mm=pitches,
+    opt=optimize_grid(gedos, cell_mm=182.0, finger_widths_um=[20.0], finger_pitches_mm=pitches,
         n_busbars_list=nbbs, busbar_widths_mm=[0.20], edge_margin_mm=edge,
         scenario=SCENARIO_MEASURED, recovery_factor=0.0, objective="efficiency",
         axis_segments_override=40, npts=6)

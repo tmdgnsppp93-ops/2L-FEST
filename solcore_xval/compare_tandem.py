@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""Tandem (2T) cross-validation: 2L-FEST (FEM) vs Solcore Quasi-3D (SPICE/FDM).
+"""Tandem (2T) cross-validation: GEDOS (FEM) vs Solcore Quasi-3D (SPICE/FDM).
 
 Phase-A recombination junction (vertical Rc) — the representation both solvers
 share; Solcore's series-junction model has no DOF for Phase-B lateral interlayer.
@@ -21,15 +21,15 @@ NFING = int(sys.argv[3]) if len(sys.argv) > 3 else 10
 HERE = os.path.dirname(os.path.abspath(__file__))
 EG_TOP, EG_BOT = 1.68, 1.12   # perovskite / Si bandgaps (Solcore ngspice diode; neutral at T=Tnom)
 
-# ---- 2L-FEST tandem (Phase A) ----
-FEST = os.path.join(os.path.dirname(HERE), "2L_FEST.py")
-spec = importlib.util.spec_from_file_location("fest", FEST)
+# ---- GEDOS tandem (Phase A) ----
+GEDOS = os.path.join(os.path.dirname(HERE), "GEDOS.py")
+spec = importlib.util.spec_from_file_location("gedos", GEDOS)
 m = importlib.util.module_from_spec(spec)
 try: spec.loader.exec_module(m)
 except SystemExit: pass
 m.messagebox.showinfo = m.messagebox.showerror = m.messagebox.showwarning = lambda *a, **k: None
 
-app = m.FESTProApp(); app.update_idletasks(); app.update()
+app = m.GEDOSApp(); app.update_idletasks(); app.update()
 app._mode_var.set("tandem")
 app._grid_input_mode_var.set("n_fingers")
 app.tb_hpat[0].delete(0, "end"); app.tb_hpat[0].insert(0, str(NFING))
@@ -42,7 +42,7 @@ rm, hf, wf, wb, cf, rc, rs = bp
 Vf, Jf, ivf = S.calc_iv(rm, hf, wf, rc, rs, cf, DP, mode="tandem", wb=wb)
 Vf = np.asarray(Vf); Jf = np.asarray(Jf)
 mf = dict(Jsc=ivf["Jsc"], Voc=ivf["Voc"], FF=ivf["FF"]/100.0, Pmax=ivf["Pmpp"])
-print(f"2L-FEST tandem: Jsc={mf['Jsc']:.2f} Voc={mf['Voc']:.3f} FF={mf['FF']*100:.1f} Eff={mf['Pmax']:.2f}")
+print(f"GEDOS tandem: Jsc={mf['Jsc']:.2f} Voc={mf['Voc']:.3f} FF={mf['FF']*100:.1f} Eff={mf['Pmax']:.2f}")
 
 rects = GEO.metal_rects_front(); W, H = GEO.W, GEO.H
 print(f"cell {W*10:.0f}x{H*10:.0f}mm n_f={GEO.n_f} w_f={GEO.w_f*1e4:.0f}um")
@@ -76,8 +76,8 @@ Vs, Js = run_quasi3d_tandem(injection, contacts, top=top, bot=bot, Rc_junction=0
                             Lx=Lcm*1e-2, Ly=Lcm*1e-2, vini=0.0, vfin=Vmax, step=VSTEP)
 ms = iv_metrics(Vs, Js)
 
-print("\n========  TANDEM (Phase A):  2L-FEST (FEM)  vs  Solcore Quasi-3D (SPICE/FDM)  ========")
-print(f"{'metric':14}{'2L-FEST':>12}{'Solcore':>12}{'abs':>12}{'rel %':>10}")
+print("\n========  TANDEM (Phase A):  GEDOS (FEM)  vs  Solcore Quasi-3D (SPICE/FDM)  ========")
+print(f"{'metric':14}{'GEDOS':>12}{'Solcore':>12}{'abs':>12}{'rel %':>10}")
 for name, a, b in [("Jsc [mA/cm2]", mf["Jsc"], ms["Jsc"]*1e3), ("Voc [V]", mf["Voc"], ms["Voc"]),
                    ("FF [%]", mf["FF"]*1e2, ms["FF"]*1e2), ("Eff [%]", mf["Pmax"], ms["Pmax"]*1e3)]:
     print(f"{name:14}{a:12.3f}{b:12.3f}{b-a:12.3f}{100*(b-a)/a if a else 0:10.2f}")

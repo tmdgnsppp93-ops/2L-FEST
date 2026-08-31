@@ -54,7 +54,7 @@ PCE_ref = PCE_act + (Ps + Prec + Psh + Pe + Pff + Pfb + Pc + Pj)
 ```
 
 `Ps_b` / `Prec_b` / `Psh_b` / `Pe_b` / `Pff_b` / `Pfb_b` / `Pc_b` / `Pj_b`는
-전부 `FESTSolver.losses()`가 돌려준 값이고, `losses()`는 `_diode_node_arrays`를
+전부 `GEDOSSolver.losses()`가 돌려준 값이고, `losses()`는 `_diode_node_arrays`를
 거치므로 **노드별 맵이 전부 반영돼 있다.**
 
 100 mW/cm² 입력이므로 `PCE[%] = Pmpp[mW/cm²]`이고, 손실 1 mW/cm²가 곧 PCE
@@ -146,7 +146,7 @@ Griddler 수치와 1:1로 맞대는 것이 목적이라면, 지금 워터폴을 
 > 왼쪽의 워터폴 막대는 `losses()`를 통해 맵이 반영된 값이었으므로, **한 화면
 > 안에서 두 값이 다른 물리를 말했다.** 오류도 경고도 없었다.
 >
-> v28.66이 `FESTSolver.j0_decomposition`으로 조립을 GUI 밖에 꺼내고
+> v28.66이 `GEDOSSolver.j0_decomposition`으로 조립을 GUI 밖에 꺼내고
 > `_diode_node_arrays`를 지나게 했다. 가중치도 노드 단순 평균에서
 > `recomb_currents`와 같은 **면적 가중**으로 바꿨다(메시가 핑거 근처에서
 > 촘촘해 단순 평균은 그 영역을 과대 가중한다).
@@ -159,8 +159,8 @@ Griddler 수치와 1:1로 맞대는 것이 목적이라면, 지금 워터폴을 
 
 | 무엇 | 어디 |
 |---|---|
-| 워터폴 막대 조립 | `FESTProApp._tab_waterfall` |
-| 손실 분해 원본 | `FESTSolver.losses` |
-| 손실 캐시 | `FESTProApp._run_both` (`Ps_b` / `Prec_b` / …) |
-| J0 분해 | `FESTSolver.j0_decomposition` (v28.66) |
-| 다이오드 노드 배열 | `FESTSolver._diode_node_arrays` |
+| 워터폴 막대 조립 | `GEDOSApp._tab_waterfall` |
+| 손실 분해 원본 | `GEDOSSolver.losses` |
+| 손실 캐시 | `GEDOSApp._run_both` (`Ps_b` / `Prec_b` / …) |
+| J0 분해 | `GEDOSSolver.j0_decomposition` (v28.66) |
+| 다이오드 노드 배열 | `GEDOSSolver._diode_node_arrays` |

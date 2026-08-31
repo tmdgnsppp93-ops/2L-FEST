@@ -165,7 +165,7 @@ PRO를 확보해 대조한 결과가 이 규약과 **어긋나면**:
 >
 > | | |
 > |---|---|
-> | **수정** | `FESTSolver._diode_node_arrays(dp, mode)` 신설 — 다이오드 노드 배열을 조립하는 **유일한** 경로 |
+> | **수정** | `GEDOSSolver._diode_node_arrays(dp, mode)` 신설 — 다이오드 노드 배열을 조립하는 **유일한** 경로 |
 > | **배선** | 소비 지점 **13개 함수 34줄** 전부(계획서가 예상한 9곳이 아니었다) |
 > | **결함 칸** | **12 → 0.** `RESIDUAL_SEES_MAP`의 `False`가 전부 `True`가 됐다 |
 > | **판정 파일** | `tests/test_spatial_branch_coverage.py` — **97 passed · 0 xfailed** (단위 0에서 65 passed · 32 xfailed) |
@@ -191,7 +191,7 @@ PRO를 확보해 대조한 결과가 이 규약과 **어긋나면**:
 `spatial_j01` · `spatial_j02` · `spatial_gen` 세 맵이 **프로덕션 tandem 설정
 전부에서 잔차에 반영되지 않는다.** `spatial_rc` 하나만 정상이다.
 
-`solve_tandem`이 배율을 계산하는 블록(`2L_FEST.py:4932`)보다 **앞에서** 다른
+`solve_tandem`이 배율을 계산하는 블록(`GEDOS.py:4932`)보다 **앞에서** 다른
 솔버로 빠져나가기 때문이다:
 
 ```
@@ -285,7 +285,7 @@ solve_tandem(:4828)
 
 `DiodeParams.Rs_junction = 5000.0`(`:1916`)이 **클래스 기본값**이고, `Rs_j ≤ 0`은
 `RS_JUNCTION_MIN = 0.1`로 클램프된다(`:4436-4440`). 즉 **Phase A는
-`FEST_LEGACY_LOCAL_MATCH` 환경변수로만 도달 가능한 레거시 경로**다.
+`GEDOS_LEGACY_LOCAL_MATCH` 환경변수로만 도달 가능한 레거시 경로**다.
 
 표에서 ✅가 붙은 유일한 tandem 칸이 그 레거시 경로다. **아무것도 건드리지 않고
 GUI에서 맵을 불러오면 결함 경로로 간다.**
@@ -357,7 +357,7 @@ v28.61은 이 결함을 고치면서 두 겹의 감시를 뒀다: 소스 검사
 v28.66이 한 일:
 - 정규식을 `mf` 고정에서 **임의 식별자**로 넓혔다(이름을 하나 더 넣는 것이
   아니라, 이름을 열거하는 방식 자체를 버렸다)
-- 조립을 GUI 밖 `FESTSolver.j0_decomposition`으로 꺼냈다 — 식이 GUI 안에 있었던
+- 조립을 GUI 밖 `GEDOSSolver.j0_decomposition`으로 꺼냈다 — 식이 GUI 안에 있었던
   것이 이 자리가 테스트 밖이었던 **직접적 원인**이다
 - `tests/test_spatial_branch_coverage.py` §7에 AST 기반 감시를 추가했다
   (`_tab_waterfall`가 다이오드 스칼라를 직독하지 않는다 — 문자열이 아니라 속성

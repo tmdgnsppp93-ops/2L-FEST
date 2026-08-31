@@ -57,9 +57,9 @@ pytest -q -m "not slow"
 그래서 핀 스택을 그대로 재현한 별도 venv를 만들어 다시 돌렸다.
 
 ```
-인터프리터  ~/.local/share/2lfest-pin/python/bin/python3.14
+인터프리터  ~/.local/share/gedos-pin/python/bin/python3.14
             python-build-standalone 릴리스 20260325 prebuilt, sha256 검증 통과
-venv        ~/.venvs/2lfest-pin        (저장소 밖, 소스 빌드 아님)
+venv        ~/.venvs/gedos-pin        (저장소 밖, 소스 빌드 아님)
 스택        python 3.14.3 / numpy 2.4.3 / scipy 1.17.1  = PINNED_STACK 완전 일치
 ```
 
@@ -299,7 +299,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 >
 > **2026-08-18에 발견된 결함이 해소됐다. 기능을 정상 사용할 수 있다.**
 >
-> `FESTSolver._diode_node_arrays(dp, mode)` 중앙화로 다이오드 노드 배열 조립
+> `GEDOSSolver._diode_node_arrays(dp, mode)` 중앙화로 다이오드 노드 배열 조립
 > 경로를 하나로 모으고, 소비 지점 **13개 함수 34줄 전부**를 배선했다.
 > 결함 칸 **12 → 0**, 판정 파일 `tests/test_spatial_branch_coverage.py`
 > **97 passed · 0 xfailed**, 비트 핀 2건 strict 통과.
@@ -324,7 +324,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 >
 > `spatial_j01` / `spatial_j02` / `spatial_gen` 3종이 **프로덕션 tandem 설정
 > 전부에서 잔차에 반영되지 않는다.** `spatial_rc` 1종만 정상이고, 단일셀은 영향
-> 없다. `solve_tandem`이 배율 블록(`2L_FEST.py:4932`)보다 앞에서 디스패치하기
+> 없다. `solve_tandem`이 배율 블록(`GEDOS.py:4932`)보다 앞에서 디스패치하기
 > 때문이다 — 네 분기(`:5224` `:5595` `:5914` `:6191`)가 `J01_top_arr`를 스칼라로만
 > 만든다.
 >
@@ -333,7 +333,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 > > 틀렸다 — `mf`가 이미 노드 길이 배열이다. 정정 근거는 §6 표와 단위 0 세션 기록.
 >
 > **기본 설정이 결함 경로다.** `Rs_junction = 5000`(`:1916`)이 클래스 기본값이고
-> Phase A는 `FEST_LEGACY_LOCAL_MATCH`로만 도달한다. 정상 동작하는 유일한 tandem
+> Phase A는 `GEDOS_LEGACY_LOCAL_MATCH`로만 도달한다. 정상 동작하는 유일한 tandem
 > 칸이 레거시 전용이다.
 >
 > **조용한 무효가 아니라 자기모순 값이다.** `cell_current`(`:6717`)가 맵을 무조건
@@ -529,7 +529,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 
 **6분기 모두 `대각 슬롯 == Ns`.** 조립이 대각을
 `J += csr_matrix((diag, (arange(Ns), arange(Ns))))`로 **통째로** 더하기 때문이고
-(`2L_FEST.py:5211-5213` 등), 값이 0인 대각도 슬롯으로 남는다. 함께 고정한 것:
+(`GEDOS.py:5211-5213` 등), 값이 0인 대각도 슬롯으로 남는다. 함께 고정한 것:
 
 - 한 solve에서 뉴턴 반복이 2~29회 돌아도 **패턴이 하나**
 - `Vb` 0.5 → 0.9에서 **패턴 동일** (시간 스텝마다 재조립이 강제되지 않는다)
@@ -585,7 +585,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # exit 
 ### 별건으로 기록된 것 (우선순위 0에서 남은 것)
 
 - **바닥 서브셀 pass/metal 가중** — 헬퍼가 `dp.J01_bot`(= `J01_bot_pass`)만 쓰고
-  `J01_bot_metal`은 아무도 읽지 않는다. `DiodeParams` 주석(`2L_FEST.py:1986`)이
+  `J01_bot_metal`은 아무도 읽지 않는다. `DiodeParams` 주석(`GEDOS.py:1986`)이
   예고해 둔 항목이다. v28.61은 v28.60 동작 보존이 조건이라 건드리지 않았다.
   상세: `docs/sessions/2026-08-19-spatial-branch-coverage-unit1.md` §5
 - **`_bf_v29`의 `Jph_b_eff`** — 원래부터 `illum_frac`이 없는 스칼라라 gen 맵을
@@ -714,7 +714,7 @@ GUI에 이미 노출된 기능이라 우선순위가 가장 높다 — 사용자
 **물리 변경: 있음.** 규모: 대.
 
 현재 횡전도 평면은 5개다 — `_Ke`(front TCO) / `_Kr`(rear emitter) / `_Krm`(rear metal)
-/ `_Km`(front metal) / `_K_junc`(interlayer). 선언부 `2L_FEST.py:3721-3730`.
+/ `_Km`(front metal) / `_K_junc`(interlayer). 선언부 `GEDOS.py:3721-3730`.
 **bulk 평면이 없다** — 벌크는 수직 방향으로만 다뤄지고 횡전도는 표면·금속·interlayer
 평면에만 존재한다.
 
@@ -722,7 +722,7 @@ GUI에 이미 노출된 기능이라 우선순위가 가장 높다 — 사용자
 
 1. **6번째 전도 평면 신설** — 조립(`assemble_K` 계열) + 미지 벡터 레이아웃(오프셋)
    + 잔차 + 야코비안. Phase B tandem 잔차가 **3개 분기**로 갈라져 있고(`_K_junc`를
-   쓰는 `Kint_c` 패턴이 `2L_FEST.py:4673` / `5046` / `5365` 부근에 각각 있다)
+   쓰는 `Kint_c` 패턴이 `GEDOS.py:4673` / `5046` / `5365` 부근에 각각 있다)
    **세 곳 모두 손봐야 한다.** 한 곳만 고치면 경로에 따라 결과가 갈린다.
 2. **입력 파라미터 신설** — 벌크 면저항 상당값. 단위계(Ω/sq vs Ω·cm)를 먼저 확정할 것.
    `Rs_junction`(횡)과 `Rc_junction`(수직)의 명명·단위 규약을 따르면 혼선이 적다.

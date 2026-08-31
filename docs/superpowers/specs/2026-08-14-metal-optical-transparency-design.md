@@ -1,7 +1,7 @@
 # Metal Optical Transparency 설계
 
 > **작성**: 2026-08-14
-> **대상 빌드**: `2L_FEST.py` v28.54, 브랜치 `fix/extraction-method-disable`
+> **대상 빌드**: `GEDOS.py` v28.54, 브랜치 `fix/extraction-method-disable`
 > **근거**: Griddler 2.5 & PRO Manual v7.0 §2.7 (p.28) — 2026-08-14 원문 확인
 > **관련**: `docs/audit_2026-08-13.md` §5 체크 2 (미구현 판정), `docs/griddler_feature_map.md` §2.4
 > **상태**: 설계 승인됨 (2026-08-14)

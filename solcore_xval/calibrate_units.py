@@ -5,7 +5,7 @@
 
 Uniform cell, negligible sheet resistance -> Solcore must reproduce the analytic
 2-diode IV from the SAME parameters. Validates the cm->SI unit mapping before any
-grid / 2L-FEST comparison. Voc/FF must match <1%; Jsc matches after the
+grid / GEDOS comparison. Voc/FF must match <1%; Jsc matches after the
 illuminated-area fraction (one busbar column is shaded).
 
     <solcore venv>/bin/python calibrate_units.py
@@ -13,7 +13,7 @@ illuminated-area fraction (one busbar column is shaded).
 import numpy as np
 from xval_common import run_quasi3d, iv_metrics, analytic_2diode
 
-# 2L-FEST single-cell defaults (cm units)
+# GEDOS single-cell defaults (cm units)
 P = dict(jsc=19.77e-3, j01=5.36e-15, j02=0.0, n1=1.0, n2=2.0, Rshunt=15000.0)
 Eg = 1.12
 

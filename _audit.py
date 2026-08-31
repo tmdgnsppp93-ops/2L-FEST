@@ -1,7 +1,7 @@
 # SPDX-FileCopyrightText: © 2026 KIST (Korea Institute of Science and Technology),
 #   Dr. Inho Kim's Solar Cell Research Team. Developed by Seunghoon Lee.
 # SPDX-License-Identifier: LicenseRef-KIST-Proprietary — see LICENSE.
-"""Headless audit of 2L-FEST computation surface across all modes/paths.
+"""Headless audit of GEDOS computation surface across all modes/paths.
 Exercises geometry variants, solver modes, analysis methods, 0D models,
 spatial maps, mesh metrics, and report-page rendering. Reports PASS/FAIL.
 """
@@ -11,7 +11,7 @@ matplotlib.use('Agg')
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
-spec = importlib.util.spec_from_file_location('fest', '2L_FEST.py')
+spec = importlib.util.spec_from_file_location('gedos', 'GEDOS.py')
 m = importlib.util.module_from_spec(spec)
 try:
     spec.loader.exec_module(m)
@@ -19,7 +19,7 @@ except SystemExit:
     pass
 
 GridDesign=m.GridDesign; CellGeometry=m.CellGeometry; DiodeParams=m.DiodeParams
-FESTSolver=m.FESTSolver; SpatialMap=m.SpatialMap
+GEDOSSolver=m.GEDOSSolver; SpatialMap=m.SpatialMap
 
 results = []
 def record(name, fn):
@@ -34,7 +34,7 @@ def record(name, fn):
 def make_solver(geo):
     pts, tri = m.generate_mesh(geo, mesh_tangent="Low", mesh_perp="Low")
     isf,isb,isp,ism,isrm,isrp = m.classify_nodes(pts, geo)
-    return FESTSolver(pts,tri,isf,isb,isp,ism,geo,isrm,isrp), pts, tri
+    return GEDOSSolver(pts,tri,isf,isb,isp,ism,geo,isrm,isrp), pts, tri
 
 P = dict(rm=1.6e-6, hf=10e-4, wf=40e-4, wb=50e-4, cf=0.785, rc=1e-3, Rs=55.0)
 def quick_iv(S, dp, mode, npts=6):
@@ -110,7 +110,7 @@ def analysis():
     loss = S0.losses(res,P['rm'],P['hf'],P['wf'],P['rc'],P['Rs'],P['cf'],dp,Vmpp=iv['Vmpp'],Jmpp=iv['Jmpp'],wb=P['wb'])
     rc = S0.recomb_currents(res, dp)
     cm = S0.current_matching_diagnostics(res, dp)
-    rs_ext, gsh = FESTSolver.extract_rs_gsh(Vs, Js)
+    rs_ext, gsh = GEDOSSolver.extract_rs_gsh(Vs, Js)
     h = m._iv_health(iv)
     assert all(np.isfinite(v) for v in [loss['Pe'],loss['Pc'],loss['P_shade'],loss['P_recomb']])
     assert all(np.isfinite(v) for v in rc.values())
@@ -166,7 +166,7 @@ def build_full_cache():
     res = iv.get('_mpp_result') or S.solve(rm,hf,wf,rc,rs,vmpp,cf,dp,mode='tandem',wb=wb)
     loss = S.losses(res,rm,hf,wf,rc,rs,cf,dp,Vmpp=iv['Vmpp'],Jmpp=iv['Jmpp'],wb=wb)
     Rc = S.recomb_currents(res, dp); cm = S.current_matching_diagnostics(res, dp)
-    rs_ext, gsh = FESTSolver.extract_rs_gsh(Vs, Js); health = m._iv_health(iv)
+    rs_ext, gsh = GEDOSSolver.extract_rs_gsh(Vs, Js); health = m._iv_health(iv)
     Pff=loss['Pf_finger']; Pfb=loss['Pf_busbar']
     base = dict(bp=bp,ap=ap,mode='tandem',Vs_b=Vs,Js_b=Js,iv_b=iv,Vs_a=Vs,Js_a=Js,iv_a=iv,
         Ve_b=res['Ve'],Vm_b=res['Vm'],Vt_b=res.get('Vtop'),Ve_a=res['Ve'],Vm_a=res['Vm'],Vt_a=res.get('Vtop'),

@@ -27,13 +27,13 @@
 측정 방법
 --------
 `Ns`(미지 벡터 길이)는 각 솔버 메서드의 **지역 변수**라 밖에서 읽을 수 없고,
-`solve()`가 돌려주는 dict에도 없다(`Vrm`은 반환되지 않는다 — `2L_FEST.py:6512`
+`solve()`가 돌려주는 dict에도 없다(`Vrm`은 반환되지 않는다 — `GEDOS.py:6512`
 부근의 반환 dict 참조). 그래서 **뉴턴 루프가 매 반복 부르는 `spsolve(J, -F)`를
 가로채 `J.shape[0]`을 읽는다.** 그것이 곧 `Ns`이고, 프로덕션 코드에 디버그 훅을
 남기지 않는다.
 
-⚠ `fest.spsolve` **하나만** 패치하면 안 된다. `_solve_tandem_junction`
-(`2L_FEST.py:5041`) · `_solve_tandem_junction_bf`(`:5392`) ·
+⚠ `gedos.spsolve` **하나만** 패치하면 안 된다. `_solve_tandem_junction`
+(`GEDOS.py:5041`) · `_solve_tandem_junction_bf`(`:5392`) ·
 `_solve_tandem_junction_bf_v29`(`:5733`)는 **메서드 안에서 다시 import** 하므로
 모듈 전역 패치가 무시된다. 원본 `scipy.sparse.linalg.spsolve`도 함께 패치해야
 6개 경로가 전부 잡힌다.
@@ -52,7 +52,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 # v28.66 §7이 카드 행 목록을 AST로 읽는다 — 인덱스 상수와 실제 행이
 # 갈리는 것을 소스에서 확인해야 Tk 없이 판정할 수 있다.
 SRC_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "2L_FEST.py")
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "GEDOS.py")
 
 # 핀 테스트와 같은 solve 인자 (tests/test_default_pin.py:19,
 # tests/test_spatial_map.py:34). 값이 갈리면 다른 파일과의 비교가 깨진다.
@@ -66,7 +66,7 @@ VB = 0.5   # 바이어스 지점. 분기 판정에는 값이 중요하지 않으
 #
 # ⚠ **2026-08-19 정정**: `_solve_single_bifacial`이 빠져 있었다. 그래서
 # `single_bifacial` 케이스가 `_INLINE`으로 판정됐고 — `solve_single`이
-# `2L_FEST.py:6396`에서 그리로 빠져나가는 것을 아무도 안 보고 있었다 —
+# `GEDOS.py:6396`에서 그리로 빠져나가는 것을 아무도 안 보고 있었다 —
 # `test_case_table_covers_every_reachable_named_solver`도 그 분기를 세지 않았다.
 # 감시하지 않는 분기는 "도달했다"로 카운트되지 않으므로 **통과했다.**
 #
@@ -113,7 +113,7 @@ def _build_args(dp):
 
 
 def _solve(m, dp, Vb=VB, mode="tandem"):
-    """solve() 한 번. 위치 인자 순서는 ``2L_FEST.py:6488``."""
+    """solve() 한 번. 위치 인자 순서는 ``GEDOS.py:6488``."""
     return m.S.solve(PARAMS["rm"], PARAMS["hf"], PARAMS["wf"], PARAMS["rc"],
                      PARAMS["Rs"], Vb, PARAMS["cf"], dp, mode)
 
@@ -123,7 +123,7 @@ def _cell_current(m, dp, Vb=VB, mode="tandem"):
     return float(m.S.cell_current(_solve(m, dp, Vb, mode), dp))
 
 
-def _probe(fest, m, dp, monkeypatch, Vb=VB, mode="tandem"):
+def _probe(gedos, m, dp, monkeypatch, Vb=VB, mode="tandem"):
     """한 번 풀면서 **어느 분기로 갔는지**와 **Ns**를 관측한다.
 
     Returns
@@ -134,7 +134,7 @@ def _probe(fest, m, dp, monkeypatch, Vb=VB, mode="tandem"):
     """
     calls = []
     for name in _NAMED_SOLVERS:
-        orig = getattr(fest.FESTSolver, name)
+        orig = getattr(gedos.GEDOSSolver, name)
 
         def _make(nm, o):
             def _wrapper(self, *a, **kw):
@@ -142,7 +142,7 @@ def _probe(fest, m, dp, monkeypatch, Vb=VB, mode="tandem"):
                 return o(self, *a, **kw)
             return _wrapper
 
-        monkeypatch.setattr(fest.FESTSolver, name, _make(name, orig))
+        monkeypatch.setattr(gedos.GEDOSSolver, name, _make(name, orig))
 
     shapes = []
     orig_spsolve = _sla.spsolve
@@ -154,19 +154,19 @@ def _probe(fest, m, dp, monkeypatch, Vb=VB, mode="tandem"):
     # 지역 import 경로(:5041 · :5392 · :5733)와 모듈 전역 경로(:4982 · :6194 ·
     # :6344 · :6463 · :5941) 양쪽을 덮는다. 하나만 하면 절반이 새어 나간다.
     monkeypatch.setattr(_sla, "spsolve", _spy)
-    monkeypatch.setattr(fest, "spsolve", _spy)
+    monkeypatch.setattr(gedos, "spsolve", _spy)
 
     _solve(m, dp, Vb, mode)
     return (calls[0] if calls else _INLINE), tuple(sorted(set(shapes)))
 
 
-def _observed_Ns(fest, m, dp, monkeypatch, Vb=VB, mode="tandem"):
+def _observed_Ns(gedos, m, dp, monkeypatch, Vb=VB, mode="tandem"):
     """관측된 미지 벡터 길이. 여러 값이 나오면 실패시킨다.
 
     한 번의 solve에서 서로 다른 Ns가 보이면 내부에서 레이아웃이 갈렸다는 뜻이고,
     그 경우 "이 설정의 Ns"를 하나로 말할 수 없다.
     """
-    _, ns = _probe(fest, m, dp, monkeypatch, Vb, mode)
+    _, ns = _probe(gedos, m, dp, monkeypatch, Vb, mode)
     assert len(ns) == 1, f"한 solve에서 Ns가 여러 개 관측됐다: {ns}"
     return ns[0]
 
@@ -180,8 +180,8 @@ def _plane_sizes(m):
     return N, Nm, Nrm
 
 
-def _dp(fest, rs_junction=None):
-    dp = fest.DiodeParams()
+def _dp(gedos, rs_junction=None):
+    dp = gedos.DiodeParams()
     if rs_junction is not None:
         dp.Rs_junction = rs_junction
     return dp
@@ -238,29 +238,29 @@ def geo_factory(make_mono, make_bifacial):
 
     session 스코프 `mono`/`bifacial`을 공유하면 이 파일이 남긴 warm-start가
     다른 파일의 값 테스트에 새어 나간다 — 특히 `_warm_V_junc_bf`가 있으면
-    연속법(homotopy) 램프가 통째로 생략된다(`2L_FEST.py:4713`).
+    연속법(homotopy) 램프가 통째로 생략된다(`GEDOS.py:4713`).
     """
     return {"mono": make_mono, "bifacial": make_bifacial}
 
 
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
-def test_dispatch_target_is_pinned(fest, geo_factory, monkeypatch, label, geo,
+def test_dispatch_target_is_pinned(gedos, geo_factory, monkeypatch, label, geo,
                                    rs_j, legacy, mode, expected_branch, ns_fn):
     """설정 → 잔차 분기 매핑을 고정한다.
 
     이것이 바뀌면 벌크 평면의 "지원 2 / 거부 5" 배치가 어긋난다.
     """
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
     m = geo_factory[geo]()
-    target, _ = _probe(fest, m, _dp(fest, rs_j), monkeypatch, mode=mode)
+    target, _ = _probe(gedos, m, _dp(gedos, rs_j), monkeypatch, mode=mode)
     assert target == expected_branch, (
         f"{label}: {expected_branch!r}로 가야 하는데 {target!r}로 갔다")
 
 
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
-def test_unknown_vector_layout_is_pinned(fest, geo_factory, monkeypatch, label,
+def test_unknown_vector_layout_is_pinned(gedos, geo_factory, monkeypatch, label,
                                          geo, rs_j, legacy, mode,
                                          expected_branch, ns_fn):
     """미지 벡터 길이를 오프셋 식으로 고정한다.
@@ -269,16 +269,16 @@ def test_unknown_vector_layout_is_pinned(fest, geo_factory, monkeypatch, label,
     이 값이 **변하지 않아야 한다** — 그것이 무벌크 경로 비트 동일의 근거다
     (계획 §비트 동일 근거: "0 행렬을 더함"이 아니라 "평면을 안 만듦").
     """
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
     m = geo_factory[geo]()
     N, Nm, Nrm = _plane_sizes(m)
-    observed = _observed_Ns(fest, m, _dp(fest, rs_j), monkeypatch, mode=mode)
+    observed = _observed_Ns(gedos, m, _dp(gedos, rs_j), monkeypatch, mode=mode)
     assert observed == ns_fn(N, Nm, Nrm), (
         f"{label}: Ns={observed}, 기대={ns_fn(N, Nm, Nrm)} "
         f"(N={N}, Nm={Nm}, Nrm={Nrm})")
 
 
-def test_case_table_covers_every_reachable_named_solver(fest, geo_factory,
+def test_case_table_covers_every_reachable_named_solver(gedos, geo_factory,
                                                         monkeypatch):
     """표가 **도달 가능한 이름 있는 솔버를 전부** 덮는지 확인한다.
 
@@ -289,8 +289,8 @@ def test_case_table_covers_every_reachable_named_solver(fest, geo_factory,
     reachable = set()
     for case in BRANCH_CASES:
         label, geo, rs_j, legacy, mode = case.values[:5]
-        monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
-        target, _ = _probe(fest, geo_factory[geo](), _dp(fest, rs_j),
+        monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+        target, _ = _probe(gedos, geo_factory[geo](), _dp(gedos, rs_j),
                            monkeypatch, mode=mode)
         if target != _INLINE:
             reachable.add(target)
@@ -298,10 +298,10 @@ def test_case_table_covers_every_reachable_named_solver(fest, geo_factory,
         f"표가 덮는 분기={sorted(covered)}, 실제 도달={sorted(reachable)}")
 
 
-def test_v29_schur_branch_is_unreachable(fest, geo_factory, monkeypatch):
+def test_v29_schur_branch_is_unreachable(gedos, geo_factory, monkeypatch):
     """`_solve_tandem_junction_bf_v29`는 solve()로 도달하지 않는다.
 
-    `solve_tandem`의 주석(`2L_FEST.py:4726` 부근)이 *"currently sub-optimal,
+    `solve_tandem`의 주석(`GEDOS.py:4726` 부근)이 *"currently sub-optimal,
     kept for future"*라고 적어 둔 그대로다. 벌크 평면을 넣지 않는 이유이므로
     (죽은 경로에 검증되지 않은 물리를 넣지 않는다) 그 전제를 고정한다.
 
@@ -310,8 +310,8 @@ def test_v29_schur_branch_is_unreachable(fest, geo_factory, monkeypatch):
     """
     for case in BRANCH_CASES:
         label, geo, rs_j, legacy, mode = case.values[:5]
-        monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
-        target, _ = _probe(fest, geo_factory[geo](), _dp(fest, rs_j),
+        monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+        target, _ = _probe(gedos, geo_factory[geo](), _dp(gedos, rs_j),
                            monkeypatch, mode=mode)
         assert target != "_solve_tandem_junction_bf_v29", (
             f"{label}에서 v29 Schur 분기에 도달했다 — 계획의 '거부' 판단을 "
@@ -326,40 +326,40 @@ def test_v29_schur_branch_is_unreachable(fest, geo_factory, monkeypatch):
 # 바뀌는가"다. 벌크 평면의 지원/거부 게이트(단위 5)가 바로 이 스위치들을 읽어
 # 판정하므로, 스위치 자체가 고정되어 있어야 한다.
 
-def test_rs_junction_switches_phase_a_to_phase_b(fest, make_mono, monkeypatch):
+def test_rs_junction_switches_phase_a_to_phase_b(gedos, make_mono, monkeypatch):
     """`Rs_junction`이 Phase A(3N+Nm) ↔ Phase B(4N+Nm)를 가른다.
 
     Phase B에서 interlayer 평면 하나가 늘면서 **Ns가 정확히 +N** 된다.
     벌크 평면이 할 일이 이것과 같은 형태다.
     """
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1")
     m = make_mono()
     N, Nm, _ = _plane_sizes(m)
 
-    ns_a = _observed_Ns(fest, m, _dp(fest, 0.0), monkeypatch)
-    ns_b = _observed_Ns(fest, m, _dp(fest, 100.0), monkeypatch)
+    ns_a = _observed_Ns(gedos, m, _dp(gedos, 0.0), monkeypatch)
+    ns_b = _observed_Ns(gedos, m, _dp(gedos, 100.0), monkeypatch)
 
     assert ns_a == 3 * N + Nm
     assert ns_b == 4 * N + Nm
     assert ns_b - ns_a == N, "평면 하나 추가 = 자유도 +N"
 
 
-def test_legacy_flag_is_required_to_reach_phase_a(fest, make_mono, monkeypatch):
+def test_legacy_flag_is_required_to_reach_phase_a(gedos, make_mono, monkeypatch):
     """플래그가 꺼져 있으면 `Rs_junction=0`이어도 Phase B로 간다.
 
-    `RS_JUNCTION_MIN` 클램프(`2L_FEST.py:4304-4306`) 때문이다 — Phase B가
+    `RS_JUNCTION_MIN` 클램프(`GEDOS.py:4304-4306`) 때문이다 — Phase B가
     production 모델이고 Phase A는 탈출구다. 벌크 평면을 Phase A에 넣지 않기로
     한 근거이므로(계획 §설계 결정 4) 그 전제를 고정한다.
     """
     m = make_mono()
     N, Nm, _ = _plane_sizes(m)
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "")
-    target, _ = _probe(fest, m, _dp(fest, 0.0), monkeypatch)
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "")
+    target, _ = _probe(gedos, m, _dp(gedos, 0.0), monkeypatch)
     assert target == "_solve_tandem_junction"
-    assert _observed_Ns(fest, m, _dp(fest, 0.0), monkeypatch) == 4 * N + Nm
+    assert _observed_Ns(gedos, m, _dp(gedos, 0.0), monkeypatch) == 4 * N + Nm
 
 
-def test_rear_mode_switches_layout_by_Nrm(fest, make_mono, make_bifacial,
+def test_rear_mode_switches_layout_by_Nrm(gedos, make_mono, make_bifacial,
                                           monkeypatch):
     """`rear_mode`가 rear metal 평면(`Nrm`)의 유무를 가른다.
 
@@ -370,13 +370,13 @@ def test_rear_mode_switches_layout_by_Nrm(fest, make_mono, make_bifacial,
     assert _plane_sizes(m_fa)[2] == 0, "full_area에는 rear metal 평면이 없다"
     assert _plane_sizes(m_bf)[2] > 0, "bifacial에는 rear metal 평면이 있다"
 
-    assert _probe(fest, m_fa, _dp(fest, 100.0), monkeypatch)[0] \
+    assert _probe(gedos, m_fa, _dp(gedos, 100.0), monkeypatch)[0] \
         == "_solve_tandem_junction"
-    assert _probe(fest, m_bf, _dp(fest, 100.0), monkeypatch)[0] \
+    assert _probe(gedos, m_bf, _dp(gedos, 100.0), monkeypatch)[0] \
         == "_solve_tandem_junction_bf"
 
 
-def test_mode_single_never_reaches_tandem_branches(fest, geo_factory,
+def test_mode_single_never_reaches_tandem_branches(gedos, geo_factory,
                                                    monkeypatch):
     """단일셀은 tandem 분기 어디에도 가지 않는다.
 
@@ -390,12 +390,12 @@ def test_mode_single_never_reaches_tandem_branches(fest, geo_factory,
     아니므로 명제는 여전히 참이다. 단언을 명제에 맞게 좁혔다.
     """
     for geo in ("mono", "bifacial"):
-        target, _ = _probe(fest, geo_factory[geo](), _dp(fest), monkeypatch,
+        target, _ = _probe(gedos, geo_factory[geo](), _dp(gedos), monkeypatch,
                            mode="single")
         assert target not in _TANDEM_SOLVERS, (
             f"단일셀({geo})이 tandem 분기 {target!r}로 갔다")
         # 도달 지점 자체는 지오메트리로 갈린다 — full_area는 인라인,
-        # bifacial은 `_solve_single_bifacial`(`2L_FEST.py:6396` 디스패치).
+        # bifacial은 `_solve_single_bifacial`(`GEDOS.py:6396` 디스패치).
         expected = _INLINE if geo == "mono" else "_solve_single_bifacial"
         assert target == expected, (
             f"단일셀({geo}): {expected!r}로 가야 하는데 {target!r}로 갔다")
@@ -405,7 +405,7 @@ def test_mode_single_never_reaches_tandem_branches(fest, geo_factory,
 # 3. 벌크 파라미터 도입 전 상태 — 단위 2가 뒤집을 기준선
 # =============================================================================
 
-def test_base_parameter_surface_is_exactly_one_field(fest):
+def test_base_parameter_surface_is_exactly_one_field(gedos):
     """벌크 횡전도가 추가한 입력은 **`Rs_base` 하나뿐**이다.
 
     단위 0에서는 이 테스트가 `not hasattr(...)`였다(아직 없다는 기준선).
@@ -416,23 +416,23 @@ def test_base_parameter_surface_is_exactly_one_field(fest):
     생기면 `Rs_vert_bot`과의 이중 계산 판정이 되살아나야 하므로
     (docs/base_lateral_convention.md §5) 여기서 감시한다.
     """
-    assert fest.DiodeParams.Rs_base is None
-    assert not hasattr(fest.DiodeParams, "Gv_base"), (
+    assert gedos.DiodeParams.Rs_base is None
+    assert not hasattr(gedos.DiodeParams, "Gv_base"), (
         "Gv_base가 생겼다 — 토폴로지가 β에서 α로 돌아갔다는 뜻이다. "
         "Rs_vert_bot 이중 계산 거부 판정을 되살릴 것 "
         "(docs/base_lateral_convention.md §5)")
 
 
-def test_no_base_plane_on_solver_yet(fest, make_mono):
+def test_no_base_plane_on_solver_yet(gedos, make_mono):
     """솔버에 `_K_base` 평면이 없다. 현재 횡전도 평면은 5개다."""
     m = make_mono()
-    m.S._build(**_build_args(_dp(fest, 100.0)))
+    m.S._build(**_build_args(_dp(gedos, 100.0)))
     assert not hasattr(m.S, "_K_base")
     for plane in ("_Ke", "_Kr", "_Km", "_K_junc"):
         assert hasattr(m.S, plane), f"{plane}가 없다 — 평면 인벤토리가 바뀌었다"
 
 
-def test_rs_vert_bot_is_a_post_hoc_lumped_correction(fest, make_mono,
+def test_rs_vert_bot_is_a_post_hoc_lumped_correction(gedos, make_mono,
                                                     monkeypatch):
     """`Rs_vert_bot`은 **FEM 밖**에서 터미널 IR 강하로 적용된다.
 
@@ -445,12 +445,12 @@ def test_rs_vert_bot_is_a_post_hoc_lumped_correction(fest, make_mono,
       (b) 값을 바꿔도 **미지 벡터 레이아웃이 변하지 않는다** = FEM 밖이다
     """
     m = make_mono()
-    assert fest.DiodeParams.Rs_vert_bot == 0.0
+    assert gedos.DiodeParams.Rs_vert_bot == 0.0
 
-    ns_zero = _observed_Ns(fest, m, _dp(fest, 100.0), monkeypatch)
-    dp = _dp(fest, 100.0)
+    ns_zero = _observed_Ns(gedos, m, _dp(gedos, 100.0), monkeypatch)
+    dp = _dp(gedos, 100.0)
     dp.Rs_vert_bot = 0.5
-    ns_set = _observed_Ns(fest, m, dp, monkeypatch)
+    ns_set = _observed_Ns(gedos, m, dp, monkeypatch)
     assert ns_zero == ns_set, (
         "Rs_vert_bot이 Ns를 바꾼다면 FEM 안에 들어와 있다는 뜻이고, "
         "계획 §설계 결정 3의 전제가 무너진다")
@@ -471,10 +471,10 @@ def test_rs_vert_bot_is_a_post_hoc_lumped_correction(fest, make_mono,
 # 코드가 바뀌어 이 숫자가 달라지면 규약이 무효가 되는데, 문서만으로는 알 수 없다.
 # 여기서 묶어 둔다.
 
-def test_assemble_K_is_linear_in_sheet_conductance(fest, make_mono):
+def test_assemble_K_is_linear_in_sheet_conductance(gedos, make_mono):
     """β의 수학적 근거 — 병렬 합성 = 행렬 덧셈.
 
-    `assemble_K`의 `coeff = 1/(4·A·Rs)`(2L_FEST.py:2649)가 1/Rs에 선형이라
+    `assemble_K`의 `coeff = 1/(4·A·Rs)`(GEDOS.py:2649)가 1/Rs에 선형이라
     성립한다. 이것이 깨지면 "유효 면저항을 한 번 계산"이 "두 평면을 더한 것"과
     달라져 규약 §1-4가 무효가 된다.
 
@@ -483,35 +483,35 @@ def test_assemble_K_is_linear_in_sheet_conductance(fest, make_mono):
     off 경로의 비트 동일이 깨진다.
     """
     m = make_mono()
-    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
-    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
-    Kp, _ = fest.assemble_K(m.pts, m.S.simp, 1.0 / (1 / 50.0 + 1 / 500.0),
+    Ka, _ = gedos.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = gedos.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    Kp, _ = gedos.assemble_K(m.pts, m.S.simp, 1.0 / (1 / 50.0 + 1 / 500.0),
                             m.S.areas, m.S.b, m.S.c)
     d = abs((Ka + Kb).tocsr() - Kp)
     rel = (d.max() if d.nnz else 0.0) / abs(Kp).max()
     assert rel < 1e-14, f"선형성이 깨졌다 (상대 {rel:.3e})"
 
 
-def test_assemble_K_sparsity_is_independent_of_sheet_resistance(fest, make_mono):
+def test_assemble_K_sparsity_is_independent_of_sheet_resistance(gedos, make_mono):
     """β의 구조적 근거 — 패턴이 같아야 Ns와 SuperLU 열 순열이 같다.
 
     면저항 값만 바꾸면 같은 메시에서 나온 행렬이므로 패턴이 같다. 이것이
     "미지 벡터 불변 → 7개 잔차 분기를 손댈 필요 없음"의 근거다.
     """
     m = make_mono()
-    Ka, _ = fest.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
-    Kb, _ = fest.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
+    Ka, _ = gedos.assemble_K(m.pts, m.S.simp, 50.0, m.S.areas, m.S.b, m.S.c)
+    Kb, _ = gedos.assemble_K(m.pts, m.S.simp, 500.0, m.S.areas, m.S.b, m.S.c)
     assert Ka.shape == Kb.shape
     assert Ka.nnz == Kb.nnz
     assert np.array_equal(Ka.indices, Kb.indices)
     assert np.array_equal(Ka.indptr, Kb.indptr)
 
 
-def test_full_area_rear_plane_is_an_ideal_equipotential(fest, make_mono):
+def test_full_area_rear_plane_is_an_ideal_equipotential(gedos, make_mono):
     """`full_area`를 거부하는 근거 — 후면이 완전 등전위다.
 
     `full_area`의 `_Kr`은 `assemble_K(Rs=0.001)` 하드코딩이고
-    (2L_FEST.py:4389-4390, `dp.Rs_rear_tco`를 무시한다) 그 결과 `Vr ≡ 0`이다.
+    (GEDOS.py:4389-4390, `dp.Rs_rear_tco`를 무시한다) 그 결과 `Vr ≡ 0`이다.
     `K_r @ 0 = 0`이므로 후면 평면의 면전도를 어떻게 바꿔도 결과가 수학적으로
     변하지 않는다.
 
@@ -519,13 +519,13 @@ def test_full_area_rear_plane_is_an_ideal_equipotential(fest, make_mono):
     되므로 규약 §3-4의 거부 판정을 다시 해야 한다.
     """
     m = make_mono()
-    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    Vr = np.asarray(_solve(m, _dp(gedos, 100.0))["Vr"])
     assert float(Vr.max() - Vr.min()) == 0.0, (
         f"full_area의 Vr에 전압강하가 생겼다 "
         f"(span={float(Vr.max() - Vr.min()):.3e} V)")
 
 
-def test_full_area_result_is_insensitive_to_rear_plane(fest, make_mono):
+def test_full_area_result_is_insensitive_to_rear_plane(gedos, make_mono):
     """위 성질의 직접 확인 — `_Kr`을 2배로 해도 전류가 **비트 동일**하다.
 
     `_build`는 `_cache_hash`가 같으면 조기 반환하므로, 여기서 평면을 직접 바꾸면
@@ -533,33 +533,33 @@ def test_full_area_result_is_insensitive_to_rear_plane(fest, make_mono):
     면전도 변경)을 미리 흉내 낸 것이다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j0 = _cell_current(m, dp)
     m.S._Kr = (m.S._Kr * 2.0).tocsr()      # 시트 컨덕턴스 2배 = Rs 절반
     assert _cell_current(m, dp) == j0
 
 
-def test_bifacial_rear_plane_carries_a_real_lateral_drop(fest, make_bifacial):
+def test_bifacial_rear_plane_carries_a_real_lateral_drop(gedos, make_bifacial):
     """`bifacial`은 반대다 — `Vr`에 실제 전압강하가 있다.
 
     그래서 벌크 횡전도가 의미를 갖는 유일한 모드이고, 지원 범위가
     `rear_mode ∈ {bifacial, patterned}`로 정해진다(규약 §1-5).
     """
     m = make_bifacial()
-    Vr = np.asarray(_solve(m, _dp(fest, 100.0))["Vr"])
+    Vr = np.asarray(_solve(m, _dp(gedos, 100.0))["Vr"])
     assert float(Vr.max() - Vr.min()) > 1e-3
 
 
-def test_bifacial_result_responds_to_rear_plane(fest, make_bifacial):
+def test_bifacial_result_responds_to_rear_plane(gedos, make_bifacial):
     """`bifacial`에서는 `_Kr` 변경이 전류를 실제로 바꾼다 — 벌크 항이 닿는 곳."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j0 = _cell_current(m, dp)
     m.S._Kr = (m.S._Kr * 2.0).tocsr()
     assert _cell_current(m, dp) != j0
 
 
-def test_rear_tco_feeds_only_the_rear_plane(fest, make_bifacial):
+def test_rear_tco_feeds_only_the_rear_plane(gedos, make_bifacial):
     """`Rs_rear_tco`가 **후면 평면 조립에만** 쓰이는지 확인한다.
 
     벌크를 이 값과 **병렬 합성**해 `assemble_K` 인자로 넣기로 한 근거다. 만약
@@ -571,8 +571,8 @@ def test_rear_tco_feeds_only_the_rear_plane(fest, make_bifacial):
     (test_hand_patched_plane_is_discarded_without_warmup 참조).
     """
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0)
-    dp2 = _dp(fest, 100.0)
+    dp1 = _dp(gedos, 100.0)
+    dp2 = _dp(gedos, 100.0)
     dp2.Rs_rear_tco = 1.0 / (1.0 / dp2.Rs_rear_tco + 1.0 / 500.0)
 
     m1.S._build(**_build_args(dp1))
@@ -590,11 +590,11 @@ def test_rear_tco_feeds_only_the_rear_plane(fest, make_bifacial):
     assert np.array_equal(m1.S._Gc_rear, m2.S._Gc_rear)
 
 
-def test_hand_patched_plane_is_discarded_without_warmup(fest, make_bifacial):
+def test_hand_patched_plane_is_discarded_without_warmup(gedos, make_bifacial):
     """⚠ **평면을 손으로 갈아 끼울 때의 함정** — 연속법 램프가 재빌드한다.
 
     `Rs_junction > 50`이면 `solve_tandem`이 `[50, 200, 1000, 5000, target]`으로
-    램프하며 **각 단계마다 `_build`를 부른다**(`2L_FEST.py:4713-4726`). 그 호출은
+    램프하며 **각 단계마다 `_build`를 부른다**(`GEDOS.py:4713-4726`). 그 호출은
     `Rs_junction`이 달라 캐시 해시가 어긋나므로 **전체 재빌드**가 일어나고, 손으로
     넣은 `_Kr`이 버려진다.
 
@@ -607,7 +607,7 @@ def test_hand_patched_plane_is_discarded_without_warmup(fest, make_bifacial):
     """
     def _patch_and_solve(warmup):
         m = make_bifacial()
-        dp = _dp(fest, 100.0)
+        dp = _dp(gedos, 100.0)
         m.S._build(**_build_args(dp))
         if warmup:
             _solve(m, dp)                       # warm-start 캐시를 채운다
@@ -639,22 +639,22 @@ def test_hand_patched_plane_is_discarded_without_warmup(fest, make_bifacial):
 # 재빌드가 일어나거나(느려짐) 반대로 바뀌었는데 안 일어난다(옛 결과 재사용).
 
 
-def test_rs_base_defaults_to_none(fest):
+def test_rs_base_defaults_to_none(gedos):
     """기본값은 off. 기존 사용자는 아무 영향을 받지 않는다."""
-    assert fest.DiodeParams.Rs_base is None
-    assert fest.DiodeParams().Rs_base is None
+    assert gedos.DiodeParams.Rs_base is None
+    assert gedos.DiodeParams().Rs_base is None
 
 
 # --- 5-a. 캐시 해시 — off에서 예전과 같은 거동인가 --------------------------
 
-def test_base_none_does_not_trigger_rebuild(fest, make_bifacial):
+def test_base_none_does_not_trigger_rebuild(gedos, make_bifacial):
     """`Rs_base = None`을 다시 넣어도 재빌드가 일어나지 않는다.
 
     off 슬롯이 상수가 아니면(예: `None`을 그대로 넣거나 매번 다른 객체를 넣으면)
     여기서 해시가 달라져 **아무것도 안 바뀌었는데 전체 재조립**이 일어난다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     h0 = m.S._cache_hash
     Kr0 = m.S._Kr
@@ -666,7 +666,7 @@ def test_base_none_does_not_trigger_rebuild(fest, make_bifacial):
     assert m.S._Kr is Kr0, "재빌드가 일어났다 — 조기 반환되지 않았다"
 
 
-def test_base_touches_exactly_one_hash_slot_and_off_is_a_constant(fest,
+def test_base_touches_exactly_one_hash_slot_and_off_is_a_constant(gedos,
                                                                   make_bifacial):
     """**이 절의 핵심 테스트.**
 
@@ -674,11 +674,11 @@ def test_base_touches_exactly_one_hash_slot_and_off_is_a_constant(fest,
     **상수 0**이어야 한다. 그래야 off 경로의 hit/miss 판정이 예전 필드들만으로
     결정된다 — 즉 캐시 거동이 이전과 완전히 같다.
 
-    공간 분포의 `_sm_tag`가 "맵 없으면 0"인 것과 같은 처리다(`2L_FEST.py:4314`
+    공간 분포의 `_sm_tag`가 "맵 없으면 0"인 것과 같은 처리다(`GEDOS.py:4314`
     주석). 슬롯을 여러 개 건드리면 이 논증이 성립하지 않는다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
 
     m.S._build(**_build_args(dp))
     h_off = m.S._cache_hash
@@ -697,7 +697,7 @@ def test_base_touches_exactly_one_hash_slot_and_off_is_a_constant(fest,
 
 
 def test_off_hash_slot_stays_constant_across_other_parameter_changes(
-        fest, make_bifacial):
+        gedos, make_bifacial):
     """다른 파라미터를 아무리 바꿔도 off 슬롯은 계속 0이다.
 
     "off일 때 상수"가 실제로 상수인지 확인한다 — 다른 값에 연동되면 상수가
@@ -708,24 +708,24 @@ def test_off_hash_slot_stays_constant_across_other_parameter_changes(
     for rs_front in (15.0, 20.0):
         for rc in (5e-3, 6e-3):
             for rs_j in (100.0, 300.0):
-                dp = _dp(fest, rs_j)
+                dp = _dp(gedos, rs_j)
                 args = _build_args(dp)
                 args["Rs_front"] = rs_front
                 args["rc"] = rc
                 m.S._build(**args)
                 h = m.S._cache_hash
-                seen.add(h[_base_slot(fest, make_bifacial)])
+                seen.add(h[_base_slot(gedos, make_bifacial)])
     assert seen == {0}, f"off 슬롯이 상수가 아니다: {seen}"
 
 
-def _base_slot(fest, make_bifacial):
+def _base_slot(gedos, make_bifacial):
     """`Rs_base`가 차지하는 해시 슬롯 번호를 실측으로 찾는다.
 
     인덱스를 테스트에 하드코딩하면 나중에 해시 튜플에 필드가 추가될 때 조용히
     엉뚱한 슬롯을 보게 된다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     off = m.S._cache_hash
     dp.Rs_base = 777.0
@@ -735,14 +735,14 @@ def _base_slot(fest, make_bifacial):
     return slot
 
 
-def test_base_change_invalidates_build_cache(fest, make_bifacial):
+def test_base_change_invalidates_build_cache(gedos, make_bifacial):
     """`Rs_base`를 바꾸면 반드시 재빌드된다.
 
     안 되면 **옛 `_Kr`이 조용히 재사용된다** — v28.56이 `id()` 캐시에서 겪은
     실패와 같은 형태이고, 오류도 경고도 없이 옛 결과가 나온다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     h0, Kr0 = m.S._cache_hash, m.S._Kr
 
@@ -754,10 +754,10 @@ def test_base_change_invalidates_build_cache(fest, make_bifacial):
     assert not np.array_equal(m.S._Kr.toarray(), Kr0.toarray())
 
 
-def test_base_on_then_off_restores_the_original_plane(fest, make_bifacial):
+def test_base_on_then_off_restores_the_original_plane(gedos, make_bifacial):
     """켰다 끄면 후면 평면이 **비트 단위로** 원래대로 돌아온다."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
     Kr_ref = m.S._Kr.copy()
 
@@ -772,7 +772,7 @@ def test_base_on_then_off_restores_the_original_plane(fest, make_bifacial):
 
 # --- 5-b. 병렬 합성이 규약대로인가 ------------------------------------------
 
-def test_base_off_assembles_the_legacy_rear_plane_exactly(fest, make_bifacial):
+def test_base_off_assembles_the_legacy_rear_plane_exactly(gedos, make_bifacial):
     """**off는 `assemble_K` 인자를 건드리지 않는다** — 산술적 비트 동일 근거.
 
     `Rs_base is None`이면 `Rs_r_eff`가 `Rs_rear_tco` 그 자체이므로 부동소수점
@@ -785,45 +785,45 @@ def test_base_off_assembles_the_legacy_rear_plane_exactly(fest, make_bifacial):
     `test_legacy_pin.py`(변경 전 값을 들고 있다)가 한다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))
-    K_ref, _ = fest.assemble_K(m.pts, m.S.simp, dp.Rs_rear_tco, m.S.areas,
+    K_ref, _ = gedos.assemble_K(m.pts, m.S.simp, dp.Rs_rear_tco, m.S.areas,
                                m.S.b, m.S.c)
     assert np.array_equal(m.S._Kr.toarray(), K_ref.toarray())
 
 
-def test_base_off_explicit_none_matches_unset(fest, make_bifacial):
+def test_base_off_explicit_none_matches_unset(gedos, make_bifacial):
     """`Rs_base = None`을 명시해도 미지정과 같은 결과다 (별개 솔버 비교)."""
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0)                      # 미지정
-    dp2 = _dp(fest, 100.0); dp2.Rs_base = None  # 명시적 None
+    dp1 = _dp(gedos, 100.0)                      # 미지정
+    dp2 = _dp(gedos, 100.0); dp2.Rs_base = None  # 명시적 None
     assert _cell_current(m1, dp1) == _cell_current(m2, dp2)
 
 
-def test_base_plane_equals_parallel_sheet_resistance(fest, make_bifacial):
+def test_base_plane_equals_parallel_sheet_resistance(gedos, make_bifacial):
     """벌크를 켠 후면 평면 == 병렬 합성 면저항으로 조립한 평면 (비트 동일).
 
     규약 §1-4(병렬 합)를 행렬 수준에서 직접 고정한다. 솔브를 태우지 않으므로
     연속법 램프·warm-start가 끼어들지 않는다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     m.S._build(**_build_args(dp))
 
     eff = 1.0 / (1.0 / dp.Rs_rear_tco + 1.0 / 500.0)
-    K_ref, _ = fest.assemble_K(m.pts, m.S.simp, eff, m.S.areas, m.S.b, m.S.c)
+    K_ref, _ = gedos.assemble_K(m.pts, m.S.simp, eff, m.S.areas, m.S.b, m.S.c)
     assert np.array_equal(m.S._Kr.toarray(), K_ref.toarray())
 
 
-def test_base_does_not_mutate_user_rear_tco(fest, make_bifacial):
+def test_base_does_not_mutate_user_rear_tco(gedos, make_bifacial):
     """`dp.Rs_rear_tco`는 사용자 입력 그대로 남는다.
 
     병렬 합성은 `assemble_K` **호출 인자**에서만 한다. `dp`를 제자리 수정하면
     GUI 표시와 캐시 해시가 사용자 입력과 어긋난다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     before = dp.Rs_rear_tco
     m.S._build(**_build_args(dp))
@@ -831,15 +831,15 @@ def test_base_does_not_mutate_user_rear_tco(fest, make_bifacial):
     assert dp.Rs_rear_tco == before
 
 
-def test_base_only_changes_the_rear_plane(fest, make_bifacial):
+def test_base_only_changes_the_rear_plane(gedos, make_bifacial):
     """벌크는 후면 평면에만 들어간다 — 다른 강성행렬은 불변이다.
 
     특히 `_Ke`(전면 TCO)에 새어 들어가면 안 된다. 그것은 페로브스카이트
     상부셀의 전극이라 실리콘 벌크와 무관하다(규약 §3-5).
     """
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0)
-    dp2 = _dp(fest, 100.0)
+    dp1 = _dp(gedos, 100.0)
+    dp2 = _dp(gedos, 100.0)
     dp2.Rs_base = 500.0
 
     m1.S._build(**_build_args(dp1))
@@ -854,32 +854,32 @@ def test_base_only_changes_the_rear_plane(fest, make_bifacial):
     assert np.array_equal(m1.S._Gc_rear, m2.S._Gc_rear)
 
 
-def test_unknown_layout_unchanged_by_base(fest, make_bifacial, monkeypatch):
+def test_unknown_layout_unchanged_by_base(gedos, make_bifacial, monkeypatch):
     """**β의 핵심** — 벌크를 켜도 미지 벡터가 변하지 않는다.
 
     이것이 성립해야 잔차 분기 7곳을 손대지 않아도 된다.
     """
     m = make_bifacial()
     N, Nm, Nrm = _plane_sizes(m)
-    dp = _dp(fest, 100.0)
-    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+    dp = _dp(gedos, 100.0)
+    assert _observed_Ns(gedos, m, dp, monkeypatch) == 4 * N + Nm + Nrm
     dp.Rs_base = 500.0
-    assert _observed_Ns(fest, m, dp, monkeypatch) == 4 * N + Nm + Nrm
+    assert _observed_Ns(gedos, m, dp, monkeypatch) == 4 * N + Nm + Nrm
 
 
 # --- 5-c. 값 제약 ------------------------------------------------------------
 
 @pytest.mark.parametrize("bad", [0.0, -1.0, -500.0,
                                  float("nan"), float("inf"), float("-inf")])
-def test_base_rejects_non_positive_or_non_finite(fest, make_bifacial, bad):
+def test_base_rejects_non_positive_or_non_finite(gedos, make_bifacial, bad):
     """면저항은 유한하고 양수여야 한다.
 
     0은 무한 컨덕턴스라 물리적으로 성립하지 않고, `assemble_K`의
-    `coeff = 1/(4·A·Rs)`가 0으로 나눈다(`2L_FEST.py:2649`). 조용히 고치지 않고
+    `coeff = 1/(4·A·Rs)`가 0으로 나눈다(`GEDOS.py:2649`). 조용히 고치지 않고
     거부한다(v28.43·v28.54·v28.57 전례).
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = bad
     with pytest.raises(ValueError) as exc:
         m.S._build(**_build_args(dp))
@@ -888,14 +888,14 @@ def test_base_rejects_non_positive_or_non_finite(fest, make_bifacial, bad):
     assert "None" in msg          # 끄는 방법을 알려준다
 
 
-def test_base_rejects_non_numeric(fest, make_bifacial):
+def test_base_rejects_non_numeric(gedos, make_bifacial):
     """숫자가 아니면 거부한다 — np.isfinite가 TypeError로 터지기 전에 잡는다.
 
     숫자 문자열("500")은 float()이 받으므로 거부 대상이 아니다 —
     `_parse_gui_float`가 GUI 입력을 문자열로 받는 것과 같은 관용이다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     for bad in ("abc", [500.0], {"Rs": 500}, object()):
         dp.Rs_base = bad
         with pytest.raises(ValueError) as exc:
@@ -903,7 +903,7 @@ def test_base_rejects_non_numeric(fest, make_bifacial):
         assert "Rs_base" in str(exc.value)
 
 
-def test_zero_is_rejected_so_the_off_sentinel_cannot_collide(fest,
+def test_zero_is_rejected_so_the_off_sentinel_cannot_collide(gedos,
                                                              make_bifacial):
     """off 센티넬 0이 **유효한 값과 충돌하지 않음**을 보장한다.
 
@@ -912,13 +912,13 @@ def test_zero_is_rejected_so_the_off_sentinel_cannot_collide(fest,
     같다 — 유효한 content_key()는 절대 0이 아니다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 0.0
     with pytest.raises(ValueError):
         m.S._build(**_build_args(dp))
 
 
-def test_base_validation_runs_before_the_cache_early_return(fest,
+def test_base_validation_runs_before_the_cache_early_return(gedos,
                                                             make_bifacial):
     """잘못된 값은 **캐시 적중이어도** 거부한다.
 
@@ -926,17 +926,17 @@ def test_base_validation_runs_before_the_cache_early_return(fest,
     그냥 통과한다. 값 제약은 v28.57 로더와 같이 **진입 시점에** 끝낸다.
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     m.S._build(**_build_args(dp))          # 캐시를 채운다
     dp.Rs_base = -1.0
     with pytest.raises(ValueError):
         m.S._build(**_build_args(dp))
 
 
-def test_base_accepts_int_and_normalizes(fest, make_bifacial):
+def test_base_accepts_int_and_normalizes(gedos, make_bifacial):
     """정수 입력도 받되 해시는 float으로 정규화한다 — 500과 500.0이 같아야 한다."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500
     m.S._build(**_build_args(dp))
     h_int = m.S._cache_hash
@@ -947,21 +947,21 @@ def test_base_accepts_int_and_normalizes(fest, make_bifacial):
 
 # --- 5-d. 물리 방향 ----------------------------------------------------------
 
-def test_base_lowers_effective_rear_sheet_resistance(fest, make_bifacial):
+def test_base_lowers_effective_rear_sheet_resistance(gedos, make_bifacial):
     """벌크가 병렬로 붙으면 유효 면저항이 **내려간다** (전도가 좋아진다).
 
     후면 평면 강성이 커지는 것으로 확인한다 — 값이 아니라 방향을 본다.
     """
     m1, m2 = make_bifacial(), make_bifacial()
-    dp1 = _dp(fest, 100.0)
-    dp2 = _dp(fest, 100.0)
+    dp1 = _dp(gedos, 100.0)
+    dp2 = _dp(gedos, 100.0)
     dp2.Rs_base = 500.0
     m1.S._build(**_build_args(dp1))
     m2.S._build(**_build_args(dp2))
     assert abs(m2.S._Kr).max() > abs(m1.S._Kr).max()
 
 
-def test_base_large_sheet_r_approaches_off(fest, make_bifacial):
+def test_base_large_sheet_r_approaches_off(gedos, make_bifacial):
     """`Rs_base` → ∞ 이면 off에 수렴한다.
 
     비트 동일은 기대하지 않는다 — `1/(1/Rs + 1e-12)`가 `Rs`와 비트 동일하지
@@ -969,7 +969,7 @@ def test_base_large_sheet_r_approaches_off(fest, make_bifacial):
     (`docs/registration_material.md` §5-1의 두 층 구분).
     """
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j_off = _cell_current(m, dp)
     dp.Rs_base = 1e12
     assert _cell_current(m, dp) == pytest.approx(j_off, rel=1e-9)
@@ -992,10 +992,10 @@ def test_base_large_sheet_r_approaches_off(fest, make_bifacial):
 # 거치므로 한 곳이면 충분하다.
 
 
-def test_full_area_rejects_base_lateral(fest, make_mono):
+def test_full_area_rejects_base_lateral(gedos, make_mono):
     """`full_area`는 후면을 이상적 접촉으로 두므로 벌크 횡전도를 표현할 수 없다."""
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     with pytest.raises(ValueError) as exc:
         _solve(m, dp)
@@ -1006,33 +1006,33 @@ def test_full_area_rejects_base_lateral(fest, make_mono):
     assert "None" in msg                              # 끄는 방법
 
 
-def test_full_area_rejects_at_build_not_at_solve(fest, make_mono):
+def test_full_area_rejects_at_build_not_at_solve(gedos, make_mono):
     """`_build` 진입 시점에 거부한다 — 솔버가 돌기 전에 끝낸다.
 
     솔브 중간에 터지면 사용자는 무엇이 문제인지 알기 어렵고, 반쯤 조립된
     상태가 남는다. v28.57 로더가 "값 제약은 읽는 시점에"로 정리한 것과 같다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     with pytest.raises(ValueError):
         m.S._build(**_build_args(dp))
 
 
-def test_full_area_is_silent_when_base_is_off(fest, make_mono):
+def test_full_area_is_silent_when_base_is_off(gedos, make_mono):
     """`Rs_base`가 None이면 `full_area`도 예전처럼 조용히 잘 돈다."""
     m = make_mono()
-    assert _cell_current(m, _dp(fest, 100.0)) > 0
+    assert _cell_current(m, _dp(gedos, 100.0)) > 0
 
 
-def test_rejection_leaves_the_solver_usable(fest, make_mono):
+def test_rejection_leaves_the_solver_usable(gedos, make_mono):
     """거부 후에도 솔버가 멀쩡해야 한다 — 반쯤 적용된 상태가 남지 않는다.
 
     게이트가 해시를 갱신한 뒤에 있으면 `_cache_hash`만 바뀌고 평면은 옛것인
     상태가 남는다. 게이트를 조립보다 **먼저** 두는 이유다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j_ref = _cell_current(m, dp)
 
     dp.Rs_base = 500.0
@@ -1043,32 +1043,32 @@ def test_rejection_leaves_the_solver_usable(fest, make_mono):
     assert _cell_current(m, dp) == pytest.approx(j_ref, rel=1e-12)
 
 
-def test_bifacial_accepts_base_lateral(fest, make_bifacial):
+def test_bifacial_accepts_base_lateral(gedos, make_bifacial):
     """`bifacial`은 통과하고, 결과가 실제로 달라진다."""
     m = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     j_off = _cell_current(m, dp)
     dp.Rs_base = 500.0
     assert _cell_current(m, dp) != j_off
 
 
-def test_single_mode_bifacial_supports_base(fest, make_bifacial):
+def test_single_mode_bifacial_supports_base(gedos, make_bifacial):
     """단일셀도 `rear_mode`만 맞으면 지원한다.
 
     β에서는 `_Kr` 하나만 바뀌므로 tandem/single 구분이 무의미하다. 초안이
     단일셀을 제외한 이유("잔차 지점이 별개")가 사라졌다.
     """
     m = make_bifacial()
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     j_off = _cell_current(m, dp, mode="single")
     dp.Rs_base = 500.0
     assert _cell_current(m, dp, mode="single") != j_off
 
 
-def test_single_mode_full_area_rejects_base(fest, make_mono):
+def test_single_mode_full_area_rejects_base(gedos, make_mono):
     """단일셀 + full_area도 마찬가지로 거부한다 — 기준은 rear_mode다."""
     m = make_mono()
-    dp = fest.DiodeParams()
+    dp = gedos.DiodeParams()
     dp.Rs_base = 500.0
     with pytest.raises(ValueError):
         _solve(m, dp, mode="single")
@@ -1077,7 +1077,7 @@ def test_single_mode_full_area_rejects_base(fest, make_mono):
 @pytest.mark.parametrize(
     "label,geo,rs_j,legacy,mode,expected_branch,ns_fn", BRANCH_CASES)
 def test_base_gate_follows_the_rear_plane_not_the_phase(
-        fest, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
+        gedos, geo_factory, monkeypatch, label, geo, rs_j, legacy, mode,
         expected_branch, ns_fn):
     """**지원 여부는 `rear_mode`(= `Nrm` 유무)만으로 결정된다.**
 
@@ -1085,10 +1085,10 @@ def test_base_gate_follows_the_rear_plane_not_the_phase(
     같은 규칙을 적용해 확인한다 — 초안의 "7곳 중 2곳 지원 + 5곳 거부"가 β에서
     "후면 평면이 실제인 곳은 전부 지원"으로 단순해졌다는 것의 검증이다.
     """
-    monkeypatch.setenv("FEST_LEGACY_LOCAL_MATCH", "1" if legacy else "")
+    monkeypatch.setenv("GEDOS_LEGACY_LOCAL_MATCH", "1" if legacy else "")
     m = geo_factory[geo]()
     _, _, Nrm = _plane_sizes(m)
-    dp = _dp(fest, rs_j)
+    dp = _dp(gedos, rs_j)
     dp.Rs_base = 500.0
 
     if Nrm > 0:
@@ -1099,7 +1099,7 @@ def test_base_gate_follows_the_rear_plane_not_the_phase(
         assert "Rs_base" in str(exc.value)
 
 
-def test_gate_and_rear_assembly_share_one_condition(fest, make_mono,
+def test_gate_and_rear_assembly_share_one_condition(gedos, make_mono,
                                                     make_bifacial):
     """게이트와 후면 조립 분기가 **같은 조건**을 봐야 한다.
 
@@ -1110,30 +1110,30 @@ def test_gate_and_rear_assembly_share_one_condition(fest, make_mono,
     접촉)이고, 통과하는 설정에서는 그렇지 않다.
     """
     m_fa = make_mono()
-    m_fa.S._build(**_build_args(_dp(fest, 100.0)))
-    K_ideal, _ = fest.assemble_K(m_fa.pts, m_fa.S.simp, 0.001, m_fa.S.areas,
+    m_fa.S._build(**_build_args(_dp(gedos, 100.0)))
+    K_ideal, _ = gedos.assemble_K(m_fa.pts, m_fa.S.simp, 0.001, m_fa.S.areas,
                                  m_fa.S.b, m_fa.S.c)
     assert np.array_equal(m_fa.S._Kr.toarray(), K_ideal.toarray()), (
         "거부 대상인 full_area의 후면이 이상적 접촉이 아니다 — 게이트 근거가 "
         "무너졌다")
 
     m_bf = make_bifacial()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     m_bf.S._build(**_build_args(dp))
-    K_ideal_bf, _ = fest.assemble_K(m_bf.pts, m_bf.S.simp, 0.001, m_bf.S.areas,
+    K_ideal_bf, _ = gedos.assemble_K(m_bf.pts, m_bf.S.simp, 0.001, m_bf.S.areas,
                                     m_bf.S.b, m_bf.S.c)
     assert not np.array_equal(m_bf.S._Kr.toarray(), K_ideal_bf.toarray())
 
 
-def test_rejection_message_names_the_actual_rear_mode(fest, make_mono):
+def test_rejection_message_names_the_actual_rear_mode(gedos, make_mono):
     """오류 메시지가 **현재 rear_mode를 그대로** 알려준다.
 
     "지원하지 않는다"만 적으면 사용자는 자기 설정이 무엇인지 모른 채 추측하게
     된다. v28.57 로더가 파일명·행·열·값을 적은 것과 같은 이유다.
     """
     m = make_mono()
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     with pytest.raises(ValueError) as exc:
         _solve(m, dp)
@@ -1156,15 +1156,15 @@ def test_rejection_message_names_the_actual_rear_mode(fest, make_mono):
 # `_apply_diode_params` 안에 있으면 Tk 없이 확인할 수 없고, 확인할 수 없는
 # 규칙은 조용히 어긋난다(§같은 판단: v28.66의 J0 패널).
 
-def test_rs_base_input_blank_means_off(fest):
+def test_rs_base_input_blank_means_off(gedos):
     """빈칸 = None(끔). 공백만 있어도 같다."""
     for text in ("", "   ", "\t", None):
-        val, err = fest.parse_rs_base_input(text, "bifacial")
+        val, err = gedos.parse_rs_base_input(text, "bifacial")
         assert err is None, f"{text!r}: 빈칸인데 거부됐다 ({err})"
         assert val is None, f"{text!r}: 빈칸인데 {val!r}이 됐다"
 
 
-def test_rs_base_input_zero_is_not_off(fest):
+def test_rs_base_input_zero_is_not_off(gedos):
     """**0은 "끔"이 아니다.**
 
     엔진이 `Rs_base <= 0`을 거부한다(0은 무한 컨덕턴스 →
@@ -1173,44 +1173,44 @@ def test_rs_base_input_zero_is_not_off(fest):
     않는다.** 그래서 거부하고 안내한다.
     """
     for text in ("0", "0.0", "-1", "-0.5"):
-        val, err = fest.parse_rs_base_input(text, "bifacial")
+        val, err = gedos.parse_rs_base_input(text, "bifacial")
         assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
         assert val is None
 
 
-def test_rs_base_input_rejects_non_numeric(fest):
+def test_rs_base_input_rejects_non_numeric(gedos):
     for text in ("abc", "5 ohm", "1e", "--3"):
-        val, err = fest.parse_rs_base_input(text, "bifacial")
+        val, err = gedos.parse_rs_base_input(text, "bifacial")
         assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
 
 
-def test_rs_base_input_rejects_non_finite(fest):
+def test_rs_base_input_rejects_non_finite(gedos):
     """inf/nan은 숫자로 읽히지만 면저항이 아니다."""
     for text in ("inf", "-inf", "nan"):
-        val, err = fest.parse_rs_base_input(text, "bifacial")
+        val, err = gedos.parse_rs_base_input(text, "bifacial")
         assert err == 'rs_base_bad', f"{text!r}가 통과했다 (val={val!r})"
 
 
 @pytest.mark.parametrize("rear_mode", ["bifacial", "patterned"])
-def test_rs_base_input_accepts_on_conducting_rear(fest, rear_mode):
-    val, err = fest.parse_rs_base_input("500", rear_mode)
+def test_rs_base_input_accepts_on_conducting_rear(gedos, rear_mode):
+    val, err = gedos.parse_rs_base_input("500", rear_mode)
     assert err is None
     assert val == 500.0
 
 
 @pytest.mark.parametrize("rear_mode", ["full_area", "", None, "mono"])
-def test_rs_base_input_rejected_on_full_area(fest, rear_mode):
+def test_rs_base_input_rejected_on_full_area(gedos, rear_mode):
     """§6의 엔진 게이트와 **같은 사실**을 GUI에서 먼저 말한다.
 
     조용히 None으로 떨어뜨리지 않는다 — 값을 받아 놓고 아무 효과가 없는 것이
     이 저장소가 반복해서 거부해 온 실패 형태다(v28.43 · v28.54 · v28.57).
     """
-    val, err = fest.parse_rs_base_input("500", rear_mode)
+    val, err = gedos.parse_rs_base_input("500", rear_mode)
     assert err == 'rs_base_full_area', f"{rear_mode!r}에서 통과했다 (val={val!r})"
     assert val is None
 
 
-def test_rs_base_gui_rejection_agrees_with_the_engine(fest, make_mono):
+def test_rs_base_gui_rejection_agrees_with_the_engine(gedos, make_mono):
     """GUI가 막는 조건과 엔진이 던지는 조건이 **같아야** 한다.
 
     둘이 갈리면 두 가지 중 하나가 된다 — GUI만 막으면 스크립트 경로가 뚫리고,
@@ -1220,16 +1220,16 @@ def test_rs_base_gui_rejection_agrees_with_the_engine(fest, make_mono):
     m = make_mono()
     assert m.S.geo.rear_mode == 'full_area'
 
-    _, err = fest.parse_rs_base_input("500", m.S.geo.rear_mode)
+    _, err = gedos.parse_rs_base_input("500", m.S.geo.rear_mode)
     assert err == 'rs_base_full_area', "GUI가 막지 않는다"
 
-    dp = _dp(fest, 100.0)
+    dp = _dp(gedos, 100.0)
     dp.Rs_base = 500.0
     with pytest.raises(ValueError):
         _solve(m, dp)          # 엔진도 막는다 — 같은 조건
 
 
-def test_rs_base_i18n_keys_exist_in_both_languages(fest):
+def test_rs_base_i18n_keys_exist_in_both_languages(gedos):
     """라벨·안내가 KO/EN 양쪽에 있어야 한다.
 
     한쪽만 넣으면 그 자리만 다른 언어로 뜬다. `_TR` 테이블은
@@ -1240,24 +1240,24 @@ def test_rs_base_i18n_keys_exist_in_both_languages(fest):
                 'rs_base_hint',                       # v28.67
                 'rs_junction', 'rs_junction_hint',    # v28.67
                 'rc_junction', 'rc_junction_hint'):   # v28.67
-        assert key in fest._TR, f"{key}가 _TR에 없다"
+        assert key in gedos._TR, f"{key}가 _TR에 없다"
         for lang in ('EN', 'KR'):
-            assert fest._TR[key].get(lang), f"{key}[{lang}]가 비었다"
+            assert gedos._TR[key].get(lang), f"{key}[{lang}]가 비었다"
 
 
-def test_rs_base_guidance_names_the_way_out(fest):
+def test_rs_base_guidance_names_the_way_out(gedos):
     """안내가 **어떻게 하면 되는지**까지 말한다.
 
     §6의 엔진 메시지가 지키는 규약과 같다 — "안 된다"만 적으면 사용자는
     추측하게 된다.
     """
     for lang in ('EN', 'KR'):
-        msg = fest._TR['rs_base_full_area'][lang]
+        msg = gedos._TR['rs_base_full_area'][lang]
         assert 'bifacial' in msg, f"[{lang}] 대안(bifacial)을 말하지 않는다"
         assert 'full_area' in msg, f"[{lang}] 원인(full_area)을 말하지 않는다"
 
 
-def test_rs_base_entry_is_locked_on_full_area(fest):
+def test_rs_base_entry_is_locked_on_full_area(gedos):
     """후면이 full_area면 입력칸을 **잠그고 비운다**.
 
     숫자가 보이는데 계산에 안 들어가는 상태를 만들지 않기 위해서다. 값을 남긴
@@ -1283,7 +1283,7 @@ def test_rs_base_entry_is_locked_on_full_area(fest):
 
     class _App:
         TB_DIODE_RS_BASE = 7
-        _sync_rs_base_entry = fest.FESTProApp._sync_rs_base_entry
+        _sync_rs_base_entry = gedos.GEDOSApp._sync_rs_base_entry
 
         def __init__(self, entry):
             self.tb_diode = [None] * 7 + [entry]
@@ -1303,7 +1303,7 @@ def test_rs_base_entry_is_locked_on_full_area(fest):
     assert ent.state == "normal", "bifacial인데 입력칸이 잠겨 있다"
 
 
-def test_rs_base_entry_index_matches_the_card(fest):
+def test_rs_base_entry_index_matches_the_card(gedos):
     """`TB_DIODE_RS_BASE`가 실제 카드의 rs_base 행을 가리킨다.
 
     카드 정의와 인덱스 상수가 갈리면 **다른 칸을 Rs_base로 읽는다** — 예를
@@ -1372,28 +1372,28 @@ _LABEL_KEYS = _INTERLAYER_KEYS + ('rs_base',)
 
 
 @pytest.mark.parametrize("key", _LABEL_KEYS)
-def test_diode_card_labels_are_translated(fest, key):
+def test_diode_card_labels_are_translated(gedos, key):
     """세 라벨 모두 KO/EN이 **서로 다르다** — 즉 실제로 번역돼 있다.
 
     `Recomb.J Sheet R ↔`는 v28.66까지 영문 리터럴이라 한국어 모드에서도 영어로
     떴다. i18n 새로고침 표에도 없어 전환 대상조차 아니었다 — 두 겹으로 빠져
     있었고, 시작 언어가 영어면 아무 증상이 없다.
     """
-    en = fest._TR[key]['EN']
-    kr = fest._TR[key]['KR']
+    en = gedos._TR[key]['EN']
+    kr = gedos._TR[key]['KR']
     assert en and kr, f"{key}: 비어 있다"
     assert en != kr, (
         f"{key}: KO/EN이 같다 ({en!r}) — 번역되지 않은 영문 리터럴일 수 있다")
 
 
-def test_interlayer_labels_share_a_prefix(fest):
+def test_interlayer_labels_share_a_prefix(gedos):
     """`Rc_junction`과 `Rs_junction`은 **같은 층**임이 이름에 드러나야 한다.
 
     둘은 같은 재결합층의 수직(↕)·면내(↔) 성분이다. 접두어가 갈리면 사용자는
     서로 다른 층으로 읽는다 — 실제로 그렇게 읽혀서 이 변경이 나왔다.
     """
     for lang in ('EN', 'KR'):
-        labels = [fest._TR[k][lang] for k in _INTERLAYER_KEYS]
+        labels = [gedos._TR[k][lang] for k in _INTERLAYER_KEYS]
         head = labels[0].split()[0]
         for lbl in labels[1:]:
             assert lbl.startswith(head), (
@@ -1401,15 +1401,15 @@ def test_interlayer_labels_share_a_prefix(fest):
                 f"같은 층인데 이름이 다른 층처럼 읽힌다")
 
 
-def test_bulk_label_does_not_share_the_interlayer_prefix(fest):
+def test_bulk_label_does_not_share_the_interlayer_prefix(gedos):
     """반대로 `Rs_base`는 **다른 층**이므로 접두어를 공유하면 안 된다.
 
     이 단언이 없으면 "전부 Interlayer로 맞춘다"가 통과해 버린다. 구분이
     목적인데 통일이 답으로 나오는 것을 막는다.
     """
     for lang in ('EN', 'KR'):
-        head = fest._TR['rs_junction'][lang].split()[0]
-        base = fest._TR['rs_base'][lang]
+        head = gedos._TR['rs_junction'][lang].split()[0]
+        base = gedos._TR['rs_base'][lang]
         assert not base.startswith(head), (
             f"[{lang}] Rs_base가 중간층 접두어 {head!r}를 쓴다 ({base!r}) — "
             f"실리콘 벌크는 중간층이 아니다")
@@ -1418,36 +1418,36 @@ def test_bulk_label_does_not_share_the_interlayer_prefix(fest):
 @pytest.mark.parametrize("key,arrow", [('rc_junction', '↕'),
                                        ('rs_junction', '↔'),
                                        ('rs_base', '↔')])
-def test_labels_keep_the_direction_arrow(fest, key, arrow):
+def test_labels_keep_the_direction_arrow(gedos, key, arrow):
     """방향 화살표(↕ 수직 / ↔ 면내)를 유지한다.
 
     접두어가 층을, 화살표가 방향을 말한다. 화살표가 빠지면 같은 층의 두 항목이
     이름으로 구분되지 않는다.
     """
     for lang in ('EN', 'KR'):
-        assert arrow in fest._TR[key][lang], (
-            f"[{lang}] {key} 라벨에 {arrow}가 없다: {fest._TR[key][lang]!r}")
+        assert arrow in gedos._TR[key][lang], (
+            f"[{lang}] {key} 라벨에 {arrow}가 없다: {gedos._TR[key][lang]!r}")
 
 
 @pytest.mark.parametrize("key", ['rc_junction_hint', 'rs_junction_hint',
                                  'rs_base_hint'])
-def test_hints_name_the_layer(fest, key):
+def test_hints_name_the_layer(gedos, key):
     """힌트가 **어느 층인지** 한 줄로 말한다.
 
     라벨은 100px이라 층 이름까지가 한계다. "무엇과 무엇 사이인가"는 힌트가
     담당하므로, 힌트가 비거나 층을 말하지 않으면 라벨 변경의 절반이 빈다.
     """
     for lang in ('EN', 'KR'):
-        msg = fest._TR[key][lang]
+        msg = gedos._TR[key][lang]
         assert msg and msg.strip().endswith('.'), f"[{lang}] {key}: 한 문장이 아니다"
-    kr = fest._TR[key]['KR']
+    kr = gedos._TR[key]['KR']
     if key.startswith('r') and 'junction' in key:
         assert '재결합층' in kr, f"{key}: 중간층 힌트가 층을 말하지 않는다 ({kr!r})"
     else:
         assert '벌크' in kr, f"{key}: 벌크 힌트가 층을 말하지 않는다 ({kr!r})"
 
 
-def test_diode_card_index_constants_match_the_card(fest):
+def test_diode_card_index_constants_match_the_card(gedos):
     """세 인덱스 상수가 실제 카드 행 순서와 맞는지 — 소스에서 확인한다.
 
     상수와 카드가 갈리면 **다른 칸을 읽는다.** Rc(Ω·cm²)와 Rs(Ω/sq)는 단위가

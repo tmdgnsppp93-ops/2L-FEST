@@ -191,9 +191,9 @@ def _allowed_strings(lang):
 def _build(ui, lang, rec):
     i18n.set_language(lang, persist=False)
     rec["texts"].clear()
-    fest = MagicMock(name="fest")
+    gedos = MagicMock(name="gedos")
     parent = _FakeWidget(rec)
-    win = ui.open_optimizer_window(fest, parent)
+    win = ui.open_optimizer_window(gedos, parent)
     return win
 
 
@@ -412,19 +412,19 @@ def test_plot_strings_follow_language(lang, monkeypatch):
         i18n.set_language(before, persist=False)
 
 
-def test_results_are_language_independent(fest, monkeypatch):
+def test_results_are_language_independent(gedos, monkeypatch):
     """언어를 바꿔도 계산 결과는 비트 동일해야 한다(문자열만 바뀌는 변경)."""
-    monkeypatch.delenv("FEST_LEGACY_LOCAL_MATCH", raising=False)
+    monkeypatch.delenv("GEDOS_LEGACY_LOCAL_MATCH", raising=False)
     from front_electrode import evaluate_existing_simulation, SCENARIO_MEASURED
     grid = dict(cell_w_mm=20.0, cell_h_mm=20.0, n_fingers=8, n_busbars=1,
                 w_finger_um=50.0, w_busbar_mm=0.6, n_probe_points=0)
     before = i18n.get_language()
     try:
         i18n.set_language("en", persist=False)
-        a = evaluate_existing_simulation(fest, grid, scenario=SCENARIO_MEASURED,
+        a = evaluate_existing_simulation(gedos, grid, scenario=SCENARIO_MEASURED,
                                          axis_segments_override=36, npts=6)
         i18n.set_language("ko", persist=False)
-        b = evaluate_existing_simulation(fest, grid, scenario=SCENARIO_MEASURED,
+        b = evaluate_existing_simulation(gedos, grid, scenario=SCENARIO_MEASURED,
                                          axis_segments_override=36, npts=6)
     finally:
         i18n.set_language(before, persist=False)

@@ -181,7 +181,7 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 | Python 소스 파일 | 52개 |
 | Python 총 라인 수 | 29,283줄 |
 | 저장소 추적 파일 총계 | 121개 |
-| 그중 `2L_FEST.py` (엔진+GUI 단일 파일) | 15,401줄 |
+| 그중 `GEDOS.py` (엔진+GUI 단일 파일) | 15,401줄 |
 
 구성 단위별 라인 수:
 
@@ -198,15 +198,15 @@ python scripts/gen_registration_stats.py --from-log pytest.log --check   # 최�
 
 | 파일 / 모듈 | 역할 |
 |---|---|
-| `2L_FEST.py` | 계산 엔진과 메인 GUI를 담은 단일 실행 파일 (라인 수는 §3-1 참조) |
+| `GEDOS.py` | 계산 엔진과 메인 GUI를 담은 단일 실행 파일 (라인 수는 §3-1 참조) |
 | ├ `GridDesign` | 한쪽 면의 H-패턴 전극 설계(핑거·버스바 배치, 엣지 갭, 프로브 위치) |
 | ├ `CellGeometry` | 웨이퍼 형상 + 전·후면 전극 통합, 음영 면적 계산 |
 | ├ `DiodeParams` | 탠덤 2-다이오드 파라미터 |
 | ├ `SpatialMap` | 노드별 파라미터 배수 분포 |
 | ├ `MeshProlongationSeedProvider` | 거친 메시 해를 보간해 초기값 제공(수렴 가속) |
-| ├ `FESTSolver` | FEM 분포 회로 솔버 — 핵심 해석 엔진 |
+| ├ `GEDOSSolver` | FEM 분포 회로 솔버 — 핵심 해석 엔진 |
 | ├ `DxfGrid` | DXF 전극 도면 입출력 |
-| └ `FESTProApp` | CustomTkinter 기반 메인 GUI |
+| └ `GEDOSApp` | CustomTkinter 기반 메인 GUI |
 | `front_electrode/adapter.py` | 엔진 호출 래퍼 + 버스바 반사광 회수 사후 보정 |
 | `front_electrode/optimizer.py` | 격자 탐색(단일 축 / 다축 Cartesian 스윕) |
 | `front_electrode/presets.py` | ITRPV 기반 탐색범위 preset(출처·조사일 기록) |
