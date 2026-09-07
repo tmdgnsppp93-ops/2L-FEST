@@ -1,10 +1,11 @@
 name: Build apps (macOS + Windows)
 
 # PyInstaller can't cross-compile, so we build each OS on its own runner.
-# Run manually (Actions tab -> "Run workflow") or push a tag like v28.28.
+# Run manually (Actions tab -> "Run workflow"), push to main, or push a tag like v28.28.
 on:
   workflow_dispatch:
   push:
+    branches: ['main']
     tags: ['v*']
 
 jobs:
