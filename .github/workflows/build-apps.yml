@@ -1,7 +1,7 @@
 name: Build apps (macOS + Windows)
 
-# PyInstaller can't cross-compile, so we build each OS on its own runner.
-# Run manually (Actions tab -> "Run workflow"), push to main, or push a tag like v28.28.
+# PyInstaller can't cross-compile, so each OS builds on its own runner.
+# Windows is packaged as a single standalone GEDOS.exe (--onefile).
 on:
   workflow_dispatch:
   push:
@@ -18,8 +18,12 @@ jobs:
         include:
           - os: macos-latest
             artifact: GEDOS-macOS
+            build_args: ''
+            upload_path: dist/GEDOS.app
           - os: windows-latest
             artifact: GEDOS-Windows
+            build_args: '--onefile'
+            upload_path: dist/GEDOS.exe
 
     steps:
       - uses: actions/checkout@v4
@@ -36,6 +40,7 @@ jobs:
       - name: Build with PyInstaller
         run: >
           pyinstaller --noconfirm --windowed
+          ${{ matrix.build_args }}
           --name "GEDOS"
           --collect-all customtkinter
           --collect-all ezdxf
@@ -45,5 +50,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: dist/
+          path: ${{ matrix.upload_path }}
           if-no-files-found: error
