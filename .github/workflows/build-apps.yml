@@ -1,29 +1,14 @@
-name: Build apps (macOS + Windows)
+name: Build Hossain GEDOS Windows
 
-# PyInstaller can't cross-compile, so each OS builds on its own runner.
-# Windows is packaged as a single standalone GEDOS.exe (--onefile).
 on:
   workflow_dispatch:
   push:
-    branches: ['main']
-    tags: ['v*']
+    branches: ['hossain-nfinger1000']
 
 jobs:
-  build:
-    name: Build on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: macos-latest
-            artifact: GEDOS-macOS
-            build_args: ''
-            upload_path: dist/GEDOS.app
-          - os: windows-latest
-            artifact: GEDOS-Windows
-            build_args: '--onefile'
-            upload_path: dist/GEDOS.exe
+  build-windows:
+    name: Build Hossain GEDOS on Windows
+    runs-on: windows-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -39,16 +24,15 @@ jobs:
 
       - name: Build with PyInstaller
         run: >
-          pyinstaller --noconfirm --windowed
-          ${{ matrix.build_args }}
-          --name "GEDOS"
+          pyinstaller --noconfirm --windowed --onefile
+          --name "GEDOS_Nfinger1000"
           --collect-all customtkinter
           --collect-all ezdxf
-          GEDOS.py
+          GEDOS_Nfinger1000.py
 
-      - name: Upload app
+      - name: Upload Windows executable
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact }}
-          path: ${{ matrix.upload_path }}
+          name: GEDOS_Nfinger1000-Windows
+          path: dist/GEDOS_Nfinger1000.exe
           if-no-files-found: error
