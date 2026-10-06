@@ -1,4 +1,4 @@
-name: Build Hossain GEDOS Windows
+name: Build Hossain GEDOS Package
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Hossain GEDOS on Windows
+    name: Build Hossain GEDOS package
     runs-on: windows-latest
 
     steps:
@@ -22,17 +22,69 @@ jobs:
           python -m pip install --upgrade pip
           pip install numpy scipy matplotlib customtkinter ezdxf pyinstaller
 
-      - name: Build with PyInstaller
+      - name: Build Windows executable
         run: >
           pyinstaller --noconfirm --windowed --onefile
-          --name "GEDOS_Nfinger1000"
+          --name "GEDOS_Nfinger1000_CF1"
           --collect-all customtkinter
           --collect-all ezdxf
+          --hidden-import front_electrode
+          --hidden-import front_electrode.adapter
+          --hidden-import front_electrode.ui
+          --hidden-import front_electrode.i18n
           GEDOS_Nfinger1000.py
 
-      - name: Upload Windows executable
+      - name: Assemble Hossain package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          Copy-Item dist/GEDOS_Nfinger1000_CF1.exe package/
+          Copy-Item GEDOS_Nfinger1000.py package/
+          Copy-Item LICENSE package/
+          Copy-Item requirements.txt package/
+          Copy-Item front_electrode package/front_electrode -Recurse
+          @"
+GEDOS Hossain Package
+=====================
+
+Files
+-----
+1. GEDOS_Nfinger1000_CF1.exe
+   - Standalone Windows executable.
+   - N Fingers limit increased from 200 to 1000.
+   - Shape CF defaults: Before = 1.0, After = 1.0.
+
+2. GEDOS_Nfinger1000.py
+   - Python source corresponding to this Hossain build.
+
+3. front_electrode/
+   - Supporting source package for the electrode-optimization GUI.
+
+4. requirements.txt
+   - Python dependencies.
+
+5. LICENSE
+   - Project license notice.
+
+M10 reproduction note
+---------------------
+For the M10 results previously shared with Hossain:
+- Finger cross-section assumption: rectangular
+- Shape CF: 1.0 (Before), 1.0 (After)
+- Finger width: 80 um
+- Finger height: 20 um
+- Before optimized grid: 357 fingers / 16 busbars / 0.51 mm spacing
+- After optimized grid: 40 fingers / 10 busbars / 4.55 mm spacing
+
+If running from source:
+  python GEDOS_Nfinger1000.py
+
+The Windows executable does not require a separate Python installation.
+"@ | Set-Content -Path package/README_Hossain.txt -Encoding UTF8
+
+      - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: GEDOS_Nfinger1000-Windows
-          path: dist/GEDOS_Nfinger1000.exe
+          name: GEDOS_Hossain_Package
+          path: package/
           if-no-files-found: error
