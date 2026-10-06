@@ -43,44 +43,45 @@ jobs:
           Copy-Item LICENSE package/
           Copy-Item requirements.txt package/
           Copy-Item front_electrode package/front_electrode -Recurse
-          @"
-GEDOS Hossain Package
-=====================
-
-Files
------
-1. GEDOS_Nfinger1000_CF1.exe
-   - Standalone Windows executable.
-   - N Fingers limit increased from 200 to 1000.
-   - Shape CF defaults: Before = 1.0, After = 1.0.
-
-2. GEDOS_Nfinger1000.py
-   - Python source corresponding to this Hossain build.
-
-3. front_electrode/
-   - Supporting source package for the electrode-optimization GUI.
-
-4. requirements.txt
-   - Python dependencies.
-
-5. LICENSE
-   - Project license notice.
-
-M10 reproduction note
----------------------
-For the M10 results previously shared with Hossain:
-- Finger cross-section assumption: rectangular
-- Shape CF: 1.0 (Before), 1.0 (After)
-- Finger width: 80 um
-- Finger height: 20 um
-- Before optimized grid: 357 fingers / 16 busbars / 0.51 mm spacing
-- After optimized grid: 40 fingers / 10 busbars / 4.55 mm spacing
-
-If running from source:
-  python GEDOS_Nfinger1000.py
-
-The Windows executable does not require a separate Python installation.
-"@ | Set-Content -Path package/README_Hossain.txt -Encoding UTF8
+          $lines = @(
+            "GEDOS Hossain Package",
+            "=====================",
+            "",
+            "Files",
+            "-----",
+            "1. GEDOS_Nfinger1000_CF1.exe",
+            "   - Standalone Windows executable.",
+            "   - N Fingers limit increased from 200 to 1000.",
+            "   - Shape CF defaults: Before = 1.0, After = 1.0.",
+            "",
+            "2. GEDOS_Nfinger1000.py",
+            "   - Python source corresponding to this Hossain build.",
+            "",
+            "3. front_electrode/",
+            "   - Supporting source package for the electrode-optimization GUI.",
+            "",
+            "4. requirements.txt",
+            "   - Python dependencies.",
+            "",
+            "5. LICENSE",
+            "   - Project license notice.",
+            "",
+            "M10 reproduction note",
+            "---------------------",
+            "For the M10 results previously shared with Hossain:",
+            "- Finger cross-section assumption: rectangular",
+            "- Shape CF: 1.0 (Before), 1.0 (After)",
+            "- Finger width: 80 um",
+            "- Finger height: 20 um",
+            "- Before optimized grid: 357 fingers / 16 busbars / 0.51 mm spacing",
+            "- After optimized grid: 40 fingers / 10 busbars / 4.55 mm spacing",
+            "",
+            "If running from source:",
+            "  python GEDOS_Nfinger1000.py",
+            "",
+            "The Windows executable does not require a separate Python installation."
+          )
+          $lines | Set-Content -Path package/README_Hossain.txt -Encoding UTF8
 
       - name: Upload package
         uses: actions/upload-artifact@v4
