@@ -10404,7 +10404,7 @@ class GEDOSApp(ctk.CTk):
                     pass
             else:
                 nf = _parse_gui_int(self.tb_hpat[0].get(), "N Fingers",
-                                    min_value=1, max_value=200)
+                                    min_value=1, max_value=1000)
                 # Mirror the derived spacing back into the Finger Spacing entry
                 derived_spacing_mm = (cw * 10.0) / max(1, nf)
                 spacing_mm = derived_spacing_mm
@@ -10541,7 +10541,7 @@ class GEDOSApp(ctk.CTk):
             if self._rear_mode_var.get() == 'bifacial':
                 # Read independent rear H-pattern parameters
                 r_nf = _parse_gui_int(self.tb_rear_pat[0].get(), "Rear N Fingers",
-                                      min_value=1, max_value=200)
+                                      min_value=1, max_value=1000)
                 r_nb = _parse_gui_int(self.tb_rear_pat[1].get(), "Rear N Busbars",
                                       min_value=1, max_value=30)
                 r_wf_um = _parse_gui_float(self.tb_rear_pat[2].get(), "Rear finger width")
