@@ -9651,7 +9651,8 @@ class GEDOSApp(ctk.CTk):
             ("Finger Height", "10.0", "8.5", "µm"),
             ("Finger Width", "50", "65", "µm"),
             ("Busbar Width", "50", "65", "µm"),
-            ("Shape CF", "0.785", "0.95", "(π/4~1)"),
+            # Hossain build default: rectangular cross-section for M10 reproduction.
+            ("Shape CF", "1.0", "1.0", "(π/4~1)"),
             ("Contact Resistivity", "10.0", "10.0", "mΩ·cm²"),
             ("TCO R_sheet", "55", "", "Ω/sq"),
         ]
@@ -12490,8 +12491,8 @@ class GEDOSApp(ctk.CTk):
     def _read_shape_cfs(self):
         """BEFORE/AFTER 카드에서 cf를 읽는다. 입력 중이라 못 읽으면 기본값."""
         out = []
-        for tb, dflt in ((getattr(self, 'tb_b', None), SHAPE_CF_DOME),
-                         (getattr(self, 'tb_a', None), 0.95)):
+        for tb, dflt in ((getattr(self, 'tb_b', None), SHAPE_CF_RECT),
+                         (getattr(self, 'tb_a', None), SHAPE_CF_RECT)):
             try:
                 v = float(tb[4].get())
                 out.append(v if 0.0 < v <= 1.0 else dflt)
